@@ -13,7 +13,7 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | A. Production recovery and persistence | Implemented and automatically verified, including real paired processes. Not hardware verified. |
 | B. Live coordinator and platform evidence | Implemented and automatically verified. Observation and eligibility confirmed on this Mac's live mirrored setup. Not hardware verified for any display change. |
 | C. Usable controls and diagnostics | Implemented and automatically verified. The pair runs with the real coordinator behind the menu. Not hardware verified: no production display change has been made. |
-| D. Product-path validation and delivery | Not started. Depends on B and C. |
+| D. Product-path validation and delivery | In progress. Mirrored manual off/on, relaunch reconciliation, and forced controller termination pass through the actual menu with user-confirmed visibility. Extended, unplug, sleep, lid, session, and automatic scenarios remain. |
 
 ## Implemented
 
@@ -58,6 +58,9 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | Sleep while internal is off, wake with USB-C connected | Passed on second monitor, battery power; user confirmed internal off before sleep and both on after wake |
 | Sleep while internal is off, disconnect external before wake | Passed on second USB-C monitor, battery power, open lid; user confirmed internal usable with cable still out |
 | Mirrored external-source/internal-follower off/on | Passed on second USB-C monitor; original observed mirror relationship and geometry restored, with user-confirmed physical off/on and mirrored image |
+| Mirrored off/on through the product menu | Passed. Three full cycles plus a fourth off, user-confirmed each time. Journal written and cleared, mirror source and geometry preserved. |
+| Relaunch with unresolved ownership, product path | Passed. The helper reconciled a leftover record, restored, verified through the mirror relationship, and cleared it before any controller ran. |
+| Forced controller termination, product path | Passed. The helper detected contact loss, confirmed termination, took the writer lock, restored with user-confirmed visibility, cleared the record, and exited without starting another disabling controller. |
 | Mirrored sleep, unplug, crash recovery, or internal-source topology | **Not tested** |
 | Multiple externals, dock changes, lid closure, user switching | **Not tested** |
 | Production helper/controller pair on real hardware | **Not tested.** The pair runs and recovers in automated tests that perform no display configuration. |
@@ -66,4 +69,4 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 
 The dedicated bounded external-loss harness passed its second physical run, recorded in `work/external-unplug-02.log`. The supervisor detected removal and revoked protection; the responsive writer restored without a supervisor enable request. Reconnection happened after writer exit and did not reapply suppression. This validates this bounded experiment, not a production automatic-mode lifecycle or other hardware topologies. The first run expired without removal and remains inconclusive.
 
-Automated checks last passed: 119 package tests and 47 native app tests. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation remains unvalidated because the earlier runner timed out enabling automation. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.
+Automated checks last passed: 123 package tests and 48 native app tests. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation remains unvalidated because the earlier runner timed out enabling automation. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.
