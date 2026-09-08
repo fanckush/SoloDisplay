@@ -60,6 +60,9 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | Mirrored external-source/internal-follower off/on | Passed on second USB-C monitor; original observed mirror relationship and geometry restored, with user-confirmed physical off/on and mirrored image |
 | Mirrored off/on through the product menu | Passed. Three full cycles plus a fourth off, user-confirmed each time. Journal written and cleared, mirror source and geometry preserved. |
 | Relaunch with unresolved ownership, product path | Passed. The helper reconciled a leftover record, restored, verified through the mirror relationship, and cleared it before any controller ran. |
+| Frozen controller, product path | Passed. The helper's lease expired, it killed the stopped controller, confirmed termination, restored with user-confirmed visibility, and cleared the record. This is a stopped user-space process, not an uninterruptible driver call. |
+| Sleep while suppressed, wake connected, product path | Passed. Impending sleep released the suppression and cleared the record; waking re-earned evidence and disabled again. No faults, no helper intervention. |
+| Sleep while suppressed, disconnect before wake, product path | Passed. The internal panel was usable with the cable out, nothing was turned off without an external, and reconnecting disabled it again after a fresh stability window. |
 | Automatic mode disabling on its own | Passed. Selecting Automatic turned the panel off within the stability window, user confirmed. |
 | Unplug last external while suppressed, product path | Passed. Restoration was immediate and undebounced, user confirmed the panel came back. |
 | Reconnect after that recovery, product path | Passed. A fresh stability window ran before it disabled again. |
