@@ -143,3 +143,22 @@ private func external(
   // The preferences request is deliberately rejected too: shadow mode has no storage executor.
   #expect(shadow.rejectedEffectCount == 1)
 }
+
+@Test func displaySleepDoesNotWithdrawAnOtherwiseEligibleExternal() {
+  var reading = snapshot()
+  reading.displays[0].mirrored = true
+  reading.displays[0].active = false
+  reading.displays[0].mirrorSourceID = 5
+  reading.displays.append(external(transport: .native, mirrored: true))
+  #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .yes)
+
+  // Screen sleep leaves the monitor connected. Putting a suppressed panel back would only
+  // produce a pointless flash on the next wake.
+  reading.displays[1].asleep = true
+  reading.displays[1].active = false
+  #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .yes)
+
+  // An external that is actually gone is a different matter.
+  reading.displays.removeLast()
+  #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .no)
+}
