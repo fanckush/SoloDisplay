@@ -19,7 +19,7 @@ private struct Pair {
   init(at now: Instant = 0, timing: ProtectionTiming = .init(), witnessed: Bool = true) {
     controller = .init(session: "s", at: now, timing: timing)
     helper = .init(at: now, timing: timing)
-    helper.receive(.witnessMatches(witnessed), at: now)
+    helper.receive(.witness(witnessed ? protectedPanel : nil), at: now)
   }
 
   /// Delivers messages until neither side has anything to say. `dropHelperReplies` models a

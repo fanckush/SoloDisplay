@@ -244,8 +244,7 @@ emit("helper-started")
 }
 
 // The helper's own independent witness, not the controller's claim.
-apply(
-  protection.receive(HelperProtection.Input.witnessMatches(scenario != "unwitnessed"), at: now()))
+apply(protection.receive(.witness(scenario == "unwitnessed" ? nil : target), at: now()))
 
 while now() < deadline {
   do {
@@ -260,6 +259,8 @@ while now() < deadline {
     emit("helper-closing-contact")
     try? commands.fileHandleForWriting.close()
   }
+  // Refresh the helper's own witness, the way a live helper re-observes the panel.
+  if scenario != "unwitnessed" { protection.receive(.witness(target), at: now()) }
   if !controller.isRunning, protection.phase != .standingDown, !recovering {
     apply(protection.receive(.controllerExited, at: now()))
   }

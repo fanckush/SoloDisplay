@@ -31,6 +31,7 @@ final class HelperRuntime {
   private var takeover = RecoveryTakeover()
   private var timer: Timer?
   private var recovering = false
+  private var witnessedAt: Instant = 0
 
   init(executable: URL, store: ProductionJournalStore) {
     self.executable = executable
@@ -57,9 +58,11 @@ final class HelperRuntime {
     }
     await reconcileAtLaunch(reading)
     launchController()
-    timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+    let ticker = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
       Task { @MainActor in self?.pump() }
     }
+    RunLoop.main.add(ticker, forMode: .common)
+    timer = ticker
   }
 
   /// Unresolved ownership is resolved before any controller runs, so a new run can never
@@ -112,6 +115,12 @@ final class HelperRuntime {
   private func pump() {
     guard let link else { return }
     let now = Self.now()
+    // The helper's own view of the panel, taken independently of anything the controller says.
+    if now - witnessedAt >= 1_000 {
+      witnessedAt = now
+      let reading = DisplayObserver.read()
+      apply(protection.receive(.witness(reading.internalTarget), at: now))
+    }
     do {
       while let message = try link.poll() {
         apply(protection.receive(.received(message), at: now))
@@ -186,6 +195,12 @@ final class HelperRuntime {
       return
     }
     defer { lock.release() }
+    if takeover.phase == .watching {
+      // Launch reconciliation: no controller child exists yet, and holding the exclusive writer
+      // lock is what establishes that no live writer owns this session. Takeover from a running
+      // controller reaches here already past this step, with a confirmed termination behind it.
+      takeover.receive(.writerTerminationConfirmed)
+    }
     takeover.receive(.lockAcquired)
     let reading = DisplayObserver.read()
     guard
@@ -231,8 +246,11 @@ final class HelperRuntime {
     repeat {
       try? await Task.sleep(for: .milliseconds(100))
       let reading = DisplayObserver.read()
+      // A mirrored follower is never reported active, so requiring that would make a correct
+      // restoration look like a failure and keep the record forever.
       if reading.displays.contains(where: {
-        $0.id == target.displayID && $0.builtIn && $0.uuid == target.displayUUID && $0.active
+        $0.id == target.displayID && $0.builtIn && $0.uuid == target.displayUUID && $0.online
+          && !$0.asleep && ($0.active || $0.mirrorSourceID != nil)
       }) {
         return true
       }
