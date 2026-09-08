@@ -217,6 +217,19 @@ public struct Presentation: Equatable, Sendable {
   public var fault: Fault?
   public var unavailability: Unavailability?
 
+  public init(
+    mode: Mode, manualRequestActive: Bool, panelOwned: Bool, operationInFlight: Bool,
+    pendingRecovery: Bool, fault: Fault?, unavailability: Unavailability?
+  ) {
+    self.mode = mode
+    self.manualRequestActive = manualRequestActive
+    self.panelOwned = panelOwned
+    self.operationInFlight = operationInFlight
+    self.pendingRecovery = pendingRecovery
+    self.fault = fault
+    self.unavailability = unavailability
+  }
+
   public var canDisableNow: Bool { unavailability == nil }
 }
 

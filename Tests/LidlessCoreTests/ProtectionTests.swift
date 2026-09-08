@@ -156,14 +156,32 @@ struct ProtectionTests {
     #expect(pair.helper.receive(.controllerExited, at: 1_100).isEmpty)
   }
 
-  @Test func releaseEndsProtectionWithNothingLeftToRecover() {
+  @Test func releaseEndsTheCycleButKeepsThePairing() {
     var pair = Pair()
     pair.establish()
     pair.pump(pair.controller.receive(.release, at: 1_000), at: 1_000)
     #expect(pair.stoodDown)
     #expect(pair.helper.ownership == nil)
-    #expect(pair.helper.receive(.controllerExited, at: 2_000).isEmpty)
+    #expect(!pair.controller.protects(at: 1_000))
     #expect(pair.recovery.isEmpty)
+
+    // A second suppression cycle must be possible on the same pair.
+    pair.pump(pair.controller.receive(.arm(owned), at: 2_000), at: 2_000)
+    #expect(pair.controller.protects(at: 2_000))
+    #expect(pair.helper.phase == .protecting)
+    // And recovery is available again for the new cycle.
+    #expect(
+      pair.helper.receive(.controllerExited, at: 2_100) == [
+        .recoveryRequired(owned, .controllerExited)
+      ])
+  }
+
+  @Test func shutdownIsTerminalForTheLink() {
+    var pair = Pair()
+    pair.establish()
+    pair.pump(pair.controller.receive(.shutdown, at: 1_000), at: 1_000)
+    #expect(pair.controller.receive(.arm(owned), at: 2_000).isEmpty)
+    #expect(!pair.controller.protects(at: 2_000))
   }
 
   @Test func aControllerThatNeverArmedLeavesNothingForTheHelperToRestore() {
