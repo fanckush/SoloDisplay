@@ -51,6 +51,12 @@ public struct BackendValidationStore: Sendable {
 
   public var url: URL { file }
 
+  /// The path to name when telling someone how to undo a validation they do not trust.
+  public static func recordPath() -> String {
+    ((try? ProductionJournalStore.defaultDirectory())?
+      .appendingPathComponent("backend-validation.json").path) ?? "the Lidless support folder"
+  }
+
   public func load() -> BackendValidation? {
     guard let data = try? Data(contentsOf: file, options: .mappedIfSafe), data.count < 16_384
     else { return nil }

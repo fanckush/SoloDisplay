@@ -20,6 +20,7 @@
     case check
     case handoff(external: UInt32, journal: String)
     case restoreChild(journal: String)
+    case validateBackend(external: UInt32, journal: String)
     case supervisedExit(external: UInt32, journal: String, rehearsal: Bool)
     case exitWriter(external: UInt32, journal: String, rehearsal: Bool)
     case unplugWriter(external: UInt32, journal: String, rehearsal: Bool)
@@ -32,7 +33,8 @@
       if arguments == ["--lab-check"] { return .check }
       guard let verb = arguments.first,
         [
-          "--lab-handoff", "--lab-restore-child", "--lab-exit-supervised", "--lab-exit-writer",
+          "--lab-handoff", "--lab-restore-child", "--lab-validate-backend",
+          "--lab-exit-supervised", "--lab-exit-writer",
           "--lab-exit-rehearsal", "--lab-exit-writer-rehearsal",
           "--lab-exit-kill", "--lab-exit-freeze", "--lab-freeze-rehearsal",
           "--lab-contact-loss", "--lab-contact-loss-rehearsal",
@@ -74,6 +76,8 @@
           "A visible, native wired external must be explicitly attested.")
       }
       switch verb {
+      case "--lab-validate-backend":
+        return .validateBackend(external: external, journal: journal)
       case "--lab-mirror", "--lab-mirror-rehearsal":
         return .failure(
           external: external, journal: journal, ending: .mirror,
@@ -191,6 +195,8 @@
         case .handoff(let external, let journal):
           try await handoff(external: external, path: journal)
         case .restoreChild(let journal): try await restoreChild(path: journal)
+        case .validateBackend(let external, let journal):
+          try await validateBackend(external: external, path: journal)
         case .supervisedExit(let external, let journal, let rehearsal):
           try await supervisedExit(external: external, path: journal, rehearsal: rehearsal)
         case .exitWriter(let external, let journal, let rehearsal):
