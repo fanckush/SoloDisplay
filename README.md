@@ -35,6 +35,8 @@ The raw lab report includes local display and session identifiers for experiment
 
 Open `Lidless.xcodeproj`, select the `Lidless` scheme and My Mac, then Run. A laptop icon appears in the menu bar. Choose **Display Diagnostics…** to open its read-only window. Closing that window keeps the observer running; **Quit Lidless** stops it. No login item is installed.
 
+A normal launch starts two processes. The launched process becomes the supervising recovery helper, which has no interface, and it launches the menu-bar controller as its child over inherited private pipes. A second launch is refused while a pair already owns the login session. Killing or quitting the controller ends the helper once nothing is left to recover. Pass `--lidless-unprotected` to run the interface alone, without a helper and with display control unavailable.
+
 The Xcode project references the Swift package in this repository using a relative path. It does not depend on the original chat workspace. The existing signing team and bundle identifiers are retained from the user's template. The app identifier is `dev.lidless.Lidless`, with the template spelling corrected at the user's request.
 
 The development app uses a normal AppKit lifecycle, CoreGraphics callbacks, workspace notifications, and periodic read-only observations. Its event history is bounded and stays in memory. Neither ordinary launch nor refresh changes display settings. The app does not yet execute the controller's effects. Debug builds also contain an explicitly invoked native hardware lab described in the guided procedure; it is unavailable in Release builds and has no normal menu entry.

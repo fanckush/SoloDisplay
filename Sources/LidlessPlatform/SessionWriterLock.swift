@@ -5,9 +5,14 @@ import Foundation
 public final class SessionWriterLock {
   private var descriptor: Int32
 
-  public init(loginID: UInt32) throws {
-    let url = FileManager.default.temporaryDirectory
-      .appendingPathComponent("lidless-writer-\(getuid())-\(loginID).lock")
+  /// `directory` exists so automated real-process tests can hold their own lock without
+  /// competing with a live GUI session's writer. Production always uses the default.
+  /// `name` separates unrelated exclusions; only "writer" gates display configuration.
+  public init(
+    loginID: UInt32, name: String = "writer",
+    directory: URL = FileManager.default.temporaryDirectory
+  ) throws {
+    let url = directory.appendingPathComponent("lidless-\(name)-\(getuid())-\(loginID).lock")
     descriptor = open(url.path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
     guard descriptor >= 0 else { throw WriterLockError.unavailable }
     guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
