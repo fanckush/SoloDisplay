@@ -55,6 +55,8 @@ final class DiagnosticsModel {
   private(set) var droppedCallbacks = 0
   private(set) var controller = ShadowController()
   private(set) var powerEvidence: Power = .unknown
+  /// Counted rather than inferred from the newest entry, which a periodic sample can replace.
+  private(set) var manualRefreshes = 0
   @ObservationIgnored private var monitor: DisplayEventMonitor?
   @ObservationIgnored private var timer: Timer?
   @ObservationIgnored private var subscriptions: [(NotificationCenter, NSObjectProtocol)] = []
@@ -99,7 +101,10 @@ final class DiagnosticsModel {
     monitor = nil
   }
 
-  func refresh() { sample(reason: "Manual refresh") }
+  func refresh() {
+    manualRefreshes += 1
+    sample(reason: "Manual refresh")
+  }
 
   private func subscribe(_ center: NotificationCenter, _ name: Notification.Name, reason: String) {
     let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in

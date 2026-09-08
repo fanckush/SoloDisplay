@@ -113,7 +113,10 @@ final class HelperRuntime {
       input: replies.fileHandleForReading, output: commands.fileHandleForWriting)
     let child = Process()
     child.executableURL = executable
-    child.arguments = [ProductionLaunch.controllerArgument]
+    // Pass through the flags that belong to the interface, which the child owns.
+    child.arguments =
+      [ProductionLaunch.controllerArgument]
+      + ProcessInfo.processInfo.arguments.filter { $0 == "--diagnostics" }
     child.standardInput = commands
     child.standardOutput = replies
     do { try child.run() } catch {

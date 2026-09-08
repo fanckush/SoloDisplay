@@ -13,6 +13,10 @@ struct ContentView: View {
           "Read-only development build. Lidless will not change displays, brightness, or mirroring."
         )
         .accessibilityIdentifier("readOnlyNotice")
+        // Kept near the top so it is on screen without scrolling, for UI automation.
+        Text("Manual refreshes: \(model.manualRefreshes)")
+          .font(.caption).foregroundStyle(.secondary)
+          .accessibilityIdentifier("manualRefreshCount")
         HStack {
           Label(model.headline, systemImage: "display")
           Spacer()
@@ -42,7 +46,7 @@ struct ContentView: View {
           }
           if reading.mirroringDetected {
             Text(
-              "Mirroring plus a dimmed built-in screen is a supported starting scenario for our investigation. This build preserves it untouched; off/on restoration is not yet validated."
+              "Mirroring is supported when the internal panel follows one present external source. This window changes nothing either way."
             )
           }
         }
@@ -55,7 +59,7 @@ struct ContentView: View {
         )
         .font(.caption).foregroundStyle(.secondary)
         Text(
-          "Control remains unavailable until recovery integration, native transport classification, and lifecycle validation are complete."
+          "This window is a read-only observer. The menu bar controls are what change displays."
         )
         .font(.caption).foregroundStyle(.secondary)
         Divider()
