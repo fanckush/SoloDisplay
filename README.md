@@ -4,18 +4,17 @@ A small macOS utility for turning off a MacBook's internal display while a nativ
 
 ## Current status
 
-This repository contains the first engineering milestone, not a finished menu-bar app:
+A working local menu-bar app. It turns the internal display off manually or automatically, and it is built so that every path back to a lit screen is either verified or reported as unresolved:
 
 - A pure Swift controller with explicit uncertainty, operation ownership, and bounded recovery.
-- Deterministic tests and generated event-sequence tests.
+- Two paired processes: a supervising recovery helper and the menu-bar controller it launches.
+- A durable ownership record written before any display change and cleared only after a verified restoration.
+- Native transport and mirror topology classification from IOKit provenance, not from display names or flags.
 - Bounded, sanitized diagnostic traces that replay through the same controller.
-- A read-only macOS observer.
-- A native menu-bar diagnostic app, created from Xcode's macOS App template.
-- Live, conservative observations feeding the controller in non-mutating shadow mode.
-- Recovery lease and takeover state machines exercised by bounded native experiments.
-- Explicit developer commands for guided display experiments and journal-based restoration.
 
-Automatic display control is not connected to the private API. The backend remains unvalidated until guided hardware tests establish its behavior. The observer deliberately does not label an external display as native wired based only on CoreGraphics flags.
+The recovery scenarios have been exercised on real hardware through the actual menu: unplugging, sleeping, closing the lid, quitting, and killing or freezing either process. See `docs/status.md` for what passed and what is untested.
+
+Signing, notarization, and Homebrew packaging are not done. This is a local build.
 
 ## Build and test
 
@@ -53,7 +52,7 @@ Verified on a Mac17,9 running macOS 26.6.2 (build 25G83) with one Dell U3223QE o
 
 Known limits. Simultaneous failure of both processes, and an unresponsive OS or display driver, are outside what the recovery design can cover. Suppression is application scoped, so other processes still report the panel as present. Signing, notarization, and Homebrew packaging are not set up.
 
-The development app uses a normal AppKit lifecycle, CoreGraphics callbacks, workspace notifications, and periodic read-only observations. Its event history is bounded and stays in memory. Neither ordinary launch nor refresh changes display settings. The app does not yet execute the controller's effects. Debug builds also contain an explicitly invoked native hardware lab described in the guided procedure; it is unavailable in Release builds and has no normal menu entry.
+The development app uses a normal AppKit lifecycle, CoreGraphics callbacks, workspace notifications, and periodic read-only observations. Its event history is bounded and stays in memory. Debug builds also contain an explicitly invoked native hardware lab described in the guided procedure; it is unavailable in Release builds and has no normal menu entry.
 
 The app targets macOS 26.0 and Swift 6. App Sandbox is disabled for the planned outside-App-Store display utility; Hardened Runtime remains enabled in the project. Xcode disables Hardened Runtime for the ad-hoc builds below, so they do not validate the final signed runtime. No new entitlements or developer-account operations are added. Release signing and notarization are not configured yet.
 
@@ -91,6 +90,6 @@ The first experiment requires an open lid, a visible built-in panel, and a confi
 - [Validation record](docs/validation.md)
 - [Current implementation and hardware checklist](docs/status.md)
 
-Native cross-process restoration is demonstrated, and tested writer-exit scenarios required explicit recovery. Next gates are production helper and effect-executor integration, native transport classification, and hardware tests for unplugging and sleeping while suppressed. Mirrored off/on remains untested. Public signing, notarization, and Homebrew distribution are later work.
+Remaining work is distribution: signing, notarization, and Homebrew packaging. Testing on more hardware would extend the supported configurations, in particular multiple external displays, docks, and DisplayLink or wireless displays, which the transport classifier currently refuses for want of anything to confirm against.
 
 This project does not promise that an unresponsive operating system or driver can always restore a visible screen. It makes its own decisions testable and keeps unverified platform behavior explicit.
