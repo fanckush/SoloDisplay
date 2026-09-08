@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct LidlessApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
+  @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+
+  var body: some Scene {
+    Settings {
+      EmptyView()
     }
+  }
 }
