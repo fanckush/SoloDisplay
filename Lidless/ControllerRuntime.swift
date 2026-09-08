@@ -119,8 +119,13 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       MainActor.assumeIsolated {
         guard let self, let coordinator = self.coordinator else { return }
         switch name {
-        case NSWorkspace.willSleepNotification: coordinator.send(.willSleep)
-        case NSWorkspace.didWakeNotification: coordinator.send(.waking)
+        case NSWorkspace.willSleepNotification:
+          // Protection timing must stop too, or sleep looks like a peer that went silent.
+          self.apply(self.protection.receive(.suspended, at: MonotonicClock().now()))
+          coordinator.send(.willSleep)
+        case NSWorkspace.didWakeNotification:
+          self.apply(self.protection.receive(.resumed, at: MonotonicClock().now()))
+          coordinator.send(.waking)
         default: coordinator.platformDidChange()
         }
       }

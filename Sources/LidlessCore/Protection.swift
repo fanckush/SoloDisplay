@@ -143,6 +143,10 @@ public struct ControllerProtection: Equatable, Sendable {
     case received(ProtectionMessage)
     case peerFailed(ProtectionRejection)
     case arm(Ownership)
+    /// The machine is going to sleep, and is awake again. Time spent suspended is not evidence
+    /// of a peer that stopped answering, so no deadline may run across it.
+    case suspended
+    case resumed
     /// Ends one suppression cycle. Pairing survives, so the next cycle can arm again.
     case release
     /// Ends the run. No further protection is possible on this link.
@@ -167,6 +171,7 @@ public struct ControllerProtection: Equatable, Sendable {
   private var lease: RecoveryLease?
   private var nextSequence: UInt64 = 1
   private var lastChallengeAt: Instant = 0
+  private var suspended = false
   private var now: Instant
 
   public init(session: String, at now: Instant, timing: ProtectionTiming = .init()) {
@@ -244,8 +249,18 @@ public struct ControllerProtection: Equatable, Sendable {
       lease = nil
       return [.send(message)]
 
+    case .suspended:
+      suspended = true
+      return []
+
+    case .resumed:
+      suspended = false
+      lease?.receive(.resumed, at: now)
+      lastChallengeAt = now
+      return []
+
     case .tick:
-      guard phase == .arming || phase == .protected else { return [] }
+      guard !suspended, phase == .arming || phase == .protected else { return [] }
       guard var current = lease else { return fail(at: now) }
       let expiry = current.receive(.tick, at: now)
       lease = current
@@ -298,6 +313,10 @@ public struct HelperProtection: Equatable, Sendable {
     /// The helper's own current view of the internal panel, never taken from the message.
     /// Passing nil means it cannot see one, which is never grounds to grant protection.
     case witness(PanelTarget?)
+    /// The machine is going to sleep, and is awake again. A suspended controller is not a
+    /// silent one, and a deadline that passed while asleep is not a stalled display call.
+    case suspended
+    case resumed
     /// The controller child is gone. Loss of the pipe alone is not termination evidence.
     case controllerExited
     case tick
@@ -325,6 +344,8 @@ public struct HelperProtection: Equatable, Sendable {
   private var witnessedTarget: PanelTarget?
   private var witnessedAt: Instant?
   private var lastProgressAt: Instant
+  private var suspended = false
+  private var justResumed = false
   private var recoveryRequested = false
   private var now: Instant
 
@@ -341,6 +362,16 @@ public struct HelperProtection: Equatable, Sendable {
     guard phase != .standingDown else { return [] }
 
     switch input {
+    case .suspended:
+      suspended = true
+      return []
+
+    case .resumed:
+      suspended = false
+      lastProgressAt = now
+      justResumed = true
+      return []
+
     case .witness(let target):
       witnessedTarget = target
       witnessedAt = target == nil ? nil : now
@@ -394,10 +425,14 @@ public struct HelperProtection: Equatable, Sendable {
         guard message.ownership == ownership else {
           return revoke(.protocolViolation, at: now)
         }
-        // Heartbeats prove the loop runs. They never prove the display call returned.
-        if let progress = message.progress, now > progress.deadline + timing.stallGrace {
+        // Heartbeats prove the loop runs. They never prove the display call returned. The
+        // first report after a resume carries a deadline set before the machine slept.
+        if let progress = message.progress, !justResumed,
+          now > progress.deadline + timing.stallGrace
+        {
           return revoke(.operationStalled, at: now)
         }
+        justResumed = false
         lastProgressAt = now
         return [.send(next(.acknowledge, at: now, challenge: message.challenge))]
       case (_, .release):
@@ -415,7 +450,8 @@ public struct HelperProtection: Equatable, Sendable {
       }
 
     case .tick:
-      guard phase == .protecting, now - lastProgressAt >= timing.leaseDuration else { return [] }
+      guard !suspended, phase == .protecting, now - lastProgressAt >= timing.leaseDuration
+      else { return [] }
       return revoke(.heartbeatExpired, at: now)
     }
   }
