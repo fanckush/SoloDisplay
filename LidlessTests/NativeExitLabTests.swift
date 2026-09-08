@@ -46,6 +46,17 @@
             reason: .uncaughtSignal, status: SIGKILL, ending: ending))
       }
     }
+    @Test func backendValidationIsItsOwnExplicitCommand() throws {
+      let options = ["--external", "5", "--journal", "/tmp/v.json", "--native-wired-attested"]
+      #expect(
+        try NativeLabCommand.parse(["--lab-validate-backend"] + options)
+          == .validateBackend(external: 5, journal: "/tmp/v.json"))
+      // It cannot be reached without attesting a visible native external.
+      #expect(throws: (any Error).self) {
+        try NativeLabCommand.parse(["--lab-validate-backend"] + options.dropLast())
+      }
+    }
+
     @Test func terminationClassificationDoesNotConfuseSignalsWithNormalExit() {
       #expect(
         NativeExitAuthorization.expectedTermination(reason: .exit, status: 0, ending: .normal))
