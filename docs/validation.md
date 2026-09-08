@@ -287,3 +287,22 @@ Seven faults were found by running the product path, none of which the automated
 - A lease reply that arrived after its cycle ended was treated as a broken peer, so the app quit after a successful manual off and on. Stale replies are now ignored rather than failing the pairing.
 
 Application-scoped suppression is not visible to other processes, so a separate observer still reports the panel present. Verification of these runs came from the controller's own state and from the user watching the screen, not from an outside reading.
+
+### Product path results
+
+All of the following ran through the actual menu on Mac17,9, macOS 26.6.2 build 25G83, with one Dell U3223QE on direct USB-C. Every visibility claim is the user's own observation of the laptop panel.
+
+Passed: mirrored off and on with the mirror relationship and geometry preserved; extended off and on with exact geometry preserved; automatic mode disabling on its own; Keep Internal On and its persistence across a restart; resume automatic; last-external unplug while suppressed, and reconnect; sleep while suppressed waking connected; sleep while suppressed with the cable pulled before waking, and reconnect afterwards; lid close and open; screen lock, display sleep and unlock; normal quit while suppressed; forced controller termination; frozen controller; helper termination; relaunch with unresolved ownership. Fourteen operations in one session with zero faults.
+
+Release was verified separately: it builds, rejects lab commands with exit code 64, runs the real helper and controller pair from the built app, performs a manual off and on, and writes nothing to stderr.
+
+Two further faults were found during these runs, on top of the eight recorded above:
+
+- The controller died by SIGPIPE while writing a heartbeat to a helper that had gone away, which killed it mid-restoration and left an unresolved record. Production now ignores SIGPIPE, and the same test then restored, cleared its own record, and stopped cleanly.
+- Neither process discounted system sleep from its deadlines. Sleeping while suppressed made the controller call its own restore stalled and the helper agree, so waking killed the pair and left Lidless not running. Both now learn about suspension from the OS rather than inferring it from elapsed time, and a submitted call no longer times out while the machine is not awake.
+
+One observation worth recording rather than changing: sleep, lid closure and losing the external all invalidate a prerequisite, so Lidless conservatively restores and then disables again, which shows as a brief flash of the internal panel. Screen lock and display sleep invalidate nothing, so the suppression is simply held and no flash occurs. Display sleep is now an explicit non-reason to restore rather than an incidental one.
+
+### Not tested
+
+Multiple external displays and docks, because no second external or dock is available. Fast user switching and logout, because that needs a second account. The internal panel acting as the mirror source, which the topology classifier refuses, so it stays unavailable. DisplayLink, wireless, and virtual displays, which the transport classifier refuses for want of hardware to confirm against. Other Macs and other macOS builds. UI automation remains unvalidated.

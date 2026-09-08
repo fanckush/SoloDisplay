@@ -13,7 +13,7 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | A. Production recovery and persistence | Implemented and automatically verified, including real paired processes. Not hardware verified. |
 | B. Live coordinator and platform evidence | Implemented and automatically verified. Observation and eligibility confirmed on this Mac's live mirrored setup. Not hardware verified for any display change. |
 | C. Usable controls and diagnostics | Implemented and automatically verified. The pair runs with the real coordinator behind the menu. Not hardware verified: no production display change has been made. |
-| D. Product-path validation and delivery | In progress. Mirrored manual off/on, relaunch reconciliation, and forced controller termination pass through the actual menu with user-confirmed visibility. Extended, unplug, sleep, lid, session, and automatic scenarios remain. |
+| D. Product-path validation and delivery | Hardware verified on the tested Mac for every scenario the available equipment allows. Multiple monitors, docks, and user switching remain untested for want of equipment. Signing, notarization and packaging are still a separate follow-up. |
 
 ## Implemented
 
@@ -60,6 +60,7 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | Mirrored external-source/internal-follower off/on | Passed on second USB-C monitor; original observed mirror relationship and geometry restored, with user-confirmed physical off/on and mirrored image |
 | Mirrored off/on through the product menu | Passed. Three full cycles plus a fourth off, user-confirmed each time. Journal written and cleared, mirror source and geometry preserved. |
 | Relaunch with unresolved ownership, product path | Passed. The helper reconciled a leftover record, restored, verified through the mirror relationship, and cleared it before any controller ran. |
+| Extended off/on through the product menu | Passed. Exact geometry preserved: internal 1512x982 at (0,0) and external 1920x1080 at (-194,-1080), unchanged before and after. |
 | Lid closure and opening, product path | Passed. Closing released the suppression without demanding a lit screen, opening restored eligibility and it disabled again. |
 | Screen lock, display sleep, unlock, product path | Passed. No operation at all: none of these invalidates a prerequisite, so the suppression was simply held and the panel never flashed back on. |
 | Frozen controller, product path | Passed. The helper's lease expired, it killed the stopped controller, confirmed termination, restored with user-confirmed visibility, and cleared the record. This is a stopped user-space process, not an uninterruptible driver call. |
@@ -72,12 +73,14 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | Normal quit while suppressed, product path | Passed. Restored, cleared the record, released protection, and both processes exited. |
 | Helper termination while suppressed, product path | Passed. The responsive controller restored with user-confirmed visibility, cleared its own record, and stopped. |
 | Forced controller termination, product path | Passed. The helper detected contact loss, confirmed termination, took the writer lock, restored with user-confirmed visibility, cleared the record, and exited without starting another disabling controller. |
-| Mirrored sleep, unplug, crash recovery, or internal-source topology | **Not tested** |
-| Multiple externals, dock changes, lid closure, user switching | **Not tested** |
+| Mirrored sleep, unplug, and crash recovery | Passed through the product path, listed individually above. |
+| Internal panel as the mirror source | **Not tested.** The topology classifier refuses it, so it stays unavailable. |
+| Multiple externals and dock changes | **Not tested.** No second external or dock available. |
+| Fast user switching and logout | **Not tested.** Needs a second account. |
 | Production helper/controller pair on real hardware | **Not tested.** The pair runs and recovers in automated tests that perform no display configuration. |
 | Production eligibility on the live mirrored setup | Read-only pass. Transport native, topology supported, panel identified. No display was changed. |
 | Helper loss with the production pair running | Observed on this Mac. The controller exited rather than lingering unsupervised, and a fresh pair started afterwards. Nothing was owned, so no display was changed. |
 
 The dedicated bounded external-loss harness passed its second physical run, recorded in `work/external-unplug-02.log`. The supervisor detected removal and revoked protection; the responsive writer restored without a supervisor enable request. Reconnection happened after writer exit and did not reapply suppression. This validates this bounded experiment, not a production automatic-mode lifecycle or other hardware topologies. The first run expired without removal and remains inconclusive.
 
-Automated checks last passed: 123 package tests and 48 native app tests. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation remains unvalidated because the earlier runner timed out enabling automation. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.
+Automated checks last passed: 126 package tests and 48 native app tests. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation remains unvalidated because the earlier runner timed out enabling automation. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.

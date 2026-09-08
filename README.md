@@ -39,6 +39,20 @@ A normal launch starts two processes. The launched process becomes the supervisi
 
 The Xcode project references the Swift package in this repository using a relative path. It does not depend on the original chat workspace. The existing signing team and bundle identifiers are retained from the user's template. The app identifier is `dev.lidless.Lidless`, with the template spelling corrected at the user's request.
 
+## Supported configurations
+
+Turning the internal display off requires all of these, and the menu names whichever one is missing:
+
+- A positively identified internal panel, an open lid, an awake Mac, and the foreground login session.
+- At least one external display classified as native from IOKit provenance. DisplayLink, wireless, virtual, and anything uncorrelated stay unavailable.
+- A supported arrangement: unmirrored, or the internal panel following one present external mirror source. An internal panel acting as the mirror source is not supported.
+- A recovery helper paired to the controller.
+- A recorded backend validation for this Mac and this macOS build. An OS update invalidates it, and disabling becomes unavailable until it is recorded again.
+
+Verified on a Mac17,9 running macOS 26.6.2 (build 25G83) with one Dell U3223QE on direct USB-C, in both mirrored and extended arrangements. Not verified: multiple external displays, docks, DisplayLink, wireless and virtual displays, fast user switching, logout, and other Macs or macOS builds. See `docs/status.md` for the scenario-by-scenario record.
+
+Known limits. Simultaneous failure of both processes, and an unresponsive OS or display driver, are outside what the recovery design can cover. Suppression is application scoped, so other processes still report the panel as present. Signing, notarization, and Homebrew packaging are not set up.
+
 The development app uses a normal AppKit lifecycle, CoreGraphics callbacks, workspace notifications, and periodic read-only observations. Its event history is bounded and stays in memory. Neither ordinary launch nor refresh changes display settings. The app does not yet execute the controller's effects. Debug builds also contain an explicitly invoked native hardware lab described in the guided procedure; it is unavailable in Release builds and has no normal menu entry.
 
 The app targets macOS 26.0 and Swift 6. App Sandbox is disabled for the planned outside-App-Store display utility; Hardened Runtime remains enabled in the project. Xcode disables Hardened Runtime for the ad-hoc builds below, so they do not validate the final signed runtime. No new entitlements or developer-account operations are added. Release signing and notarization are not configured yet.

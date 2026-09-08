@@ -286,8 +286,12 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     refreshMenu()
   }
 
+  /// Development tracing only. Release builds stay quiet; the user-facing record is the
+  /// sanitized diagnostics export, never this stream.
   private func note(_ message: String) {
-    FileHandle.standardError.write(Data("Lidless controller: \(message)\n".utf8))
+    #if DEBUG
+      FileHandle.standardError.write(Data("Lidless controller: \(message)\n".utf8))
+    #endif
   }
 
   private func mutatePreferences(_ change: (inout Preferences) -> Void) {
