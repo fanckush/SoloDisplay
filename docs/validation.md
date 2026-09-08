@@ -265,3 +265,25 @@ The user clarified that the external monitor physically woke more slowly than th
 - Also corrected the protection machines. Release ended the pairing terminally, so a controller could only ever arm once. Release now ends one suppression cycle and leaves the pairing intact, with a separate shutdown input for ending the run. Without this, a second off/on cycle in one session would have been impossible.
 - Automated checks: 119 package tests and 47 native app tests passed; Debug and Release built; `swift-format` lint is clean; Release still rejects lab commands with exit code 64.
 - Not validated by this milestone: any production display change. The menu correctly reports that turning the internal display off is unavailable, because no backend validation has been recorded on this Mac. Every hardware scenario through the product path remains untested.
+
+## Milestone D: product path on hardware
+
+Guided run on the tested Mac (Mac17,9, macOS 26.6.2 build 25G83) with the Dell U3223QE on USB-C in the user's normal mirrored arrangement: external as mirror source, internal panel as its follower.
+
+- Guided backend validation passed. One off and on round trip, panel observed absent, mirror relationship and geometry restored, user confirmed seeing the laptop screen go off and come back. `BackendValidation` recorded for this Mac, this macOS build, and `SLSConfigureDisplayEnabled`. Nothing else writes that record, and a resolved symbol never sets it.
+- Mirrored manual off and on through the actual menu passed, repeated for three full cycles plus a fourth off, each visually confirmed. The journal is written before the write and cleared only after verified restoration, and the mirror source and geometry come back unchanged.
+- Relaunch with unresolved ownership passed. A leftover record from an earlier failure was reconciled at launch before any controller ran: writer lock taken, identity checked, enable issued, restoration verified through the mirror relationship, record cleared.
+- Forced controller termination passed. With the panel off, the controller was SIGKILLed. The helper detected contact loss, confirmed termination, acquired the writer lock, restored with user-confirmed visibility, cleared the record, and exited without starting another disabling controller.
+
+Seven faults were found by running the product path, none of which the automated suite had caught:
+
+- The journal scope raw value was `"application"` while the record validator accepted only `"app"`, so every production journal write was rejected. The coordinator test had hedged on this exact value because the fake store did not validate; it now validates like the real one.
+- The controller and helper each generated their own session identifier, so the helper rejected every opening frame as wrong-session and pairing never completed. The probe had used one shared literal session, which hid it. The helper now adopts the session from the controller's first frame on the private inherited pipe.
+- The helper never formed its own witness of the claimed panel, so it refused every arm request. It now re-observes the internal panel each second and compares that to the claim, with a staleness bound.
+- Timers ran in the default run loop mode. Holding the menu open runs AppKit's modal tracking loop, which stops those timers, so heartbeats stopped and the helper killed the controller and took over after five seconds. Every timer now runs in common mode.
+- Observations captured the ownership context at dispatch and interpreted it on arrival, so a reading taken just before a disable returned was read as a missing panel and triggered an immediate restore. The reading now happens off the loop and is interpreted on the loop with the context that is current then.
+- The helper's restoration check required an active panel, which a mirrored follower never is, so a correct restoration looked like a failure and kept the record.
+- Launch reconciliation never drove the takeover ordering, so its guard refused the write. Acquiring the exclusive writer lock is the termination evidence when no controller child exists yet, and the sequence now says so explicitly.
+- A lease reply that arrived after its cycle ended was treated as a broken peer, so the app quit after a successful manual off and on. Stale replies are now ignored rather than failing the pairing.
+
+Application-scoped suppression is not visible to other processes, so a separate observer still reports the panel present. Verification of these runs came from the controller's own state and from the user watching the screen, not from an outside reading.
