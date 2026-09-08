@@ -5,12 +5,14 @@ import LidlessPlatform
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private let diagnostics = DiagnosticsModel()
   private var statusItem: NSStatusItem?
   private var diagnosticsWindow: NSWindow?
   private var helper: HelperRuntime?
   private var controller: ControllerRuntime?
+  private var menuIsOpen = false
+  private var rebuildPending = false
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Unit tests exercise the model without starting the platform observer.
@@ -90,8 +92,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     statusItem = item
   }
 
+  func menuWillOpen(_ menu: NSMenu) { menuIsOpen = true }
+
+  func menuDidClose(_ menu: NSMenu) {
+    menuIsOpen = false
+    guard rebuildPending else { return }
+    rebuildPending = false
+    rebuildMenu()
+  }
+
   private func rebuildMenu() {
     guard let controller, let statusItem else { return }
+    // Never swap the menu while someone is clicking in it.
+    guard !menuIsOpen else {
+      rebuildPending = true
+      return
+    }
     let menu = NSMenu()
     for item in controller.items {
       if item.separator {
@@ -115,6 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     addDiagnosticsWindowItem(to: menu)
     // The menu is rebuilt from state, so items never disagree with what the controller believes.
     menu.autoenablesItems = false
+    menu.delegate = self
     statusItem.menu = menu
   }
 
