@@ -8,6 +8,67 @@
 
   @MainActor
   struct NativeRecoveryLabTests {
+    @Test func mirrorFollowerDoesNotNeedActiveFlag() throws {
+      let reading = try mirroredFixture()
+      let baseline = try NativeMirrorBaseline(reading, external: 5)
+      #expect(baseline.target.displayID == 1)
+      #expect(baseline.matches(reading))
+      #expect(throws: (any Error).self) { try NativeLabSafety.baseline(reading, external: 5) }
+    }
+
+    @Test func mirrorVerificationRejectsSourceGeometryAndIdentityChanges() throws {
+      let reading = try mirroredFixture()
+      let baseline = try NativeMirrorBaseline(reading, external: 5)
+      var changed = reading
+      changed.displays.reverse()
+      #expect(baseline.matches(changed))
+      changed = reading
+      changed.displays[0].mirrorSourceID = nil
+      #expect(!baseline.matches(changed))
+      changed = reading
+      changed.displays[1].width += 1
+      #expect(!baseline.matches(changed))
+      changed = reading
+      changed.displays[1].uuid = "replacement"
+      #expect(!baseline.externalUsable(changed, external: 5))
+      changed = reading
+      changed.displays.removeFirst()
+      #expect(!baseline.matches(changed))
+      #expect(baseline.externalUsable(changed, external: 5))
+    }
+
+    @Test func mirrorExperimentRejectsOtherIncomingTopologies() throws {
+      #expect(throws: (any Error).self) { try NativeMirrorBaseline(fixture(), external: 5) }
+      var reading = try mirroredFixture()
+      reading.displays[0].mirrorSourceID = 99
+      #expect(throws: (any Error).self) { try NativeMirrorBaseline(reading, external: 5) }
+      reading = try mirroredFixture()
+      reading.enumerationError = 1
+      #expect(throws: (any Error).self) { try NativeMirrorBaseline(reading, external: 5) }
+    }
+
+    @Test func mirrorCommandsKeepRehearsalsDistinct() throws {
+      let options = ["--external", "5", "--journal", "/tmp/mirror.json", "--native-wired-attested"]
+      for rehearsal in [false, true] {
+        let suffix = rehearsal ? "-rehearsal" : ""
+        #expect(
+          try NativeLabCommand.parse(["--lab-mirror" + suffix] + options)
+            == .failure(
+              external: 5, journal: "/tmp/mirror.json", ending: .mirror, rehearsal: rehearsal))
+        #expect(
+          try NativeLabCommand.parse(["--lab-mirror-writer" + suffix] + options)
+            == .mirrorWriter(external: 5, journal: "/tmp/mirror.json", rehearsal: rehearsal))
+      }
+    }
+
+    private func mirroredFixture() throws -> PlatformReading {
+      var reading = try fixture()
+      reading.displays[0].active = false
+      reading.displays[0].mirrored = true
+      reading.displays[0].mirrorSourceID = 5
+      reading.displays[1].mirrored = true
+      return reading
+    }
     @Test func ordinaryLaunchNeverSelectsAHardwareExperiment() throws {
       #expect(try NativeLabCommand.parse([]) == nil)
       #expect(try NativeLabCommand.parse(["--diagnostics"]) == nil)
