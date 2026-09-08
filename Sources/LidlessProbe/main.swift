@@ -155,7 +155,7 @@ do { try controller.run() } catch { fail("cannot start the controller child: \(e
 try? commands.fileHandleForReading.close()
 try? replies.fileHandleForWriting.close()
 
-var protection = HelperProtection(session: "probe-session", at: now(), timing: timing)
+var protection = HelperProtection(at: now(), timing: timing)
 var takeover = RecoveryTakeover()
 var lock: SessionWriterLock?
 var acknowledged = 0
@@ -244,7 +244,8 @@ emit("helper-started")
 }
 
 // The helper's own independent witness, not the controller's claim.
-apply(protection.receive(.witnessMatches(scenario != "unwitnessed"), at: now()))
+apply(
+  protection.receive(HelperProtection.Input.witnessMatches(scenario != "unwitnessed"), at: now()))
 
 while now() < deadline {
   do {

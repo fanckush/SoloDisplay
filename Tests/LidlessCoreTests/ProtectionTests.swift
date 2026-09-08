@@ -18,7 +18,7 @@ private struct Pair {
 
   init(at now: Instant = 0, timing: ProtectionTiming = .init(), witnessed: Bool = true) {
     controller = .init(session: "s", at: now, timing: timing)
-    helper = .init(session: "s", at: now, timing: timing)
+    helper = .init(at: now, timing: timing)
     helper.receive(.witnessMatches(witnessed), at: now)
   }
 
@@ -274,5 +274,48 @@ struct ProtectionTests {
     let fault = ProtectionMessage(session: "s", sender: .helper, sequence: 99, kind: .fault)
     #expect(pair.controller.receive(.received(fault), at: 1_000) == [.protectionLost])
     #expect(!pair.controller.protects(at: 1_000))
+  }
+
+  @Test func theHelperAdoptsTheSessionFromTheOpeningFrame() {
+    // Both sides generate their own identity in production, so the helper cannot be told the
+    // session up front. It comes from the first frame on the private inherited pipe.
+    var controller = ControllerProtection(session: "controller-chosen", at: 0)
+    var helper = HelperProtection(at: 0)
+    #expect(helper.session == nil)
+    guard case .send(let hello)? = controller.receive(.start, at: 0).first else {
+      Issue.record("expected an opening frame")
+      return
+    }
+    let reply = helper.receive(.received(hello), at: 0)
+    #expect(helper.session == "controller-chosen")
+    #expect(helper.phase == .paired)
+    guard case .send(let witness)? = reply.first else {
+      Issue.record("expected a witness reply")
+      return
+    }
+    #expect(witness.session == "controller-chosen")
+    #expect(controller.receive(.received(witness), at: 0).isEmpty)
+    #expect(controller.phase == .paired)
+  }
+
+  @Test func aSecondSessionOnTheSamePipeIsRejected() {
+    var helper = HelperProtection(at: 0)
+    let hello = ProtectionMessage(
+      session: "first", sender: .controller, sequence: 1, kind: .hello)
+    #expect(!helper.receive(.received(hello), at: 0).isEmpty)
+    let intruder = ProtectionMessage(
+      session: "second", sender: .controller, sequence: 2, challenge: 1, kind: .arm,
+      ownership: owned)
+    // Nothing was armed, so there is nothing to recover; it stands down rather than writing.
+    #expect(helper.receive(.received(intruder), at: 1) == [.standDown])
+  }
+
+  @Test func anOpeningFrameThatIsNotAHelloEstablishesNothing() {
+    var helper = HelperProtection(at: 0)
+    let premature = ProtectionMessage(
+      session: "x", sender: .controller, sequence: 1, challenge: 1, kind: .arm, ownership: owned)
+    #expect(helper.receive(.received(premature), at: 0) == [.standDown])
+    #expect(helper.session == nil)
+    #expect(helper.ownership == nil)
   }
 }

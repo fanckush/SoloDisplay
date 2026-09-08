@@ -307,26 +307,26 @@ public struct HelperProtection: Equatable, Sendable {
     case standDown
   }
 
-  public let session: String
+  /// Adopted from the controller's first frame. Only the actual child inherits this pipe, so
+  /// the pairing's identity comes from the pipe rather than from a name both sides guessed.
+  public private(set) var session: String?
   public let timing: ProtectionTiming
   public private(set) var phase: Phase = .pairing
   public private(set) var ownership: Ownership?
   public private(set) var reason: Reason?
 
-  private var inbox: ProtectionInbox
+  private var inbox: ProtectionInbox?
   private var nextSequence: UInt64 = 1
   private var witnessed = false
   private var lastProgressAt: Instant
   private var recoveryRequested = false
   private var now: Instant
 
-  public init(session: String, at now: Instant, timing: ProtectionTiming = .init()) {
-    precondition(!session.isEmpty && now >= 0)
-    self.session = session
+  public init(at now: Instant, timing: ProtectionTiming = .init()) {
+    precondition(now >= 0)
     self.timing = timing
     self.now = now
     lastProgressAt = now
-    inbox = .init(session: session, peer: .controller)
   }
 
   @discardableResult public mutating func receive(_ input: Input, at now: Instant) -> [Output] {
@@ -344,14 +344,29 @@ public struct HelperProtection: Equatable, Sendable {
       return revoke(.controllerExited, at: now)
 
     case .peerFailed(let rejection):
-      inbox.close(rejection)
+      inbox?.close(rejection)
       // A closed pipe is lost contact, not confirmed termination. Takeover still proves that.
       return revoke(rejection == .disconnected ? .contactLost : .protocolViolation, at: now)
 
     case .received(let raw):
-      guard let message = try? inbox.accept(raw) else {
+      if inbox == nil {
+        // The opening frame establishes this pairing's session. Everything after it is
+        // validated against that session as strictly as any other stream.
+        guard phase == .pairing, raw.kind == .hello, raw.wellFormed else {
+          return revoke(.protocolViolation, at: now)
+        }
+        var fresh = ProtectionInbox(session: raw.session, peer: .controller)
+        guard (try? fresh.accept(raw)) != nil else { return revoke(.protocolViolation, at: now) }
+        session = raw.session
+        inbox = fresh
+        phase = .paired
+        return [.send(next(.witness, at: now))]
+      }
+      guard var open = inbox, let message = try? open.accept(raw) else {
+        inbox?.close(.malformed)
         return revoke(.protocolViolation, at: now)
       }
+      inbox = open
       switch (phase, message.kind) {
       case (.pairing, .hello):
         phase = .paired
@@ -414,6 +429,6 @@ public struct HelperProtection: Equatable, Sendable {
     let sequence = nextSequence
     nextSequence += 1
     return .init(
-      session: session, sender: .helper, sequence: sequence, challenge: challenge, kind: kind)
+      session: session ?? "", sender: .helper, sequence: sequence, challenge: challenge, kind: kind)
   }
 }
