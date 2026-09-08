@@ -50,6 +50,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       writerLock = try? SessionWriterLock(loginID: loginID)
     }
     lockUnavailable = writerLock == nil
+    note(
+      "login=\(reading.loginID.map(String.init) ?? "nil") lock=\(writerLock != nil) validation=\(validation != nil)")
 
     var state = ControllerState(mode: preferences.mode)
     // Automatic mode resumes from preferences, but a paused choice stays paused across restarts.
@@ -165,6 +167,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       protection.phase == .paired || protection.phase == .arming
       || protection.phase == .protected
     if pairedNow != paired {
+      note("protection phase=\(protection.phase) paired=\(pairedNow) lockUnavailable=\(lockUnavailable)")
       paired = pairedNow
       coordinator?.send(.protectionAvailable(pairedNow && !lockUnavailable))
     }
@@ -259,6 +262,10 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     // cached copy back, so nothing here can clobber another field.
     preferences = preferencesStore?.load() ?? preferences
     refreshMenu()
+  }
+
+  private func note(_ message: String) {
+    FileHandle.standardError.write(Data("Lidless controller: \(message)\n".utf8))
   }
 
   private func mutatePreferences(_ change: (inout Preferences) -> Void) {

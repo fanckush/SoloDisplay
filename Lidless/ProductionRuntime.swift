@@ -31,12 +31,11 @@ final class HelperRuntime {
   private var takeover = RecoveryTakeover()
   private var timer: Timer?
   private var recovering = false
-  private let session = UUID().uuidString
 
   init(executable: URL, store: ProductionJournalStore) {
     self.executable = executable
     self.store = store
-    protection = .init(session: session, at: Self.now())
+    protection = .init(at: Self.now())
   }
 
   static func now() -> Instant { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
