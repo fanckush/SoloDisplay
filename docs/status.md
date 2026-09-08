@@ -60,6 +60,12 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | Mirrored external-source/internal-follower off/on | Passed on second USB-C monitor; original observed mirror relationship and geometry restored, with user-confirmed physical off/on and mirrored image |
 | Mirrored off/on through the product menu | Passed. Three full cycles plus a fourth off, user-confirmed each time. Journal written and cleared, mirror source and geometry preserved. |
 | Relaunch with unresolved ownership, product path | Passed. The helper reconciled a leftover record, restored, verified through the mirror relationship, and cleared it before any controller ran. |
+| Automatic mode disabling on its own | Passed. Selecting Automatic turned the panel off within the stability window, user confirmed. |
+| Unplug last external while suppressed, product path | Passed. Restoration was immediate and undebounced, user confirmed the panel came back. |
+| Reconnect after that recovery, product path | Passed. A fresh stability window ran before it disabled again. |
+| Keep Internal On, and its persistence | Passed. The panel came back and stayed on across unplug and replug, and the paused choice survived a full restart with no disable attempted. |
+| Normal quit while suppressed, product path | Passed. Restored, cleared the record, released protection, and both processes exited. |
+| Helper termination while suppressed, product path | Passed. The responsive controller restored with user-confirmed visibility, cleared its own record, and stopped. |
 | Forced controller termination, product path | Passed. The helper detected contact loss, confirmed termination, took the writer lock, restored with user-confirmed visibility, cleared the record, and exited without starting another disabling controller. |
 | Mirrored sleep, unplug, crash recovery, or internal-source topology | **Not tested** |
 | Multiple externals, dock changes, lid closure, user switching | **Not tested** |
