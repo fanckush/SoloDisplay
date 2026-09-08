@@ -217,8 +217,12 @@ public struct ControllerProtection: Equatable, Sendable {
         return []
       case (_, .fault):
         return fail(at: now)
+      case (_, .armed), (_, .acknowledge):
+        // A reply for a cycle that has already ended is stale, not evidence of a broken peer.
+        // It cannot grant anything either, because only an armed lease is consulted.
+        return []
       default:
-        // An in-shape message in the wrong phase is still a broken peer.
+        // Any other in-shape message in the wrong phase is still a broken peer.
         return fail(at: now)
       }
 

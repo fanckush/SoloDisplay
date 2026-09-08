@@ -318,4 +318,27 @@ struct ProtectionTests {
     #expect(helper.session == nil)
     #expect(helper.ownership == nil)
   }
+
+  @Test func aLateAcknowledgementAfterReleaseDoesNotBreakThePairing() throws {
+    var pair = Pair()
+    pair.establish()
+    // Ask for a renewal but hold the helper's reply, the way one can still be in flight.
+    var held: ProtectionMessage?
+    for output in pair.controller.receive(.tick, at: 1_000) {
+      guard case .send(let message) = output else { continue }
+      for reply in pair.helper.receive(.received(message), at: 1_000) {
+        if case .send(let answer) = reply { held = answer }
+      }
+    }
+    let stale = try #require(held)
+
+    pair.pump(pair.controller.receive(.release, at: 1_100), at: 1_100)
+    #expect(pair.controller.receive(.received(stale), at: 1_200).isEmpty)
+    #expect(pair.controller.phase == .paired)
+    #expect(!pair.lost)
+    // It grants nothing either: protection still requires a fresh arm.
+    #expect(!pair.controller.protects(at: 1_200))
+    pair.pump(pair.controller.receive(.arm(owned), at: 2_000), at: 2_000)
+    #expect(pair.controller.protects(at: 2_000))
+  }
 }
