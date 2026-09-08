@@ -12,7 +12,7 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | --- | --- |
 | A. Production recovery and persistence | Implemented and automatically verified, including real paired processes. Not hardware verified. |
 | B. Live coordinator and platform evidence | Implemented and automatically verified. Observation and eligibility confirmed on this Mac's live mirrored setup. Not hardware verified for any display change. |
-| C. Usable controls and diagnostics | Not started. |
+| C. Usable controls and diagnostics | Implemented and automatically verified. The pair runs with the real coordinator behind the menu. Not hardware verified: no production display change has been made. |
 | D. Product-path validation and delivery | Not started. Depends on B and C. |
 
 ## Implemented
@@ -26,15 +26,16 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 - Production coordinator around the pure reducer. Decisions happen one event at a time; every synchronous platform call runs on one serial lane, so a stalled display call cannot block the event loop and no callback ever configures a display. The executor repeats the full eligibility check immediately before writing, and a refusal before the call is distinguished from a call that failed.
 - Native transport classification from IOKit provenance. A display counts as native only when it correlates to a display service hanging off the SoC display pipeline. Names, active flags, and operator attestation are not inputs.
 - Mirror topology classification. An internal follower of one present external source is supported; an internal mirror source or an unresolvable set is not. An inactive follower is read as presence, never as suppression.
+- Menu-bar controls driven by the coordinator: status with a specific reason for every refusal, manual and automatic selection, turn off and on, keep on and resume, retry recovery, launch at login, sanitized diagnostics export, and quit that requests restoration first. Automatic mode stays locked until a manual off and verified restoration has actually worked on this Mac.
+- Bounded replay diagnostics fed by production events, capped at 10,000 events and 5 MB, exported with export-local pseudonyms and never uploaded. No raw lab log is offered as a user-facing export.
+- A controller that loses its supervising helper finishes anything it owes and then exits, so an unsupervised process cannot hold the writer lock and block a fresh pair.
 - Read-only native menu-bar app with callbacks, lifecycle notifications, and periodic observations, now hosted in the controller process.
 - Conservative platform normalization and shadow controller integration. No ordinary app display effects execute.
 - Debug-only native experiments with a live pre-armed supervisor and durable journal. The bounded writer uses the lease model, and supervisor writes pass through the takeover ordering guard.
 
 ## Still required before normal display controls
 
-- A recorded backend validation. `backendValidated` is the last remaining gate on this Mac, and nothing writes that record yet, so normal launches still cannot disable a display.
-- Wiring the coordinator to the menu shell, workspace notifications, and display callbacks. The coordinator exists but no production process runs it yet.
-- Milestone C: guarded manual controls, then automatic mode, optional launch at login, production diagnostics export, and quit with restoration requested.
+- A recorded backend validation. `backendValidated` is the last remaining gate on this Mac, and nothing writes that record yet, so the menu correctly reports that turning the display off is unavailable. Writing one requires a guided round trip, which is Milestone D work.
 - Milestone D: repeating the recovery matrix through the actual menu controls with user-confirmed visibility.
 - Distribution signing, notarization, and Homebrew packaging.
 
@@ -61,7 +62,8 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | Multiple externals, dock changes, lid closure, user switching | **Not tested** |
 | Production helper/controller pair on real hardware | **Not tested.** The pair runs and recovers in automated tests that perform no display configuration. |
 | Production eligibility on the live mirrored setup | Read-only pass. Transport native, topology supported, panel identified. No display was changed. |
+| Helper loss with the production pair running | Observed on this Mac. The controller exited rather than lingering unsupervised, and a fresh pair started afterwards. Nothing was owned, so no display was changed. |
 
 The dedicated bounded external-loss harness passed its second physical run, recorded in `work/external-unplug-02.log`. The supervisor detected removal and revoked protection; the responsive writer restored without a supervisor enable request. Reconnection happened after writer exit and did not reapply suppression. This validates this bounded experiment, not a production automatic-mode lifecycle or other hardware topologies. The first run expired without removal and remains inconclusive.
 
-Automated checks last passed: 110 package tests and 36 native app tests. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation remains unvalidated because the earlier runner timed out enabling automation. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.
+Automated checks last passed: 119 package tests and 47 native app tests. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation remains unvalidated because the earlier runner timed out enabling automation. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.

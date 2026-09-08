@@ -143,7 +143,10 @@ public struct ControllerProtection: Equatable, Sendable {
     case received(ProtectionMessage)
     case peerFailed(ProtectionRejection)
     case arm(Ownership)
+    /// Ends one suppression cycle. Pairing survives, so the next cycle can arm again.
     case release
+    /// Ends the run. No further protection is possible on this link.
+    case shutdown
     case tick
   }
 
@@ -228,9 +231,10 @@ public struct ControllerProtection: Equatable, Sendable {
       lastChallengeAt = now
       return [.send(next(.arm, at: now, challenge: 1, ownership: owned))]
 
-    case .release:
+    case .release, .shutdown:
       let message = next(.release, at: now)
-      phase = .released
+      // Releasing ends a cycle, not the pairing. Only shutdown makes this link terminal.
+      phase = input == .shutdown ? .released : .paired
       ownership = nil
       progress = nil
       lease = nil
@@ -372,9 +376,12 @@ public struct HelperProtection: Equatable, Sendable {
         lastProgressAt = now
         return [.send(next(.acknowledge, at: now, challenge: message.challenge))]
       case (_, .release):
-        // The controller reports its own panel restored. Nothing remains for the helper.
+        // The controller reports its own panel restored. Nothing remains to recover, but the
+        // pairing stands so a later cycle can arm again.
         ownership = nil
-        phase = .standingDown
+        reason = nil
+        recoveryRequested = false
+        phase = .paired
         return [.standDown]
       case (_, .fault):
         return revoke(.protocolViolation, at: now)

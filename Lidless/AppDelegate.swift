@@ -57,35 +57,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let runtime = ControllerRuntime(
       link: ProtectionLink(input: .standardInput, output: .standardOutput))
     controller = runtime
+    installStatusItem()
+    runtime.onMenuChanged = { [weak self] in self?.rebuildMenu() }
     runtime.start()
-    presentInterface(status: runtime.availability.explanation)
+    rebuildMenu()
+    if ProcessInfo.processInfo.arguments.contains("--diagnostics") { showDiagnostics() }
   }
 
+  /// Explicitly unprotected: the read-only interface, with display control unavailable.
   private func startUnprotectedInterface() {
     NSApp.setActivationPolicy(.accessory)
-    presentInterface(
-      status: "Lidless is running without its recovery helper, so display control is unavailable.")
+    diagnostics.start()
+    installStatusItem()
+    let menu = NSMenu()
+    menu.addItem(
+      withTitle: "Lidless is running without its recovery helper", action: nil, keyEquivalent: "")
+    menu.addItem(
+      withTitle: "Turning the internal display off is unavailable.", action: nil, keyEquivalent: "")
+    menu.addItem(.separator())
+    addDiagnosticsWindowItem(to: menu)
+    let quit = menu.addItem(withTitle: "Quit Lidless", action: #selector(quit), keyEquivalent: "q")
+    quit.target = self
+    statusItem?.menu = menu
+    if ProcessInfo.processInfo.arguments.contains("--diagnostics") { showDiagnostics() }
   }
 
-  private func presentInterface(status: String?) {
-    diagnostics.start()
+  private func installStatusItem() {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.button?.image = NSImage(
       systemSymbolName: "laptopcomputer", accessibilityDescription: "Lidless")
-    item.button?.toolTip = "Lidless: development build"
+    item.button?.toolTip = "Lidless"
+    statusItem = item
+  }
+
+  private func rebuildMenu() {
+    guard let controller, let statusItem else { return }
     let menu = NSMenu()
-    menu.addItem(
-      withTitle: status ?? "Display control is not enabled", action: nil, keyEquivalent: "")
+    for item in controller.items {
+      if item.separator {
+        menu.addItem(.separator())
+        continue
+      }
+      guard let action = item.action else {
+        let entry = menu.addItem(withTitle: item.title, action: nil, keyEquivalent: "")
+        entry.isEnabled = false
+        continue
+      }
+      let entry = menu.addItem(
+        withTitle: item.title, action: #selector(performMenuAction(_:)),
+        keyEquivalent: action == .quit ? "q" : "")
+      entry.target = self
+      entry.isEnabled = item.enabled
+      entry.state = item.checked ? .on : .off
+      entry.representedObject = action.rawValue
+    }
     menu.addItem(.separator())
+    addDiagnosticsWindowItem(to: menu)
+    // The menu is rebuilt from state, so items never disagree with what the controller believes.
+    menu.autoenablesItems = false
+    statusItem.menu = menu
+  }
+
+  private func addDiagnosticsWindowItem(to menu: NSMenu) {
     let show = menu.addItem(
       withTitle: "Display Diagnostics…", action: #selector(showDiagnostics), keyEquivalent: "")
     show.target = self
-    menu.addItem(.separator())
-    let quit = menu.addItem(withTitle: "Quit Lidless", action: #selector(quit), keyEquivalent: "q")
-    quit.target = self
-    item.menu = menu
-    statusItem = item
-    if ProcessInfo.processInfo.arguments.contains("--diagnostics") { showDiagnostics() }
+    show.isEnabled = true
+  }
+
+  @objc private func performMenuAction(_ sender: NSMenuItem) {
+    guard let raw = sender.representedObject as? String, let action = MenuAction(rawValue: raw)
+    else { return }
+    controller?.perform(action)
   }
 
   private func runLabCommand(_ arguments: [String]) {
@@ -121,6 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       window.isReleasedWhenClosed = false
       window.center()
       diagnosticsWindow = window
+      diagnostics.start()
     }
     diagnosticsWindow?.makeKeyAndOrderFront(nil)
     NSApp.activate(ignoringOtherApps: true)
@@ -128,8 +172,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   @objc private func quit() { NSApp.terminate(nil) }
 
+  /// Quit requests restoration first. The app exits once nothing is unresolved, and the helper
+  /// keeps recovery responsibility if this process goes away before that happens.
+  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard let controller else { return .terminateNow }
+    return controller.beginQuit() ? .terminateNow : .terminateLater
+  }
+
   func applicationWillTerminate(_ notification: Notification) {
-    // Releasing protection before exit tells the helper there is nothing left to recover.
     controller?.stop()
     diagnostics.stop()
     if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
