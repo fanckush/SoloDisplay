@@ -5,6 +5,7 @@ import Testing
 @Test func shadowCannotAcknowledgeItsOwnJournalOrExecuteEffects() {
   var shadow = ShadowController()
   shadow.receive(.selectMode(.automatic), at: 0)
+  shadow.receive(.protectionAvailable(true), at: 0)
   shadow.observe(environment(), at: 0)
   shadow.observe(environment(), at: 2_000)
   #expect(shadow.state.operation?.phase == .journaling)
