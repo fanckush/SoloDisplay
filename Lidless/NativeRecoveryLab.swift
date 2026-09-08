@@ -225,7 +225,10 @@
     }
 
     func report(_ label: String) throws {
-      let reading = DisplayObserver.read()
+      // Reflect what production would see, including any recorded backend validation.
+      let reading = DisplayObserver.read(
+        validation: (try? BackendValidationStore())?.current(
+          symbolName: PrivateDisplayAPI().symbolName))
       let batch = monitor.drain()
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
