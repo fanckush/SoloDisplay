@@ -175,6 +175,8 @@
       let callbacks: [DisplayChangeEvent]
       let droppedCallbacks: Int
       let reading: PlatformReading
+      /// What the production normalization makes of this reading, with no ownership context.
+      let environment: Environment
     }
 
     func run(_ command: NativeLabCommand) async -> Int32 {
@@ -224,7 +226,8 @@
       let data = try encoder.encode(
         Report(
           label: label, processID: getpid(), parentPID: getppid(),
-          callbacks: batch.events, droppedCallbacks: batch.dropped, reading: reading))
+          callbacks: batch.events, droppedCallbacks: batch.dropped, reading: reading,
+          environment: ControllerObservation.environment(reading, power: .awake)))
       print(String(decoding: data, as: UTF8.self))
       fflush(stdout)
     }

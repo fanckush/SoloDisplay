@@ -11,7 +11,7 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | Milestone | Status |
 | --- | --- |
 | A. Production recovery and persistence | Implemented and automatically verified, including real paired processes. Not hardware verified. |
-| B. Live coordinator and platform evidence | Not started. |
+| B. Live coordinator and platform evidence | Implemented and automatically verified. Observation and eligibility confirmed on this Mac's live mirrored setup. Not hardware verified for any display change. |
 | C. Usable controls and diagnostics | Not started. |
 | D. Product-path validation and delivery | Not started. Depends on B and C. |
 
@@ -23,15 +23,17 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 - Production process ownership. A normal launch becomes the supervising helper, which launches its controller child over inherited private pipes. Both are the same app executable with real AppKit event loops. Production entry points are separate from the Debug-only lab commands and are rejected in Release only for the lab ones.
 - Production journal in the app's Application Support directory, created exclusively with 0600 permissions inside a 0700 directory, synchronized to disk before use, and carrying schema version, run and operation identity, boot and login identity, target, configuration scope, and the observed topology.
 - Launch reconciliation. Unresolved ownership for this boot and login is restored under the takeover ordering before any controller runs. A prior boot or login is cleared only after an active built-in panel is observed. Corrupt, unsupported, contradicted, or unidentifiable records are retained with an explanation and inhibit disabling.
+- Production coordinator around the pure reducer. Decisions happen one event at a time; every synchronous platform call runs on one serial lane, so a stalled display call cannot block the event loop and no callback ever configures a display. The executor repeats the full eligibility check immediately before writing, and a refusal before the call is distinguished from a call that failed.
+- Native transport classification from IOKit provenance. A display counts as native only when it correlates to a display service hanging off the SoC display pipeline. Names, active flags, and operator attestation are not inputs.
+- Mirror topology classification. An internal follower of one present external source is supported; an internal mirror source or an unresolvable set is not. An inactive follower is read as presence, never as suppression.
 - Read-only native menu-bar app with callbacks, lifecycle notifications, and periodic observations, now hosted in the controller process.
 - Conservative platform normalization and shadow controller integration. No ordinary app display effects execute.
 - Debug-only native experiments with a live pre-armed supervisor and durable journal. The bounded writer uses the lease model, and supervisor writes pass through the takeover ordering guard.
 
 ## Still required before normal display controls
 
-- Milestone B: the production coordinator around the pure reducer, with a serial execution lane for synchronous private calls, protection and persistence events, and structured platform evidence.
-- Native external transport classification. Raw active flags and user attestation in a lab are not an automatic runtime classifier.
-- Validated sleep, wake, lid, and session policy. Shadow power evidence remains conservative; wake notifications do not establish a physically usable external display.
+- A recorded backend validation. `backendValidated` is the last remaining gate on this Mac, and nothing writes that record yet, so normal launches still cannot disable a display.
+- Wiring the coordinator to the menu shell, workspace notifications, and display callbacks. The coordinator exists but no production process runs it yet.
 - Milestone C: guarded manual controls, then automatic mode, optional launch at login, production diagnostics export, and quit with restoration requested.
 - Milestone D: repeating the recovery matrix through the actual menu controls with user-confirmed visibility.
 - Distribution signing, notarization, and Homebrew packaging.
@@ -58,7 +60,8 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 | Mirrored sleep, unplug, crash recovery, or internal-source topology | **Not tested** |
 | Multiple externals, dock changes, lid closure, user switching | **Not tested** |
 | Production helper/controller pair on real hardware | **Not tested.** The pair runs and recovers in automated tests that perform no display configuration. |
+| Production eligibility on the live mirrored setup | Read-only pass. Transport native, topology supported, panel identified. No display was changed. |
 
 The dedicated bounded external-loss harness passed its second physical run, recorded in `work/external-unplug-02.log`. The supervisor detected removal and revoked protection; the responsive writer restored without a supervisor enable request. Reconnection happened after writer exit and did not reapply suppression. This validates this bounded experiment, not a production automatic-mode lifecycle or other hardware topologies. The first run expired without removal and remains inconclusive.
 
-Automated checks last passed: 79 package tests and 36 native app tests. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation remains unvalidated because the earlier runner timed out enabling automation. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.
+Automated checks last passed: 110 package tests and 36 native app tests. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation remains unvalidated because the earlier runner timed out enabling automation. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.

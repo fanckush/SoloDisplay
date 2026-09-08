@@ -41,6 +41,8 @@ public struct PlatformReading: Codable, Sendable {
   public var foregroundSession: Fact
   public var privateSymbol: String?
   public var backendValidated = false
+  /// Kept verbatim so a transport decision can be inspected rather than taken on trust.
+  public var transportEvidence: [TransportEvidence] = []
   public var limitations: [String]
 
   public var mirroringDetected: Bool { displays.contains(where: \.mirrored) }
@@ -55,7 +57,9 @@ public struct PlatformReading: Codable, Sendable {
 }
 
 public enum DisplayObserver {
-  public static func read() -> PlatformReading {
+  /// `validation` is supplied by the coordinator after loading a recorded round trip. Callers
+  /// that omit it get an explicitly unvalidated backend, which inhibits disabling.
+  public static func read(validation: BackendValidation? = nil) -> PlatformReading {
     let start = Int64(ProcessInfo.processInfo.systemUptime * 1_000)
     var count: UInt32 = 0
     let countResult = CGGetOnlineDisplayList(0, nil, &count)
@@ -63,6 +67,11 @@ public enum DisplayObserver {
     var ids = [CGDirectDisplayID](repeating: 0, count: max(Int(count) + 8, 16))
     let result = CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count)
     let error = countResult != .success ? countResult : result
+    let evidence =
+      error == .success
+      ? DisplayTransportClassifier.evidence(
+        for: ids.prefix(Int(count)).map { ($0, CGDisplayIsBuiltin($0) != 0) })
+      : []
     let displays: [DisplayReading] =
       error == .success
       ? ids.prefix(Int(count)).map { id in
@@ -78,7 +87,8 @@ public enum DisplayObserver {
             ? nil : CGDisplayMirrorsDisplay(id),
           width: Int(bounds.width), height: Int(bounds.height), originX: Int(bounds.origin.x),
           originY: Int(bounds.origin.y),
-          modeAvailable: CGDisplayCopyDisplayMode(id) != nil)
+          modeAvailable: CGDisplayCopyDisplayMode(id) != nil,
+          transport: (evidence.first { $0.displayID == id }?.transport ?? .unclassified).rawValue)
       } : []
 
     let root = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPMrootDomain"))
@@ -136,6 +146,9 @@ public enum DisplayObserver {
       displays: displays, lid: lid, bootID: bootID,
       loginID: sessionResult == errSecSuccess ? loginID : nil,
       foregroundSession: foreground, privateSymbol: api.symbolName,
-      limitations: limitations)
+      backendValidated: validation?.covers(
+        osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+        hardwareModel: BackendValidation.hardwareModel(), symbolName: api.symbolName) ?? false,
+      transportEvidence: evidence, limitations: limitations)
   }
 }

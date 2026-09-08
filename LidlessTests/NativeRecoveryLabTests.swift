@@ -180,7 +180,7 @@
         #"""
         {"schemaVersion":1,"osVersion":"synthetic","monotonicMilliseconds":100,
          "lid":"open","bootID":"synthetic-boot","loginID":42,"foregroundSession":"yes",
-         "backendValidated":false,"limitations":[],"displays":[
+         "backendValidated":false,"limitations":[],"transportEvidence":[],"displays":[
           {"id":1,"uuid":"synthetic-panel","uuidResolvedID":1,"builtIn":true,"active":true,
            "online":true,"asleep":false,"mirrored":false,"width":1512,"height":982,
            "originX":0,"originY":0,"modeAvailable":true,"transport":"unclassified"},

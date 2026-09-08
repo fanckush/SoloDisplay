@@ -15,7 +15,9 @@ import Testing
 }
 
 @Test func exportRemovesIdentifiersButPreservesDecisions() throws {
-  var recorder = TraceRecorder(initial: .init(mode: .automatic))
+  var initial = ControllerState(mode: .automatic)
+  initial.protectionAvailable = true
+  var recorder = TraceRecorder(initial: initial)
   var reading = environment()
   reading.panel = .init(
     displayID: 875, displayUUID: "sensitive-uuid", bootID: "sensitive-boot", loginID: 91234)

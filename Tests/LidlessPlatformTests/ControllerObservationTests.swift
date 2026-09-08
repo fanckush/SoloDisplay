@@ -15,14 +15,96 @@ private func snapshot() -> PlatformReading {
     privateSymbol: "available", limitations: [])
 }
 
-@Test func rawFlagsNeverGrantProductionAuthority() {
+private func external(
+  id: UInt32 = 5, transport: DisplayTransport, mirrored: Bool = false, source: UInt32? = nil
+) -> DisplayReading {
+  .init(
+    id: id, uuid: "external-\(id)", uuidResolvedID: id, builtIn: false, active: true,
+    online: true, asleep: false, mirrored: mirrored, mirrorSourceID: source, width: 1920,
+    height: 1080, originX: 0, originY: -1080, modeAvailable: true, transport: transport.rawValue)
+}
+
+@Test func aFoundPrivateSymbolIsNotAValidatedBackend() {
+  let reading = snapshot()
+  #expect(reading.privateSymbol != nil)
+  // The symbol resolves, but nothing has established that the call does what it claims.
+  #expect(ControllerObservation.environment(reading, power: .awake).backendValidated == .unknown)
+  var validated = reading
+  validated.backendValidated = true
+  #expect(ControllerObservation.environment(validated, power: .awake).backendValidated == .yes)
+}
+
+@Test func onlyPositivelyClassifiedNativeExternalsCount() {
   var reading = snapshot()
-  reading.backendValidated = true
+  // No external at all is a definite no, not an unknown.
+  #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .no)
+
+  reading.displays.append(external(transport: .unclassified))
+  #expect(
+    ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .unknown)
+
+  reading.displays[1] = external(transport: .virtual)
+  #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .no)
+
+  reading.displays[1] = external(transport: .native)
+  #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .yes)
+
+  // One unclassified display among natives is enough to withhold authorization.
+  reading.displays.append(external(id: 6, transport: .unclassified))
+  #expect(
+    ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .unknown)
+}
+
+@Test func anInternalFollowerOfOnePresentSourceIsASupportedMirror() {
+  var reading = snapshot()
+  reading.displays[0].mirrored = true
+  reading.displays[0].active = false
+  reading.displays[0].mirrorSourceID = 5
+  reading.displays.append(external(transport: .native, mirrored: true))
   let environment = ControllerObservation.environment(reading, power: .awake)
+  #expect(environment.supportedTopology == .yes)
+  // An inactive follower is presence, not suppression and not a failed restoration.
   #expect(environment.panelState == .enabled)
-  #expect(environment.backendValidated == .unknown)
-  #expect(environment.nativeExternalAvailable == .unknown)
-  #expect(environment.supportedTopology == .unknown)
+}
+
+@Test func anInternalMirrorSourceOrAGhostSourceStaysUnsupported() {
+  var reading = snapshot()
+  reading.displays[0].mirrored = true
+  reading.displays[0].mirrorSourceID = nil
+  reading.displays.append(external(transport: .native, mirrored: true, source: 1))
+  // The internal panel is the source here, which is a topology no experiment has covered.
+  #expect(ControllerObservation.environment(reading, power: .awake).supportedTopology == .no)
+
+  var ghost = snapshot()
+  ghost.displays[0].mirrored = true
+  ghost.displays[0].mirrorSourceID = 99
+  ghost.displays.append(external(transport: .native, mirrored: true))
+  #expect(ControllerObservation.environment(ghost, power: .awake).supportedTopology == .no)
+}
+
+@Test func absenceBecomesSuppressionOnlyWithOwnershipAndAReturnedDisable() {
+  var reading = snapshot()
+  reading.displays = [external(transport: .native)]
+  let target = PanelTarget(displayID: 1, displayUUID: "panel", bootID: "boot", loginID: 1)
+  #expect(ControllerObservation.environment(reading, power: .awake).panelState == .unknown)
+
+  let unreturned = OwnedPanelContext(target: target, disableReturned: false)
+  #expect(
+    ControllerObservation.environment(reading, power: .awake, owned: unreturned).panelState
+      == .unknown)
+
+  let returned = OwnedPanelContext(target: target, disableReturned: true)
+  #expect(
+    ControllerObservation.environment(reading, power: .awake, owned: returned).panelState
+      == .disabled)
+
+  // Ownership recorded in another boot explains nothing about this one.
+  let foreign = OwnedPanelContext(
+    target: .init(displayID: 1, displayUUID: "panel", bootID: "other", loginID: 1),
+    disableReturned: true)
+  #expect(
+    ControllerObservation.environment(reading, power: .awake, owned: foreign).panelState
+      == .unknown)
 }
 
 @Test func missingOrMirroredPanelIsNeverInferredDisabled() {
