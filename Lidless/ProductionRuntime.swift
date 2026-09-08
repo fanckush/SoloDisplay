@@ -32,6 +32,7 @@ final class HelperRuntime {
   private var timer: Timer?
   private var recovering = false
   private var witnessedAt: Instant = 0
+  private var powerSubscriptions: [NSObjectProtocol] = []
 
   init(executable: URL, store: ProductionJournalStore) {
     self.executable = executable
@@ -57,6 +58,20 @@ final class HelperRuntime {
       return
     }
     await reconcileAtLaunch(reading)
+    // The helper watches the same power transitions, so its lease does not expire across sleep.
+    let workspace = NSWorkspace.shared.notificationCenter
+    for (name, suspended) in [
+      (NSWorkspace.willSleepNotification, true), (NSWorkspace.didWakeNotification, false),
+    ] {
+      let token = workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          self.apply(
+            self.protection.receive(suspended ? .suspended : .resumed, at: Self.now()))
+        }
+      }
+      powerSubscriptions.append(token)
+    }
     launchController()
     let ticker = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
       Task { @MainActor in self?.pump() }

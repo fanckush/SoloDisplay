@@ -7,6 +7,8 @@ public struct RecoveryLease: Equatable, Sendable {
 
   public enum Event: Equatable, Sendable {
     case acknowledged(session: String, challenge: UInt64)
+    /// The machine was suspended. Elapsed time did not give the peer a chance to answer.
+    case resumed
     case requestRenewal
     case contactLost
     case interrupted
@@ -51,6 +53,13 @@ public struct RecoveryLease: Equatable, Sendable {
       return []
     }
     guard phase != .restoring else { return [] }
+    if event == .resumed {
+      guard phase == .protected else { return [] }
+      deadline = now + duration
+      awaitingReply = false
+      renewalDeadline = nil
+      return []
+    }
     // A queued acknowledgement cannot revive an expired lease, even before its timer fires.
     if now >= deadline || event == .contactLost || event == .interrupted {
       phase = .restoring
