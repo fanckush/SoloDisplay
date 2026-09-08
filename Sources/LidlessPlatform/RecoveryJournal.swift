@@ -47,6 +47,7 @@ public struct RecoveryJournal: Codable, Equatable, Sendable {
 
 public enum JournalError: Error, CustomStringConvertible {
   case unsupportedSchema, identityMismatch, invalidTarget, alreadyExists
+  case writeFailed, clearFailed
   public var description: String {
     switch self {
     case .unsupportedSchema: "Unsupported recovery journal schema."
@@ -54,6 +55,10 @@ public enum JournalError: Error, CustomStringConvertible {
       "Recovery journal does not match this boot and GUI login session. No display was changed."
     case .invalidTarget: "Invalid recovery target. No display was changed."
     case .alreadyExists: "Recovery journal already exists. Resolve it before another experiment."
+    case .writeFailed:
+      "Ownership could not be recorded durably, so no display was changed."
+    case .clearFailed:
+      "Ownership could not be cleared. Lidless keeps the record and retries rather than forgetting it."
     }
   }
 }
