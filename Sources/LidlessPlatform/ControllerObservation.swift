@@ -92,7 +92,14 @@ public enum ControllerObservation {
     guard externals.allSatisfy({ $0.transport == DisplayTransport.native.rawValue }) else {
       return .no
     }
-    return externals.contains(where: { $0.usableExternalCandidate || $0.mirrorSourceID == nil })
-      ? .yes : .no
+    // A mirror source is never a "usable candidate" because it is itself mirrored, so it is
+    // accepted separately. Display sleep leaves a monitor online and connected, and system-wide
+    // display sleep is not a reason to put a suppressed panel back, so asleep is not excluded
+    // here. An actually absent external is, because it disappears from the inventory.
+    return externals.contains(where: {
+      $0.usableExternalCandidate
+        || ($0.mirrorSourceID == nil && $0.online && $0.modeAvailable && $0.width > 0
+          && $0.height > 0)
+    }) ? .yes : .no
   }
 }
