@@ -17,6 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Unit tests exercise the model without starting the platform observer.
     guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+    // A write to a peer that has gone away must surface as an error on the link, not kill this
+    // process. Without this the controller dies mid-restoration when the helper disappears.
+    signal(SIGPIPE, SIG_IGN)
     let arguments = Array(ProcessInfo.processInfo.arguments.dropFirst())
     if arguments.contains(where: { $0.hasPrefix("--lab-") }) {
       runLabCommand(arguments)
