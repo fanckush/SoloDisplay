@@ -341,4 +341,42 @@ struct ProtectionTests {
     pair.pump(pair.controller.receive(.arm(owned), at: 2_000), at: 2_000)
     #expect(pair.controller.protects(at: 2_000))
   }
+
+  @Test func timeSpentAsleepExpiresNeitherLeaseNorHeartbeat() {
+    var pair = Pair()
+    pair.establish()
+    pair.controller.receive(.suspended, at: 1_000)
+    pair.helper.receive(.suspended, at: 1_000)
+
+    // A long suspension is not a peer that stopped answering.
+    pair.tick(at: 120_000)
+    #expect(!pair.lost)
+    #expect(pair.recovery.isEmpty)
+    #expect(pair.helper.phase == .protecting)
+
+    pair.controller.receive(.resumed, at: 120_100)
+    pair.helper.receive(.resumed, at: 120_100)
+    pair.tick(at: 121_200)
+    #expect(!pair.lost)
+    #expect(pair.recovery.isEmpty)
+    #expect(pair.controller.protects(at: 121_200))
+  }
+
+  @Test func theFirstReportAfterWakingIsNotReadAsAStalledCall() {
+    var pair = Pair()
+    pair.establish()
+    // A deadline set before the machine slept is long past by the time it wakes.
+    pair.controller.note(
+      progress: .init(id: 1, kind: .restore, phase: .submitted, deadline: 2_000))
+    pair.controller.receive(.suspended, at: 1_000)
+    pair.helper.receive(.suspended, at: 1_000)
+    pair.controller.receive(.resumed, at: 120_000)
+    pair.helper.receive(.resumed, at: 120_000)
+
+    pair.tick(at: 121_100)
+    #expect(pair.recovery.isEmpty)
+    // A deadline that is still stale on the next report is a real stall, and is caught.
+    pair.tick(at: 122_200)
+    #expect(pair.recovery.map(\.1) == [.operationStalled])
+  }
 }

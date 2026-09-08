@@ -32,8 +32,10 @@ public enum Controller {
       }
       state.observation = sample
       if !current.prerequisitesMet { state.manualRequest = false }
+      // Coming back to a usable machine restarts the clock for whatever is outstanding. Time
+      // spent asleep or closed gave the call no chance to return or to be observed.
       if old?.visibilityExpected != true, current.visibilityExpected,
-        state.operation?.phase == .verifying
+        state.operation?.phase == .verifying || state.operation?.phase == .submitted
       {
         state.operation?.deadline = now + state.policy.operationTimeout
       }
@@ -219,10 +221,13 @@ public enum Controller {
         state.manualRequest = false
         releaseOwnership(&state, effects: &effects)
       case .submitted:
-        state.operation?.phase = .stalled
-        state.fault = .operationTimedOut
-        state.manualRequest = false
-        effects.append(.writerUnresponsive(operationID: op.id))
+        // A machine that was asleep did not stall the call, so only count time it could run.
+        if state.observation?.environment.visibilityExpected == true && isFresh(state, at: now) {
+          state.operation?.phase = .stalled
+          state.fault = .operationTimedOut
+          state.manualRequest = false
+          effects.append(.writerUnresponsive(operationID: op.id))
+        }
       case .verifying:
         // Sleeping/closed hardware cannot prove visibility. Resume verification when awake.
         if state.observation?.environment.visibilityExpected == true && isFresh(state, at: now) {
