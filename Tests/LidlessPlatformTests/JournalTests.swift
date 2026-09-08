@@ -27,12 +27,17 @@ import Testing
 }
 
 @Test func onlyOneWriterCanOwnAGUISession() throws {
-  // Synthetic session IDs isolate parallel test runs from actual GUI sessions.
+  // A private directory, not just a synthetic ID, isolates this from live and past sessions.
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+  defer { try? FileManager.default.removeItem(at: directory) }
   let session = UInt32.random(in: 2_000_000_000..<3_000_000_000)
-  let first = try SessionWriterLock(loginID: session)
+  let first = try SessionWriterLock(loginID: session, directory: directory)
   defer { first.release() }
-  #expect(throws: (any Error).self) { _ = try SessionWriterLock(loginID: session) }
+  #expect(throws: (any Error).self) {
+    _ = try SessionWriterLock(loginID: session, directory: directory)
+  }
   first.release()
-  let second = try SessionWriterLock(loginID: session)
+  let second = try SessionWriterLock(loginID: session, directory: directory)
   second.release()
 }
