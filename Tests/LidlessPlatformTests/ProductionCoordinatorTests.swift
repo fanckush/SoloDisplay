@@ -410,4 +410,40 @@ struct ProductionCoordinatorTests {
     #expect(reported.contains { $0.phase == .arming })
     #expect(reported.contains { $0.phase == .submitted && $0.kind == .disable })
   }
+
+  @Test func quitWaitsForRestorationAndAConfirmedClear() {
+    let harness = Harness()
+    harness.reachSuppression()
+    harness.step(to: 2_200, reading: reading(panel: false))
+    #expect(harness.state.ownership != nil)
+
+    harness.coordinator.send(.quit)
+    // The panel is still absent, so restoration is not verified and the app must not exit.
+    #expect(harness.delegate.readyToExit == 0)
+
+    harness.step(to: 2_400, reading: reading())
+    #expect(harness.delegate.readyToExit >= 1)
+    #expect(harness.state.ownership == nil)
+    #expect(harness.ownership.record == nil)
+  }
+
+  @Test func quittingWithoutOwnershipDoesNotStartAnyWrite() {
+    let harness = Harness()
+    harness.step(to: 0)
+    harness.coordinator.send(.quit)
+    #expect(harness.writer.calls.isEmpty)
+    #expect(harness.delegate.readyToExit >= 1)
+  }
+
+  @Test func aPausedAutomaticChoiceIsPersistedThroughTheCoordinator() {
+    let harness = Harness(mode: .automatic)
+    harness.step(to: 0)
+    harness.coordinator.send(.keepOn)
+    #expect(harness.preferences.saved.withLock { $0 } == [.automaticPaused])
+    #expect(harness.state.mode == .automaticPaused)
+    // A paused choice must not keep disabling.
+    harness.step(to: 600)
+    harness.step(to: 2_100)
+    #expect(harness.writer.calls.isEmpty)
+  }
 }
