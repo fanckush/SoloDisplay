@@ -51,7 +51,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     }
     lockUnavailable = writerLock == nil
     note(
-      "login=\(reading.loginID.map(String.init) ?? "nil") lock=\(writerLock != nil) validation=\(validation != nil)")
+      "login=\(reading.loginID.map(String.init) ?? "nil") lock=\(writerLock != nil) validation=\(validation != nil)"
+    )
 
     var state = ControllerState(mode: preferences.mode)
     // Automatic mode resumes from preferences, but a paused choice stays paused across restarts.
@@ -68,9 +69,13 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     }
     apply(protection.receive(.start, at: MonotonicClock().now()))
     startObservingPlatform()
-    protectionTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+    // Common mode matters: menu tracking runs a modal loop that stops default-mode timers,
+    // and a controller that stops heartbeating while its menu is open looks dead to the helper.
+    let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.pumpProtection() }
     }
+    RunLoop.main.add(timer, forMode: .common)
+    protectionTimer = timer
     refreshMenu()
   }
 
@@ -167,7 +172,9 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       protection.phase == .paired || protection.phase == .arming
       || protection.phase == .protected
     if pairedNow != paired {
-      note("protection phase=\(protection.phase) paired=\(pairedNow) lockUnavailable=\(lockUnavailable)")
+      note(
+        "protection phase=\(protection.phase) paired=\(pairedNow) lockUnavailable=\(lockUnavailable)"
+      )
       paired = pairedNow
       coordinator?.send(.protectionAvailable(pairedNow && !lockUnavailable))
     }
@@ -196,6 +203,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     {
       mutatePreferences { $0.manualPathValidated = true }
     }
+    if previous != presentation { note("state \(presentation)") }
     previous = presentation
     refreshMenu()
     stopIfNothingIsOwed()
@@ -212,6 +220,10 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   }
 
   func coordinator(_ coordinator: ProductionCoordinator, didRecord event: RecordedEvent) {
+    switch event.event {
+    case .observed, .tick: break
+    default: note("event \(event.event)")
+    }
     try? recorder.append(event)
   }
 
@@ -238,13 +250,18 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     if lockUnavailable, current.unavailability == nil {
       current.unavailability = .noRecoveryHelper
     }
-    items = MenuModel.items(
+    let next = MenuModel.items(
       current, launchAtLogin: preferences.launchAtLogin, automaticAvailable: automaticAvailable)
+    // Rebuilding an identical menu would replace the one the user is currently clicking in.
+    guard next != items else { return }
+    items = next
     onMenuChanged?()
   }
 
   func perform(_ action: MenuAction) {
     let coordinator = coordinator
+    note("action \(action.rawValue)")
+    defer { note("after \(action.rawValue): \(presentation)") }
     switch action {
     case .selectManual: coordinator?.send(.selectMode(.manual))
     case .selectAutomatic:

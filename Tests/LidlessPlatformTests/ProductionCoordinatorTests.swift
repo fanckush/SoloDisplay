@@ -57,6 +57,8 @@ private final class FakeOwnership: OwnershipPersisting {
   func failPrepare() { state.withLock { $0.prepareFails = true } }
   func failClear(_ value: Bool) { state.withLock { $0.clearFails = value } }
   func prepare(_ record: ProductionRecord) throws {
+    // The real store validates, so the fake must too, or a malformed record passes unnoticed.
+    try record.validate()
     try state.withLock {
       $0.prepares += 1
       if $0.prepareFails { throw JournalError.writeFailed }
@@ -109,6 +111,13 @@ private struct SyncLane: SerialLane {
   ) {
     let event = work()
     MainActor.assumeIsolated { completion(event) }
+  }
+  func observe(
+    _ work: @escaping @Sendable () -> PlatformReading,
+    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void
+  ) {
+    let reading = work()
+    MainActor.assumeIsolated { completion(reading) }
   }
   func detached(_ work: @escaping @Sendable () -> Void) { work() }
 }
@@ -210,8 +219,7 @@ struct ProductionCoordinatorTests {
     let harness = Harness()
     harness.reachSuppression()
     #expect(harness.ownership.record?.target == panelTarget)
-    #expect(
-      harness.ownership.record?.scope == "app" || harness.ownership.record?.scope == "application")
+    #expect(harness.ownership.record?.scope == "app")
     #expect(harness.protection.armed.count == 1)
     #expect(harness.writer.calls == [.init(enabled: false, displayID: 1, scope: .application)])
     // The record captures the topology recovery has to verify against.

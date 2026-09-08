@@ -2,7 +2,11 @@ import Darwin
 import Foundation
 import LidlessCore
 
-public enum DisplayScope: String, Sendable { case application, session }
+/// Raw values are the journal's vocabulary, so a record's scope round trips as written.
+public enum DisplayScope: String, Sendable {
+  case application = "app"
+  case session = "session"
+}
 
 public protocol CoordinatorClock: Sendable {
   /// Monotonic milliseconds. A wall clock must never reach the reducer.
@@ -32,6 +36,11 @@ public protocol SerialLane: Sendable {
   func run(
     _ work: @escaping @Sendable () -> Event,
     completion: @escaping @Sendable @MainActor (Event) -> Void)
+  /// Reading and interpreting are separate on purpose: the reading happens off the loop, and
+  /// what it means is decided on the loop with the ownership context that is current then.
+  func observe(
+    _ work: @escaping @Sendable () -> PlatformReading,
+    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void)
   func detached(_ work: @escaping @Sendable () -> Void)
 }
 
@@ -54,6 +63,15 @@ public struct DispatchLane: SerialLane {
       Task { @MainActor in completion(event) }
     }
   }
+  public func observe(
+    _ work: @escaping @Sendable () -> PlatformReading,
+    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void
+  ) {
+    queue.async {
+      let reading = work()
+      Task { @MainActor in completion(reading) }
+    }
+  }
   public func detached(_ work: @escaping @Sendable () -> Void) { queue.async(execute: work) }
 }
 
@@ -61,16 +79,20 @@ public struct DispatchLane: SerialLane {
 public final class TimerScheduler: CoordinatorScheduler {
   private var repeating: Timer?
   public init() {}
+  /// Common mode, so a modal loop such as menu tracking cannot silently stop the controller.
   public func after(_ seconds: Double, _ fire: @escaping @MainActor () -> Void) {
-    Timer.scheduledTimer(withTimeInterval: max(seconds, 0), repeats: false) { _ in
+    let timer = Timer(timeInterval: max(seconds, 0), repeats: false) { _ in
       MainActor.assumeIsolated { fire() }
     }
+    RunLoop.main.add(timer, forMode: .common)
   }
   public func startRepeating(_ seconds: Double, _ fire: @escaping @MainActor () -> Void) {
     repeating?.invalidate()
-    repeating = Timer.scheduledTimer(withTimeInterval: seconds, repeats: true) { _ in
+    let timer = Timer(timeInterval: seconds, repeats: true) { _ in
       MainActor.assumeIsolated { fire() }
     }
+    RunLoop.main.add(timer, forMode: .common)
+    repeating = timer
   }
   public func stopRepeating() {
     repeating?.invalidate()
@@ -290,24 +312,25 @@ public final class ProductionCoordinator {
     observationSequence += 1
     let sequence = observationSequence
     let observer = observer
-    let owned = state.ownership.map {
-      OwnedPanelContext(target: $0.target, disableReturned: ownedDisableReturned)
-    }
-    let lifecycle = lifecycle
-    let changedAt = lifecycleChangedAt
     // Sampling time is taken before the read, so evidence is never treated as fresher than it is.
     let sampledAt = clock.now()
-    lane.run {
-      let reading = observer.read()
+    lane.observe {
+      observer.read()
+    } completion: { [weak self] reading in
+      guard let self else { return }
+      self.observationInFlight = false
+      // Ownership context is read here, not at dispatch. A reading that arrives after a disable
+      // returned must be interpreted with that knowledge, or an owned panel reads as missing.
+      let owned = self.state.ownership.map {
+        OwnedPanelContext(target: $0.target, disableReturned: self.ownedDisableReturned)
+      }
       let power = Self.reconciledLifecycle(
-        reading, current: lifecycle, changedAt: changedAt, at: sampledAt)
-      return .observed(
-        .init(
-          sequence: sequence, sampledAt: sampledAt,
-          environment: ControllerObservation.environment(reading, power: power, owned: owned)))
-    } completion: { [weak self] event in
-      self?.observationInFlight = false
-      self?.send(event)
+        reading, current: self.lifecycle, changedAt: self.lifecycleChangedAt, at: sampledAt)
+      self.send(
+        .observed(
+          .init(
+            sequence: sequence, sampledAt: sampledAt,
+            environment: ControllerObservation.environment(reading, power: power, owned: owned))))
     }
   }
 

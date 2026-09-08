@@ -291,8 +291,9 @@ public struct HelperProtection: Equatable, Sendable {
   public enum Input: Equatable, Sendable {
     case received(ProtectionMessage)
     case peerFailed(ProtectionRejection)
-    /// The helper's own independent observation of the claimed panel, never the message.
-    case witnessMatches(Bool)
+    /// The helper's own current view of the internal panel, never taken from the message.
+    /// Passing nil means it cannot see one, which is never grounds to grant protection.
+    case witness(PanelTarget?)
     /// The controller child is gone. Loss of the pipe alone is not termination evidence.
     case controllerExited
     case tick
@@ -317,7 +318,8 @@ public struct HelperProtection: Equatable, Sendable {
 
   private var inbox: ProtectionInbox?
   private var nextSequence: UInt64 = 1
-  private var witnessed = false
+  private var witnessedTarget: PanelTarget?
+  private var witnessedAt: Instant?
   private var lastProgressAt: Instant
   private var recoveryRequested = false
   private var now: Instant
@@ -335,8 +337,9 @@ public struct HelperProtection: Equatable, Sendable {
     guard phase != .standingDown else { return [] }
 
     switch input {
-    case .witnessMatches(let matches):
-      witnessed = matches
+    case .witness(let target):
+      witnessedTarget = target
+      witnessedAt = target == nil ? nil : now
       return []
 
     case .controllerExited:
@@ -372,8 +375,11 @@ public struct HelperProtection: Equatable, Sendable {
         phase = .paired
         return [.send(next(.witness, at: now))]
       case (.paired, .arm):
-        // The claimed target must agree with this process's own fresh observation.
-        guard witnessed, let claimed = message.ownership else {
+        // The claimed target must agree with this process's own fresh observation. A stale
+        // witness is no witness: the panel could have changed since it was taken.
+        guard let claimed = message.ownership, let witnessedTarget, let witnessedAt,
+          claimed.target == witnessedTarget, now - witnessedAt <= timing.leaseDuration
+        else {
           return revoke(.protocolViolation, at: now)
         }
         ownership = claimed
