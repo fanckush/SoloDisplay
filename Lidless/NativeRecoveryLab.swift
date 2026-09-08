@@ -24,6 +24,7 @@
     case exitWriter(external: UInt32, journal: String, rehearsal: Bool)
     case unplugWriter(external: UInt32, journal: String, rehearsal: Bool)
     case sleepWriter(external: UInt32, journal: String, rehearsal: Bool)
+    case mirrorWriter(external: UInt32, journal: String, rehearsal: Bool)
     case failure(external: UInt32, journal: String, ending: NativeExitEnding, rehearsal: Bool)
 
     static func parse(_ arguments: [String]) throws -> Self? {
@@ -40,6 +41,8 @@
           "--lab-unplug-writer-rehearsal",
           "--lab-sleep", "--lab-sleep-rehearsal", "--lab-sleep-writer",
           "--lab-sleep-writer-rehearsal",
+          "--lab-mirror", "--lab-mirror-rehearsal", "--lab-mirror-writer",
+          "--lab-mirror-writer-rehearsal",
         ].contains(verb)
       else { throw NativeLabError.refused("Unknown native lab command.") }
       var values: [String: String] = [:]
@@ -71,6 +74,14 @@
           "A visible, native wired external must be explicitly attested.")
       }
       switch verb {
+      case "--lab-mirror", "--lab-mirror-rehearsal":
+        return .failure(
+          external: external, journal: journal, ending: .mirror,
+          rehearsal: verb.hasSuffix("-rehearsal"))
+      case "--lab-mirror-writer", "--lab-mirror-writer-rehearsal":
+        return .mirrorWriter(
+          external: external, journal: journal,
+          rehearsal: verb.hasSuffix("-rehearsal"))
       case "--lab-sleep", "--lab-sleep-rehearsal":
         return .failure(
           external: external, journal: journal, ending: .sleep,
@@ -188,6 +199,9 @@
         case .sleepWriter(let external, let journal, let rehearsal):
           return await exitWriter(
             external: external, path: journal, rehearsal: rehearsal, sleep: true)
+        case .mirrorWriter(let external, let journal, let rehearsal):
+          return await exitWriter(
+            external: external, path: journal, rehearsal: rehearsal, mirror: true)
         case .failure(let external, let journal, let ending, let rehearsal):
           try await supervisedExit(
             external: external, path: journal, rehearsal: rehearsal, ending: ending)
