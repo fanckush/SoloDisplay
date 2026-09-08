@@ -79,7 +79,7 @@
       switch ending {
       case .normal: reason == .exit && status == 0
       case .kill, .freeze: reason == .uncaughtSignal && status == SIGKILL
-      case .disconnect, .silence, .unplug, .sleep: reason == .exit && status == 1
+      case .disconnect, .silence, .unplug, .sleep, .mirror: reason == .exit && status == 1
       }
     }
     static func validate(journal: RecoveryJournal, witnessed: PanelTarget, childPID: Int32) throws {
@@ -100,6 +100,7 @@
     case silence = "lease-expiry"
     case unplug = "external-unplug"
     case sleep = "system-sleep"
+    case mirror = "mirror-roundtrip"
   }
 
   extension NativeRecoveryLab {
@@ -166,7 +167,11 @@
       guard let executable = Bundle.main.executableURL,
         !FileManager.default.fileExists(atPath: path)
       else { throw NativeLabError.refused("A new journal and the native executable are required.") }
-      let witnessed = try NativeLabSafety.baseline(DisplayObserver.read(), external: external)
+      let initial = DisplayObserver.read()
+      let mirrorBaseline =
+        ending == .mirror ? try NativeMirrorBaseline(initial, external: external) : nil
+      let witnessed =
+        try mirrorBaseline?.target ?? NativeLabSafety.baseline(initial, external: external)
       if ending == .unplug {
         guard DisplayObserver.read().displays.filter({ !$0.builtIn }).count == 1 else {
           throw NativeLabError.refused(
@@ -187,7 +192,9 @@
       let writer = Process()
       writer.executableURL = executable
       let writerVerb: String
-      if ending == .sleep {
+      if ending == .mirror {
+        writerVerb = rehearsal ? "--lab-mirror-writer-rehearsal" : "--lab-mirror-writer"
+      } else if ending == .sleep {
         writerVerb = rehearsal ? "--lab-sleep-writer-rehearsal" : "--lab-sleep-writer"
       } else if ending == .unplug {
         writerVerb = rehearsal ? "--lab-unplug-writer-rehearsal" : "--lab-unplug-writer"
@@ -213,8 +220,10 @@
         let journal = try RecoveryJournal.load(from: URL(fileURLWithPath: path))
         try NativeExitAuthorization.validate(
           journal: journal, witnessed: witnessed, childPID: writer.processIdentifier)
+        let preArm = DisplayObserver.read()
         guard writer.isRunning,
-          try NativeLabSafety.baseline(DisplayObserver.read(), external: external) == witnessed
+          try mirrorBaseline?.matches(preArm)
+            ?? (NativeLabSafety.baseline(preArm, external: external) == witnessed)
         else { throw NativeLabError.refused("Baseline changed before arming the writer.") }
         // Set recovery responsibility before sending any permission to mutate.
         armedJournal = rehearsal ? nil : journal
@@ -223,6 +232,37 @@
         try await waitFor(.suppressed, inbox: inbox, seconds: 3)
         try report(
           rehearsal ? "exit-rehearsal-simulated-suppression" : "exit-supervisor-after-disable")
+        if let mirrorBaseline {
+          let deadline = ProcessInfo.processInfo.systemUptime + 5
+          repeat {
+            try await Task.sleep(for: .milliseconds(100))
+            let current = DisplayObserver.read()
+            try NativeLabSafety.ownedContext(current, journal: journal)
+            guard writer.isRunning, mirrorBaseline.externalUsable(current, external: external),
+              rehearsal || !current.displays.contains(where: { $0.id == witnessed.displayID })
+            else {
+              throw NativeLabError.refused(
+                "Mirror suppression or external evidence was not established.")
+            }
+          } while ProcessInfo.processInfo.systemUptime < deadline
+          try commands.fileHandleForWriting.close()
+          guard await awaitExit(writer, seconds: 5), writer.terminationReason == .exit,
+            writer.terminationStatus == 1
+          else {
+            throw NativeLabError.refused("Mirror writer restoration did not finish in time.")
+          }
+          takeover.receive(.writerTerminationConfirmed)
+          try await waitFor(.failed, inbox: inbox, seconds: 1)
+          let lock = try SessionWriterLock(loginID: witnessed.loginID)
+          defer { lock.release() }
+          takeover.receive(.lockAcquired)
+          try await verifyMirror(mirrorBaseline)
+          try report(
+            rehearsal
+              ? "mirror-rehearsal-complete-no-display-writes"
+              : "mirror-roundtrip-layout-preserved-no-supervisor-enable")
+          return
+        }
         if ending == .unplug || ending == .sleep {
           if let sleepMonitor {
             try await awaitSleepCycle(
@@ -369,6 +409,7 @@
           let current = DisplayObserver.read()
           try NativeLabSafety.ownedContext(current, journal: journal)
           if !supervisorEnableAttempted,
+            mirrorBaseline?.matches(current) != true,
             !current.displays.contains(where: { $0.id == witnessed.displayID && $0.active })
           {
             guard takeover.receive(.restoreAuthorized) == [.restore] else {
@@ -378,7 +419,11 @@
             supervisorEnableAttempted = true
             try PrivateDisplayAPI().setEnabled(
               true, displayID: witnessed.displayID, scope: .forSession)
-            try await verifyRestored(journal)
+            if let mirrorBaseline {
+              try await verifyMirror(mirrorBaseline)
+            } else {
+              try await verifyRestored(journal)
+            }
           }
           try report("exit-supervisor-aborted-test-recovery")
         }
@@ -388,7 +433,7 @@
 
     func exitWriter(
       external: UInt32, path: String, rehearsal: Bool, unplug: Bool = false,
-      sleep: Bool = false
+      sleep: Bool = false, mirror: Bool = false
     ) async
       -> Int32
     {
@@ -399,12 +444,16 @@
       let inbox = NativeExitInbox(.standardInput)
       defer { inbox.stop() }
       var ownedJournal: RecoveryJournal?
+      var mirrorBaseline: NativeMirrorBaseline?
       var writerLock: SessionWriterLock?
       defer { writerLock?.release() }
       do {
         guard getppid() > 1 else { throw NativeLabError.refused("A live supervisor is required.") }
         let supervisorPID = getppid()
-        let target = try NativeLabSafety.baseline(DisplayObserver.read(), external: external)
+        let initial = DisplayObserver.read()
+        mirrorBaseline = mirror ? try NativeMirrorBaseline(initial, external: external) : nil
+        let target =
+          try mirrorBaseline?.target ?? NativeLabSafety.baseline(initial, external: external)
         let api = PrivateDisplayAPI()
         guard api.symbolName != nil else { throw DisplayAPIError.unavailable }
         writerLock = try SessionWriterLock(loginID: target.loginID)
@@ -412,9 +461,11 @@
         try journal.save(to: URL(fileURLWithPath: path))
         try send(.ready, to: .standardOutput)
         try await waitFor(.arm, inbox: inbox, seconds: 3)
+        let preArm = DisplayObserver.read()
         guard getppid() == supervisorPID,
           sleepMonitor?.snapshot.sleepCount ?? 0 == 0,
-          try NativeLabSafety.baseline(DisplayObserver.read(), external: external) == target
+          try mirrorBaseline?.matches(preArm)
+            ?? (NativeLabSafety.baseline(preArm, external: external) == target)
         else {
           throw NativeLabError.refused("Writer baseline or supervisor changed before disabling.")
         }
@@ -469,12 +520,17 @@
           do {
             let current = DisplayObserver.read()
             try NativeLabSafety.ownedContext(current, journal: journal)
-            if !current.displays.contains(where: { $0.id == journal.target.displayID && $0.active })
+            if mirrorBaseline?.matches(current) != true,
+              !current.displays.contains(where: { $0.id == journal.target.displayID && $0.active })
             {
               try PrivateDisplayAPI().setEnabled(
                 true, displayID: journal.target.displayID, scope: .forAppOnly)
             }
-            try await verifyRestored(journal)
+            if let mirrorBaseline {
+              try await verifyMirror(mirrorBaseline)
+            } else {
+              try await verifyRestored(journal)
+            }
           } catch {
             try? FileHandle.standardError.write(
               contentsOf: Data("Writer fallback unverified: \(error)\n".utf8))
