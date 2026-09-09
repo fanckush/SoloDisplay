@@ -44,7 +44,7 @@ public enum DisplayTransportClassifier {
   /// A DisplayLink, wireless, or virtual display is not published through that pipeline, so it
   /// cannot reach this verdict. Nothing here is inferred from a display's name or its flags.
   public static func classify(_ evidence: TransportEvidence) -> DisplayTransport {
-    guard evidence.match != .none else { return .unclassified }
+    guard evidence.match == .vendorModelSerial else { return .unclassified }
     let controllerIndex = evidence.providerChain.firstIndex(of: displayControllerClass)
     if evidence.providerChain.contains(displayServiceClass), let controllerIndex,
       controllerIndex < evidence.providerNames.count,
@@ -60,33 +60,42 @@ public enum DisplayTransportClassifier {
   /// Correlates CoreGraphics displays to IOKit display services and records what it found.
   public static func evidence(for displays: [(id: UInt32, builtIn: Bool)]) -> [TransportEvidence] {
     let services = displayServices()
+    let identities = displays.map { display in
+      Identity(vendor: CGDisplayVendorNumber(display.id), model: CGDisplayModelNumber(display.id),
+        serial: CGDisplaySerialNumber(display.id))
+    }
     return displays.map { display in
       let vendor = CGDisplayVendorNumber(display.id)
       let model = CGDisplayModelNumber(display.id)
       let serial = CGDisplaySerialNumber(display.id)
       // Prefer the most specific correlation available, and record which one was used.
       var match = TransportMatch.none
-      var service = services.first {
-        $0.vendor == vendor && $0.model == model && $0.serial == serial && $0.serial != 0
-      }
-      if service != nil {
-        match = .vendorModelSerial
-      } else if let byModel = services.first(where: { $0.vendor == vendor && $0.model == model }) {
-        service = byModel
-        match = .vendorModel
-      } else {
-        let byVendor = services.filter { $0.vendor == vendor }
-        if byVendor.count == 1, services.filter({ $0.vendor == vendor }).count == 1 {
-          service = byVendor.first
-          match = .vendor
-        }
-      }
+      let identity = Identity(vendor: vendor, model: model, serial: serial)
+      let index = uniqueService(for: identity, displays: identities,
+        services: services.map { .init(vendor: $0.vendor, model: $0.model, serial: $0.serial) })
+      let service = index.map { services[$0] }
+      if service != nil { match = .vendorModelSerial }
       return .init(
         displayID: display.id, builtIn: display.builtIn, vendor: vendor, model: model,
         serial: serial, unit: CGDisplayUnitNumber(display.id), match: match,
         providerChain: service?.providerChain ?? [],
         providerNames: service?.providerNames ?? [])
     }
+  }
+
+  struct Identity: Equatable {
+    var vendor: UInt32
+    var model: UInt32
+    var serial: UInt32
+  }
+
+  /// Ambiguous correlation is not evidence. Never let multiple CG displays borrow one
+  /// physical service, and never fall back after a serial contradiction.
+  static func uniqueService(for identity: Identity, displays: [Identity], services: [Identity]) -> Int? {
+    guard identity.vendor != 0, identity.vendor != unknownVendor, identity.serial != 0,
+      displays.filter({ $0 == identity }).count == 1 else { return nil }
+    let matches = services.indices.filter { services[$0] == identity }
+    return matches.count == 1 ? matches[0] : nil
   }
 
   private struct Service {

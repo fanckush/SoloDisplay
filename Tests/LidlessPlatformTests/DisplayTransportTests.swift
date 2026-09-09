@@ -19,7 +19,7 @@ private let capturedInternal = TransportEvidence(
 struct DisplayTransportTests {
   @Test func capturedHardwareClassifiesAsNative() {
     #expect(capturedExternal.transport == .native)
-    #expect(capturedInternal.transport == .native)
+    #expect(capturedInternal.transport == .unclassified)
   }
 
   @Test func anUncorrelatedDisplayIsNeverNative() {

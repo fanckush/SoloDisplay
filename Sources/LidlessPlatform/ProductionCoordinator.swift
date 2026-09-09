@@ -102,6 +102,7 @@ public final class TimerScheduler: CoordinatorScheduler {
 
 /// The controller side of the protection protocol, as the coordinator needs it.
 @MainActor public protocol ProtectionRequesting: AnyObject {
+  var authorization: ProtectionAuthorization { get }
   func arm(operationID: UInt64, ownership: Ownership)
   func release()
   /// Outstanding-operation state for the next heartbeat, so a stall is visible to the helper.
@@ -139,7 +140,9 @@ public final class ProductionCoordinator {
   private var ownedDisableReturned = false
   private var lifecycle: Power = .unknown
   private var lifecycleChangedAt: Instant = 0
-  private let session = UUID().uuidString
+  private let session: String
+  private let disablePermit = DisablePermit()
+  private var baseline: ProductionRecord?
   /// The scope actually used for a disable, recorded so recovery can match it.
   public var scope: DisplayScope = .application
 
@@ -148,9 +151,10 @@ public final class ProductionCoordinator {
     writer: any DisplayWriting, ownership: any OwnershipPersisting,
     preferences: any PreferencePersisting, protection: (any ProtectionRequesting)?,
     delegate: (any CoordinatorDelegate)?, lane: any SerialLane = DispatchLane(),
-    scheduler: (any CoordinatorScheduler)? = nil
+    scheduler: (any CoordinatorScheduler)? = nil, session: String = UUID().uuidString
   ) {
     self.lane = lane
+    self.session = session
     self.scheduler = scheduler ?? TimerScheduler()
     self.state = state
     self.clock = clock
@@ -199,7 +203,11 @@ public final class ProductionCoordinator {
     }
     let transition = Controller.reduce(state, event, at: now)
     state = transition.state
-    if state.ownership == nil { ownedDisableReturned = false }
+    disablePermit.update(state, at: now)
+    if state.ownership == nil && state.operation == nil {
+      ownedDisableReturned = false
+      baseline = nil
+    }
     delegate?.coordinator(self, didRecord: .init(at: now, event: event))
     protection?.noteOperation(
       state.operation.map {
@@ -226,7 +234,12 @@ public final class ProductionCoordinator {
       observe()
     case .savePreferences(let mode):
       let preferences = preferences
-      lane.detached { try? preferences.save(mode: mode) }
+      onLane {
+        do {
+          try preferences.save(mode: mode)
+          return .preferencesSaved(mode: mode, succeeded: true)
+        } catch { return .preferencesSaved(mode: mode, succeeded: false) }
+      }
     case .saveOwnership(let owned):
       prepareOwnership(owned)
     case .clearOwnership:
@@ -267,6 +280,7 @@ public final class ProductionCoordinator {
       scope: scope.rawValue, controllerPID: ProcessInfo.processInfo.processIdentifier,
       helperPID: getppid(), topology: reading.displays)
     let ownership = ownership
+    baseline = record
     onLane { [ownership] in
       do {
         try ownership.prepare(record)
@@ -283,6 +297,10 @@ public final class ProductionCoordinator {
     let writer = writer
     let observer = observer
     let scope = scope
+    let permit = disablePermit
+    let authorization = protection?.authorization
+    let clock = clock
+    let owned = state.ownership
     onLane { [writer, observer] in
       if !enabled {
         let reading = observer.read()
@@ -292,6 +310,14 @@ public final class ProductionCoordinator {
         else {
           // Refusing before the call is different from a call that failed: nothing was sent.
           return .operationRefused(operationID: operationID)
+        }
+        guard let owned, authorization?.permits(owned, at: clock.now()) == true,
+          permit.consume(operationID: operationID, target: target, at: clock.now())
+        else { return .operationRefused(operationID: operationID) }
+      } else {
+        guard (try? RecoveryIdentity.authorizeRestore(observer.read(), target: target,
+          liveOwnership: owned)) != nil else {
+          return .operationReturned(operationID: operationID, succeeded: false)
         }
       }
       do {
@@ -326,11 +352,15 @@ public final class ProductionCoordinator {
       }
       let power = Self.reconciledLifecycle(
         reading, current: self.lifecycle, changedAt: self.lifecycleChangedAt, at: sampledAt)
+      var environment = ControllerObservation.environment(reading, power: power, owned: owned)
+      if let baseline = self.baseline, self.state.ownership != nil {
+        environment.restorationMatches = RestorationVerification.matches(baseline, reading: reading)
+      }
       self.send(
         .observed(
           .init(
             sequence: sequence, sampledAt: sampledAt,
-            environment: ControllerObservation.environment(reading, power: power, owned: owned))))
+            environment: environment)))
     }
   }
 

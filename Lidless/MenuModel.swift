@@ -119,6 +119,10 @@ nonisolated enum MenuModel {
 
   static func reason(_ fault: Fault) -> String {
     switch fault {
+    case .preferencesFailed:
+      "Could not save your preference. Keep Internal On is effective now but may not survive restart. Resolve storage access before restarting."
+    case .configurationChanged:
+      "The display arrangement did not match the recorded configuration. Recovery remains unverified; Lidless will not rewrite your external settings."
     case .journalFailed:
       "Lidless could not record ownership durably, so it did not turn anything off."
     case .operationFailed:

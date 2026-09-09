@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 /// for the whole run, and drives the production coordinator. No path here reaches a lab command.
 @MainActor
 final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
+  let authorization = ProtectionAuthorization()
   private let link: ProtectionLink
   private var protection: ControllerProtection
   private var writerLock: SessionWriterLock?
@@ -60,7 +61,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       recorder = .init(initial: state)
       let coordinator = ProductionCoordinator(
         state: state, clock: MonotonicClock(), observer: observer, writer: LiveDisplayWriter(),
-        ownership: journal, preferences: store, protection: self, delegate: self)
+        ownership: journal, preferences: store, protection: self, delegate: self,
+        session: protection.session)
       self.coordinator = coordinator
       coordinator.start()
     } else {
@@ -153,6 +155,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   private var paired = false
 
   private func apply(_ outputs: [ControllerProtection.Output]) {
+    authorization.update(protection)
     for output in outputs {
       switch output {
       case .send(let message): try? link.send(message)
