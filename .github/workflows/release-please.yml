@@ -15,7 +15,7 @@ jobs:
       # Opens and maintains a release PR from Conventional Commits. Merging it
       # bumps the version, updates CHANGELOG.md, and pushes a `v*` tag. That tag
       # triggers the Release workflow (build, sign, notarize, publish).
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           config-file: .github/release-please-config.json
           manifest-file: .release-please-manifest.json
