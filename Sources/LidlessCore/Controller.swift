@@ -35,6 +35,11 @@ public enum Controller {
         state.matchingSamples = 1
       }
       state.observation = sample
+      if let deferred = state.recoveryDeferredSequence, sample.sequence > deferred,
+        current.visibilityExpected, current.panel == state.ownership?.target
+      {
+        state.recoveryDeferredSequence = nil
+      }
       if !current.prerequisitesMet { state.manualRequest = false }
       // Coming back to a usable machine restarts the clock for whatever is outstanding. Time
       // spent asleep or closed gave the call no chance to return or to be observed.
@@ -55,7 +60,8 @@ public enum Controller {
         if op.kind == .disable && current.panelState == .disabled {
           state.operation = nil
         } else if op.kind == .restore && current.panelState == .enabled,
-          current.restorationMatches == .yes {
+          current.restorationMatches == .yes
+        {
           state.operation = nil
           releaseOwnership(&state, effects: &effects)
         }
@@ -192,6 +198,17 @@ public enum Controller {
         scheduleRetry(&state, at: now, effects: &effects)
       }
       effects.append(.observe)
+    case .restoreDeferred(let id):
+      guard let op = state.operation, op.id == id, op.kind == .restore,
+        op.phase == .submitted || op.phase == .stalled
+      else {
+        return .init(state: state, effects: [])
+      }
+      state.operation = nil
+      state.restoreAttempts = max(0, state.restoreAttempts - 1)
+      state.recoveryDeferredSequence = state.observation?.sequence ?? 0
+      // Bound resampling, including adapters that complete synchronously. No immediate retry.
+      state.retryAt = now + state.policy.sampleSeparation
     case .operationReturned(let id, let succeeded):
       guard var op = state.operation, op.id == id,
         op.phase == .submitted || op.phase == .stalled
@@ -262,7 +279,15 @@ public enum Controller {
           !state.wantsOff || !mayRemainDisabled(state, at: now)
           || state.observation?.environment.panelState == .unknown
         let identityMatches = state.observation?.environment.panel == ownership.target
+        let environment = state.observation?.environment
+        // One best-effort release on impending sleep is allowed. Later attempts wait for
+        // awake evidence; the executor independently checks the platform before every call.
+        let canAttempt =
+          environment?.lid == .open && environment?.foregroundSession == .yes
+          && (environment?.power == .awake || event == .willSleep)
         if shouldRestore && identityMatches && state.fault != .identityChanged,
+          canAttempt,
+          state.recoveryDeferredSequence == nil,
           state.restoreAttempts <= state.policy.restoreRetryDelays.count,
           now >= (state.retryAt ?? 0)
         {
@@ -335,6 +360,7 @@ public enum Controller {
   private static func releaseOwnership(_ state: inout ControllerState, effects: inout [Effect]) {
     guard !state.pendingClear else { return }
     state.restoreAttempts = 0
+    state.recoveryDeferredSequence = nil
     state.retryAt = nil
     state.pendingClear = true
     effects.append(.clearOwnership)

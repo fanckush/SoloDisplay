@@ -82,6 +82,7 @@ nonisolated enum MenuModel {
   }
 
   static func status(_ presentation: Presentation) -> String {
+    if presentation.waitingForRecovery { return "Waiting to restore the internal display" }
     if presentation.panelOwned { return "Internal display is off" }
     if presentation.pendingRecovery { return "Finishing recovery" }
     if presentation.operationInFlight { return "Working…" }
@@ -92,6 +93,10 @@ nonisolated enum MenuModel {
   /// The specific reason, never a bare unavailable state. A fault outranks anything else,
   /// because it is the thing the person can act on.
   static func detail(_ presentation: Presentation) -> String? {
+    if presentation.waitingForRecovery {
+      return
+        "Recovery is retained until this Mac is awake, the lid is open, and this login session is available."
+    }
     if let fault = presentation.fault { return reason(fault) }
     guard let unavailability = presentation.unavailability else { return nil }
     return reason(unavailability)

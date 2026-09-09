@@ -1,10 +1,24 @@
 # Implementation and validation status
 
-Updated 2026-09-08. This is the current checklist; `validation.md` is the chronological evidence record. Historical statements in that record describe the state at the time of each experiment.
+Updated 2026-09-09. `validation.md` is the chronological hardware evidence record. Historical statements describe the state at the time of each experiment, not verification of subsequent code changes.
+
+## Current recovery follow-up
+
+The three lifecycle findings from the final review are implemented and automatically verified:
+
+- Temporary pre-call unavailability defers restoration without consuming retry attempts. Ownership remains tracked, and the menu reports that recovery is waiting. A newer observation is required before retrying. The initial best-effort release on impending sleep remains supported.
+- The helper retains its live ownership and exclusive writer lock while awaiting recovery evidence or observable verification. It does not terminate or launch a new disabling controller during that wait. Positive identity contradictions still block writes; failed verification retains the journal.
+- Both protection roles reconcile suspended liveness from executing timer callbacks when a workspace wake notification is missing. This resumes heartbeat checking only. It does not establish usable displays or grant a controller lease without a fresh acknowledgement.
+
+Verification: 142 package tests and 49 native tests pass, including an integration test of the actual helper recovery routine with an injected observer, fake display writer, controlled suspension points, isolated journal, and real writer lock. This verifies waiting, exclusion, and clearing order without changing displays. Debug build passes. Release verification is recorded in `recovery-followup.md`.
+
+The earlier hardware passes below remain evidence for their original builds. Targeted confirmation is still required for the revised paths: lid closure/opening while suppressed, session interruption during recovery, and helper takeover while recovery is temporarily unavailable. Do not count automated verification as physical visibility confirmation.
 
 `PLAN.md` holds the remaining implementation and delivery plan. `original-plan.md` is the unchanged product plan it continues.
 
-## Milestone tracking
+## Earlier milestone snapshots
+
+The following snapshots are retained from the previous implementation pass. Some early rows were superseded by later product-path tests in the hardware matrix; they are not the current verification status of the recovery revisions above.
 
 Statuses are not interchangeable. **Implemented** means the code exists. **Automatically verified** means tests exercise it without a person present. **Hardware verified** means a guided physical test passed with user-confirmed visibility.
 
@@ -33,13 +47,13 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 - Conservative platform normalization and shadow controller integration. No ordinary app display effects execute.
 - Debug-only native experiments with a live pre-armed supervisor and durable journal. The bounded writer uses the lease model, and supervisor writes pass through the takeover ordering guard.
 
-## Still required before normal display controls
+## Earlier pre-hardware checklist (subsequently exercised below)
 
 - A recorded backend validation. `backendValidated` is the last remaining gate on this Mac, and nothing writes that record yet, so the menu correctly reports that turning the display off is unavailable. Writing one requires a guided round trip, which is Milestone D work.
 - Milestone D: repeating the recovery matrix through the actual menu controls with user-confirmed visibility.
 - Distribution signing, notarization, and Homebrew packaging.
 
-## Hardware matrix
+## Historical hardware matrix
 
 | Scenario | Current evidence |
 | --- | --- |
