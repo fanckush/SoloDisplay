@@ -1,0 +1,21 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # Opens and maintains a release PR from Conventional Commits. Merging it
+      # bumps the version, updates CHANGELOG.md, and pushes a `v*` tag. That tag
+      # triggers the Release workflow (build, sign, notarize, publish).
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: .github/release-please-config.json
+          manifest-file: .release-please-manifest.json
