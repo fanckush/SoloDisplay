@@ -22,7 +22,7 @@ jobs:
         os: [macos-26]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Select latest Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
       - name: Show toolchain
@@ -42,7 +42,7 @@ jobs:
     name: App unit tests (unsigned)
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Select latest Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
       - name: Install xcbeautify
@@ -67,7 +67,7 @@ jobs:
     runs-on: macos-26
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: SwiftFormat (lint)
         run: |
           brew install swiftformat
