@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  package-tests:
+    name: Swift package tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select latest Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: Show toolchain
+        run: swift --version && xcodebuild -version
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ matrix.os }}-${{ hashFiles('Package.swift') }}
+          restore-keys: spm-${{ matrix.os }}-
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+
+  app-tests:
+    name: App unit tests (unsigned)
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select latest Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+      - name: Install xcbeautify
+        run: brew install xcbeautify
+      # Account-independent build: ad-hoc signing, no team, unit tests only.
+      # The UI test target is intentionally skipped (needs interactive automation).
+      - name: Build & test app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Lidless.xcodeproj \
+            -scheme Lidless \
+            -configuration Debug \
+            -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            test -only-testing:LidlessTests | xcbeautify
+        shell: bash
+
+  lint:
+    name: Lint (non-blocking)
+    runs-on: macos-26
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: SwiftFormat (lint)
+        run: |
+          brew install swiftformat
+          swiftformat --lint .
+      - name: SwiftLint
+        run: |
+          brew install swiftlint
+          swiftlint --strict

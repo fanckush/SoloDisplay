@@ -10,3 +10,4 @@ DerivedData/
 *.recovery.json
 *.xcuserstate
 *.profraw
+/build
