@@ -29,7 +29,7 @@ public struct OperationProgress: Codable, Equatable, Sendable {
 }
 
 public struct ProtectionMessage: Codable, Equatable, Sendable {
-  public static let currentVersion = 1
+  public static let currentVersion = 2
   public static let maximumDetailLength = 200
   public static let maximumSessionLength = 64
 
@@ -74,7 +74,7 @@ public struct ProtectionMessage: Codable, Equatable, Sendable {
     case .progress:
       return sender == .controller && challenge > 0 && ownership != nil
     case .armed, .acknowledge:
-      return sender == .helper && challenge > 0 && ownership == nil && progress == nil
+      return sender == .helper && challenge > 0 && ownership != nil && progress == nil
     case .fault:
       return challenge == 0 && ownership == nil && progress == nil
     }
@@ -185,7 +185,7 @@ public struct ControllerProtection: Equatable, Sendable {
   /// The single gate the coordinator consults. A lease alone is not permission to disable;
   /// durable ownership and fresh platform prerequisites are checked separately.
   public func protects(at now: Instant) -> Bool {
-    phase == .protected && lease?.protects(at: now) == true
+    !suspended && phase == .protected && lease?.protects(at: now) == true
   }
 
   /// Report the outstanding operation so heartbeats carry a stall the helper can detect.
@@ -212,6 +212,8 @@ public struct ControllerProtection: Equatable, Sendable {
         phase = .paired
         return []
       case (.arming, .armed), (.protected, .acknowledge):
+        // Replies belong to a suppression cycle, not merely to this process pairing.
+        guard message.ownership == ownership else { return fail(at: now) }
         guard lease != nil else { return fail(at: now) }
         lease?.receive(.acknowledged(session: session, challenge: message.challenge), at: now)
         guard lease?.protects(at: now) == true else { return fail(at: now) }
@@ -255,8 +257,12 @@ public struct ControllerProtection: Equatable, Sendable {
 
     case .resumed:
       suspended = false
-      lease?.receive(.resumed, at: now)
+      let renewal = lease?.receive(.resumed, at: now)
       lastChallengeAt = now
+      if case .challenge(_, let number)? = renewal?.first {
+        return [.send(next(.progress, at: now, challenge: number,
+          ownership: ownership, progress: progress))]
+      }
       return []
 
     case .tick:
@@ -475,6 +481,7 @@ public struct HelperProtection: Equatable, Sendable {
     let sequence = nextSequence
     nextSequence += 1
     return .init(
-      session: session ?? "", sender: .helper, sequence: sequence, challenge: challenge, kind: kind)
+      session: session ?? "", sender: .helper, sequence: sequence, challenge: challenge, kind: kind,
+      ownership: kind == .armed || kind == .acknowledge ? ownership : nil)
   }
 }

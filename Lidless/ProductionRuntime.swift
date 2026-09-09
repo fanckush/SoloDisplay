@@ -28,7 +28,6 @@ final class HelperRuntime {
   private var controller: Process?
   private var link: ProtectionLink?
   private var protection: HelperProtection
-  private var takeover = RecoveryTakeover()
   private var timer: Timer?
   private var recovering = false
   private var witnessedAt: Instant = 0
@@ -141,6 +140,15 @@ final class HelperRuntime {
     }
     do {
       while let message = try link.poll() {
+        if message.kind == .arm {
+          guard let record = try store.load(), let claimed = message.ownership,
+            record.session == message.session, record.operationID == claimed.operationID,
+            record.target == claimed.target,
+            (try? record.validate()) != nil else {
+            apply(protection.receive(.peerFailed(.malformed), at: now))
+            break
+          }
+        }
         apply(protection.receive(.received(message), at: now))
       }
     } catch {
@@ -174,6 +182,7 @@ final class HelperRuntime {
   /// consider a restore. Message content alone never reaches the display API.
   private func takeOver(_ ownership: Ownership, reason: String) async {
     guard let child = controller else { return }
+    var takeover = RecoveryTakeover()
     takeover.receive(.recoveryNeeded)
     if child.isRunning { kill(child.processIdentifier, SIGKILL) }
     guard await awaitExit(child, seconds: 3) else {
@@ -182,7 +191,8 @@ final class HelperRuntime {
       return
     }
     takeover.receive(.writerTerminationConfirmed)
-    guard case .unresolved(let record) = currentReconciliation(), record.target == ownership.target
+    guard case .unresolved(let record) = currentReconciliation(), record.target == ownership.target,
+      record.operationID == ownership.operationID, record.session == protection.session
     else {
       // The responsive controller already restored and cleared its own ownership.
       takeover.receive(.failed)
@@ -191,7 +201,7 @@ final class HelperRuntime {
       NSApp.terminate(nil)
       return
     }
-    await restore(record, reason: reason)
+    await restore(record, reason: reason, liveOwnership: ownership, transaction: takeover)
     timer?.invalidate()
     NSApp.terminate(nil)
   }
@@ -202,7 +212,10 @@ final class HelperRuntime {
       bootID: reading.bootID, loginID: reading.loginID, displays: reading.displays)
   }
 
-  private func restore(_ record: ProductionRecord, reason: String) async {
+  private func restore(_ record: ProductionRecord, reason: String,
+    liveOwnership: Ownership? = nil, transaction: RecoveryTakeover = .init()) async {
+    // A transaction is scoped to this recovery attempt, never reused by a future child.
+    var takeover = transaction
     let lock: SessionWriterLock
     do {
       // Acquiring the writer lock is the evidence that no live writer owns this session.
@@ -222,8 +235,8 @@ final class HelperRuntime {
     takeover.receive(.lockAcquired)
     let reading = DisplayObserver.read()
     guard
-      (try? RecoveryIdentity.checkCurrentDisplays(reading.displays, target: record.target))
-        != nil, reading.bootID == record.target.bootID, reading.loginID == record.target.loginID
+      (try? RecoveryIdentity.authorizeRestore(reading, target: record.target,
+        liveOwnership: liveOwnership)) != nil
     else {
       takeover.receive(.failed)
       report("Live display evidence contradicts Lidless's record, so it changed no display.")
@@ -236,13 +249,15 @@ final class HelperRuntime {
     }
     // Session scope: this process did not make the change it is undoing.
     do {
-      try PrivateDisplayAPI().setEnabled(
-        true, displayID: record.target.displayID, scope: .forSession)
+      try await Task.detached {
+        try PrivateDisplayAPI().setEnabled(
+          true, displayID: record.target.displayID, scope: .forSession)
+      }.value
     } catch {
       report("Lidless requested restoration and will verify it: \(error)")
     }
     takeover.receive(.restoreReturned)
-    guard await verifyRestored(record.target) else {
+    guard await verifyRestored(record) else {
       // An unverified restoration keeps the record. It is not reported as a success.
       takeover.receive(.failed)
       report("Lidless could not confirm the internal display came back on after \(reason).")
@@ -259,17 +274,14 @@ final class HelperRuntime {
     }
   }
 
-  private func verifyRestored(_ target: PanelTarget) async -> Bool {
+  private func verifyRestored(_ record: ProductionRecord) async -> Bool {
     let deadline = ProcessInfo.processInfo.systemUptime + 3
     repeat {
       try? await Task.sleep(for: .milliseconds(100))
       let reading = DisplayObserver.read()
       // A mirrored follower is never reported active, so requiring that would make a correct
       // restoration look like a failure and keep the record forever.
-      if reading.displays.contains(where: {
-        $0.id == target.displayID && $0.builtIn && $0.uuid == target.displayUUID && $0.online
-          && !$0.asleep && ($0.active || $0.mirrorSourceID != nil)
-      }) {
+      if RestorationVerification.matches(record, reading: reading) == .yes {
         return true
       }
     } while ProcessInfo.processInfo.systemUptime < deadline

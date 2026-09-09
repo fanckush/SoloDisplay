@@ -156,7 +156,12 @@ private func external(
   // produce a pointless flash on the next wake.
   reading.displays[1].asleep = true
   reading.displays[1].active = false
-  #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .yes)
+  #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .no)
+  let target = PanelTarget(displayID: 1, displayUUID: "panel", bootID: "boot", loginID: 1)
+  var suppressed = reading
+  suppressed.displays.removeFirst()
+  #expect(ControllerObservation.environment(suppressed, power: .awake,
+    owned: .init(target: target, disableReturned: true)).nativeExternalAvailable == .yes)
 
   // An external that is actually gone is a different matter.
   reading.displays.removeLast()

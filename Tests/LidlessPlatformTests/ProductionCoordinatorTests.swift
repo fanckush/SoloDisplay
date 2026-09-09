@@ -77,14 +77,29 @@ private final class FakeOwnership: OwnershipPersisting {
 
 private final class FakePreferences: PreferencePersisting {
   let saved = Mutex<[Mode]>([])
-  func save(mode: Mode) throws { saved.withLock { $0.append(mode) } }
+  let fails = Mutex(false)
+  func save(mode: Mode) throws {
+    if fails.withLock({ $0 }) { throw JournalError.writeFailed }
+    saved.withLock { $0.append(mode) }
+  }
 }
 
 @MainActor private final class FakeProtection: ProtectionRequesting {
+  let authorization = ProtectionAuthorization()
   var armed: [UInt64] = []
   var releases = 0
   var progress: [OperationProgress?] = []
-  func arm(operationID: UInt64, ownership: Ownership) { armed.append(operationID) }
+  func arm(operationID: UInt64, ownership: Ownership) {
+    armed.append(operationID)
+    var protocolState = ControllerProtection(session: "test", at: 0)
+    protocolState.receive(.start, at: 0)
+    protocolState.receive(.received(.init(session: "test", sender: .helper,
+      sequence: 1, kind: .witness)), at: 0)
+    protocolState.receive(.arm(ownership), at: 2_100)
+    protocolState.receive(.received(.init(session: "test", sender: .helper,
+      sequence: 2, challenge: 1, kind: .armed, ownership: ownership)), at: 2_100)
+    authorization.update(protocolState)
+  }
   func release() { releases += 1 }
   func noteOperation(_ progress: OperationProgress?) { self.progress.append(progress) }
 }
@@ -120,6 +135,24 @@ private struct SyncLane: SerialLane {
     MainActor.assumeIsolated { completion(reading) }
   }
   func detached(_ work: @escaping @Sendable () -> Void) { work() }
+}
+
+/// Unlike SyncLane this leaves work queued while notifications and user actions are reduced.
+private final class DelayedLane: SerialLane {
+  private let pending = Mutex<[@Sendable @MainActor () -> Void]>([])
+  func run(_ work: @escaping @Sendable () -> Event,
+    completion: @escaping @Sendable @MainActor (Event) -> Void) {
+    pending.withLock { $0.append { completion(work()) } }
+  }
+  func observe(_ work: @escaping @Sendable () -> PlatformReading,
+    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void) {
+    let reading = work()
+    MainActor.assumeIsolated { completion(reading) }
+  }
+  func detached(_ work: @escaping @Sendable () -> Void) { work() }
+  @MainActor func flush() {
+    while let next = pending.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) { next() }
+  }
 }
 
 @MainActor private final class ManualScheduler: CoordinatorScheduler {
@@ -176,14 +209,15 @@ private func reading(
   let scheduler = ManualScheduler()
   let coordinator: ProductionCoordinator
 
-  init(mode: Mode = .automatic, reading start: PlatformReading = reading()) {
+  init(mode: Mode = .automatic, reading start: PlatformReading = reading(),
+    lane: any SerialLane = SyncLane()) {
     observer = FakeObserver(start)
     var state = ControllerState(mode: mode)
     state.protectionAvailable = true
     coordinator = ProductionCoordinator(
       state: state, clock: clock, observer: observer, writer: writer, ownership: ownership,
       preferences: preferences, protection: protection, delegate: delegate,
-      lane: SyncLane(), scheduler: scheduler)
+      lane: lane, scheduler: scheduler)
     coordinator.send(.protectionAvailable(true))
   }
 
@@ -215,6 +249,60 @@ private func reading(
 
 @MainActor
 struct ProductionCoordinatorTests {
+  @Test(arguments: [Event.keepOn, .willSleep, .protectionAvailable(false), .quit])
+  func queuedDisableIsRevokedBeforeItsCall(_ interruption: Event) {
+    let lane = DelayedLane()
+    let harness = Harness(lane: lane)
+    harness.step(to: 0)
+    harness.step(to: 600)
+    harness.step(to: 2_100)
+    lane.flush() // Persist the journal and request the lease.
+    harness.grantProtection() // Queue a write but do not run it.
+    harness.coordinator.send(interruption)
+    lane.flush()
+    #expect(harness.writer.calls.isEmpty)
+    #expect(harness.ownership.record == nil)
+  }
+
+  @Test func queuedDisableCannotOutliveItsLeaseOrOperationDeadline() {
+    let lane = DelayedLane()
+    let harness = Harness(lane: lane)
+    harness.step(to: 0)
+    harness.step(to: 600)
+    harness.step(to: 2_100)
+    lane.flush()
+    harness.grantProtection()
+    harness.clock.set(10_000) // No main-loop tick to announce expiry.
+    lane.flush()
+    #expect(harness.writer.calls.isEmpty)
+  }
+
+  @Test func preferenceFailureIsVisibleAndInhibitsAutomaticDisabling() {
+    let harness = Harness()
+    harness.preferences.fails.withLock { $0 = true }
+    harness.coordinator.send(.keepOn)
+    #expect(harness.state.mode == .automaticPaused)
+    #expect(harness.state.fault == .preferencesFailed)
+    harness.reachSuppression()
+    #expect(harness.writer.calls.isEmpty)
+  }
+
+  @Test func changedMirrorRelationshipRetainsOwnershipAfterRestore() {
+    var mirrored = reading()
+    mirrored.displays[0].active = false
+    mirrored.displays[0].mirrored = true
+    mirrored.displays[0].mirrorSourceID = 5
+    mirrored.displays[1].mirrored = true
+    let harness = Harness(reading: mirrored)
+    harness.reachSuppression()
+    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.coordinator.send(.keepOn)
+    harness.step(to: 2_400, reading: reading()) // Panel is back, but incorrectly extended.
+    #expect(harness.state.ownership != nil)
+    #expect(harness.ownership.clears == 0)
+    #expect(harness.state.fault == .configurationChanged)
+  }
+
   @Test func aFullDisableWalksJournalThenLeaseThenWrite() {
     let harness = Harness()
     harness.reachSuppression()

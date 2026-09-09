@@ -1,5 +1,6 @@
 import Foundation
 import LidlessCore
+import Synchronization
 
 /// User intent that must survive a restart. This is never hardware truth: it says what the
 /// user asked for, not what any display is currently doing.
@@ -18,6 +19,7 @@ public struct Preferences: Codable, Equatable, Sendable {
 
 public struct PreferencesStore: Sendable {
   private let file: URL
+  private let gate = PreferenceGate()
 
   public init(directory: URL) throws {
     file = directory.appendingPathComponent("preferences.json", isDirectory: false)
@@ -32,6 +34,10 @@ public struct PreferencesStore: Sendable {
   /// An unreadable or unsupported file falls back to defaults. Preferences are a convenience,
   /// and the safe default is manual mode with nothing enabled.
   public func load() -> Preferences {
+    gate.value.withLock { _ in readUnlocked() }
+  }
+
+  private func readUnlocked() -> Preferences {
     guard let data = try? Data(contentsOf: file, options: .mappedIfSafe), data.count < 16_384,
       let stored = try? JSONDecoder().decode(Preferences.self, from: data),
       stored.schemaVersion == Preferences.currentSchema
@@ -40,6 +46,10 @@ public struct PreferencesStore: Sendable {
   }
 
   public func save(_ preferences: Preferences) throws {
+    try gate.value.withLock { _ in try writeUnlocked(preferences) }
+  }
+
+  private func writeUnlocked(_ preferences: Preferences) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     try encoder.encode(preferences).write(to: file, options: [.atomic])
@@ -49,9 +59,15 @@ public struct PreferencesStore: Sendable {
   /// Read, change, write. The caller never has to hold a stale copy across a change.
   @discardableResult public func update(_ change: (inout Preferences) -> Void) throws -> Preferences
   {
-    var preferences = load()
-    change(&preferences)
-    try save(preferences)
-    return preferences
+    try gate.value.withLock { _ in
+      var preferences = readUnlocked()
+      change(&preferences)
+      try writeUnlocked(preferences)
+      return preferences
+    }
   }
+}
+
+private final class PreferenceGate: Sendable {
+  let value = Mutex(0)
 }

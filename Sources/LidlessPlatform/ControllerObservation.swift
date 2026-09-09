@@ -35,7 +35,8 @@ public enum ControllerObservation {
     return .init(
       panel: target, panelState: state, power: power, lid: reading.lid,
       foregroundSession: reading.foregroundSession,
-      nativeExternalAvailable: nativeExternal(reading, reliable: reliable),
+      nativeExternalAvailable: nativeExternal(reading, reliable: reliable,
+        maintainingSuppression: state == .disabled && owned?.disableReturned == true),
       supportedTopology: topology(
         reading, reliable: reliable, internalPresent: internalDisplay != nil,
         panelOwnedAndAbsent: state == .disabled),
@@ -82,7 +83,8 @@ public enum ControllerObservation {
 
   /// Transport classification is the sole authority here. An active flag, a display name, and
   /// an operator's attestation in a lab are none of them evidence of a native wired output.
-  static func nativeExternal(_ reading: PlatformReading, reliable: Bool) -> Fact {
+  static func nativeExternal(_ reading: PlatformReading, reliable: Bool,
+    maintainingSuppression: Bool = false) -> Fact {
     guard reliable else { return .unknown }
     let externals = reading.displays.filter { !$0.builtIn && $0.online }
     guard !externals.isEmpty else { return .no }
@@ -98,7 +100,8 @@ public enum ControllerObservation {
     // here. An actually absent external is, because it disappears from the inventory.
     return externals.contains(where: {
       $0.usableExternalCandidate
-        || ($0.mirrorSourceID == nil && $0.online && $0.modeAvailable && $0.width > 0
+        || ((maintainingSuppression || ($0.active && !$0.asleep))
+          && $0.mirrorSourceID == nil && $0.online && $0.modeAvailable && $0.width > 0
           && $0.height > 0)
     }) ? .yes : .no
   }

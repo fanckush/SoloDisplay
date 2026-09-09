@@ -18,6 +18,10 @@ public enum Controller {
       }
       let old = state.observation?.environment
       let current = sample.environment
+      if state.ownership != nil, current.restorationMatches == .no {
+        state.fault = .configurationChanged
+        state.manualRequest = false
+      }
       if let old, old.hasSamePrerequisites(as: current) {
         if sample.sampledAt - (state.lastCountedSample ?? sample.sampledAt)
           >= state.policy.sampleSeparation
@@ -50,12 +54,14 @@ public enum Controller {
       {
         if op.kind == .disable && current.panelState == .disabled {
           state.operation = nil
-        } else if op.kind == .restore && current.panelState == .enabled {
+        } else if op.kind == .restore && current.panelState == .enabled,
+          current.restorationMatches == .yes {
           state.operation = nil
           releaseOwnership(&state, effects: &effects)
         }
       } else if state.operation == nil, state.ownership != nil, !state.pendingClear,
-        current.panel == state.ownership?.target, current.panelState == .enabled
+        current.panel == state.ownership?.target, current.panelState == .enabled,
+        current.restorationMatches == .yes
       {
         // Someone else (including macOS) restored the panel. Do not fight that change.
         releaseOwnership(&state, effects: &effects)
@@ -64,6 +70,7 @@ public enum Controller {
       }
 
     case .selectMode(let mode):
+      state.preferencesPending = true
       state.mode = mode
       state.manualRequest = false
       effects.append(.savePreferences(mode))
@@ -73,8 +80,16 @@ public enum Controller {
       state.manualRequest = false
       if state.mode != .manual {
         state.mode = .automaticPaused
+        state.preferencesPending = true
         effects.append(.savePreferences(.automaticPaused))
       }
+    case .preferencesSaved(let mode, let succeeded):
+      if !succeeded {
+        state.fault = .preferencesFailed
+        state.manualRequest = false
+        if state.mode == .automatic { state.mode = .automaticPaused }
+      }
+      if mode == state.mode || !succeeded { state.preferencesPending = false }
     case .retry:
       if state.operation == nil {
         state.fault = nil
@@ -286,7 +301,7 @@ public enum Controller {
   }
 
   public static func mayDisable(_ state: ControllerState, at now: Instant) -> Bool {
-    guard state.wantsOff, state.protectionAvailable, !state.pendingClear,
+    guard state.wantsOff, state.protectionAvailable, !state.pendingClear, !state.preferencesPending,
       isFresh(state, at: now), let sample = state.observation,
       sample.environment.prerequisitesMet, sample.environment.panelState == .enabled,
       state.matchingSamples >= 2, let stableSince = state.stableSince
