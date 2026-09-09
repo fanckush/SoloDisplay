@@ -1,0 +1,17 @@
+# SwiftLint configuration for Lidless.
+excluded:
+  - .build
+  - DerivedData
+  - build
+
+disabled_rules:
+  - todo
+  - line_length          # governed by SwiftFormat --maxwidth
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+  - explicit_init
+
+identifier_name:
+  min_length: 2

@@ -1,0 +1,7 @@
+# SwiftFormat configuration for Lidless.
+--swiftversion 6.0
+--indent 2
+--maxwidth 100
+--self remove
+--importgrouping testable-bottom
+--exclude .build,DerivedData,build
