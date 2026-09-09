@@ -315,9 +315,12 @@ public final class ProductionCoordinator {
           permit.consume(operationID: operationID, target: target, at: clock.now())
         else { return .operationRefused(operationID: operationID) }
       } else {
-        guard (try? RecoveryIdentity.authorizeRestore(observer.read(), target: target,
-          liveOwnership: owned)) != nil else {
-          return .operationReturned(operationID: operationID, succeeded: false)
+        guard
+          (try? RecoveryIdentity.authorizeRestore(
+            observer.read(), target: target,
+            liveOwnership: owned)) != nil
+        else {
+          return .restoreDeferred(operationID: operationID)
         }
       }
       do {

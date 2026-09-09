@@ -68,6 +68,29 @@ private struct Pair {
 }
 
 struct ProtectionTests {
+  @Test func missingWakeCannotSuspendTheHelperWatchdogIndefinitely() {
+    var pair = Pair()
+    pair.establish()
+    pair.helper.receive(.suspended, at: 100)
+    #expect(pair.helper.receive(.tick, at: 120_000).isEmpty)
+    #expect(pair.helper.receive(.tick, at: 122_000).isEmpty)
+    // Recovery resumes without a workspace wake or any controller traffic.
+    #expect(
+      pair.helper.receive(.tick, at: 127_000)
+        == [.recoveryRequired(owned, .heartbeatExpired)])
+  }
+
+  @Test func missingWakeRequiresFreshControllerAcknowledgementAfterActivity() {
+    var pair = Pair()
+    pair.establish()
+    pair.controller.receive(.suspended, at: 100)
+    pair.controller.receive(.tick, at: 120_000)
+    let renewal = pair.controller.receive(.tick, at: 122_000)
+    #expect(!pair.controller.protects(at: 122_000))
+    pair.pump(renewal, at: 122_000)
+    #expect(pair.controller.protects(at: 122_000))
+  }
+
   @Test func handshakeEstablishesProtectionOnlyAfterAnIndependentWitness() {
     var pair = Pair()
     pair.establish()
@@ -372,7 +395,8 @@ struct ProtectionTests {
     pair.helper.receive(.suspended, at: 1_000)
     pair.helper.receive(.resumed, at: 120_000)
     pair.pump(pair.controller.receive(.resumed, at: 120_000), at: 120_000)
-    pair.controller.note(progress: .init(id: 1, kind: .restore, phase: .submitted, deadline: 121_000))
+    pair.controller.note(
+      progress: .init(id: 1, kind: .restore, phase: .submitted, deadline: 121_000))
 
     pair.tick(at: 121_100)
     #expect(pair.recovery.isEmpty)

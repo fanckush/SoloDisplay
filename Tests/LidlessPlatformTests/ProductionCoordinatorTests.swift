@@ -93,11 +93,17 @@ private final class FakePreferences: PreferencePersisting {
     armed.append(operationID)
     var protocolState = ControllerProtection(session: "test", at: 0)
     protocolState.receive(.start, at: 0)
-    protocolState.receive(.received(.init(session: "test", sender: .helper,
-      sequence: 1, kind: .witness)), at: 0)
+    protocolState.receive(
+      .received(
+        .init(
+          session: "test", sender: .helper,
+          sequence: 1, kind: .witness)), at: 0)
     protocolState.receive(.arm(ownership), at: 2_100)
-    protocolState.receive(.received(.init(session: "test", sender: .helper,
-      sequence: 2, challenge: 1, kind: .armed, ownership: ownership)), at: 2_100)
+    protocolState.receive(
+      .received(
+        .init(
+          session: "test", sender: .helper,
+          sequence: 2, challenge: 1, kind: .armed, ownership: ownership)), at: 2_100)
     authorization.update(protocolState)
   }
   func release() { releases += 1 }
@@ -140,12 +146,16 @@ private struct SyncLane: SerialLane {
 /// Unlike SyncLane this leaves work queued while notifications and user actions are reduced.
 private final class DelayedLane: SerialLane {
   private let pending = Mutex<[@Sendable @MainActor () -> Void]>([])
-  func run(_ work: @escaping @Sendable () -> Event,
-    completion: @escaping @Sendable @MainActor (Event) -> Void) {
+  func run(
+    _ work: @escaping @Sendable () -> Event,
+    completion: @escaping @Sendable @MainActor (Event) -> Void
+  ) {
     pending.withLock { $0.append { completion(work()) } }
   }
-  func observe(_ work: @escaping @Sendable () -> PlatformReading,
-    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void) {
+  func observe(
+    _ work: @escaping @Sendable () -> PlatformReading,
+    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void
+  ) {
     let reading = work()
     MainActor.assumeIsolated { completion(reading) }
   }
@@ -209,8 +219,10 @@ private func reading(
   let scheduler = ManualScheduler()
   let coordinator: ProductionCoordinator
 
-  init(mode: Mode = .automatic, reading start: PlatformReading = reading(),
-    lane: any SerialLane = SyncLane()) {
+  init(
+    mode: Mode = .automatic, reading start: PlatformReading = reading(),
+    lane: any SerialLane = SyncLane()
+  ) {
     observer = FakeObserver(start)
     var state = ControllerState(mode: mode)
     state.protectionAvailable = true
@@ -249,6 +261,47 @@ private func reading(
 
 @MainActor
 struct ProductionCoordinatorTests {
+  @Test(arguments: [Lid.closed, .unknown])
+  func unavailableLidDoesNotExhaustRecovery(_ lid: Lid) {
+    let harness = Harness()
+    harness.reachSuppression()
+    harness.step(to: 2_200, reading: reading(panel: false))
+    for time in stride(from: Instant(2_400), through: 20_000, by: 500) {
+      harness.step(to: time, reading: reading(panel: false, lid: lid))
+    }
+    #expect(harness.state.restoreAttempts == 0)
+    #expect(harness.state.ownership != nil)
+    #expect(harness.coordinator.presentation.waitingForRecovery)
+    harness.step(to: 21_000, reading: reading(panel: false, external: false))
+    #expect(harness.writer.calls.filter(\.enabled).count == 1)
+    harness.step(to: 21_500, reading: reading(external: false))
+    #expect(harness.state.ownership == nil)
+  }
+
+  @Test func aQueuedRestoreDefersWhenTheSessionDisappearsBeforeItsCall() {
+    let lane = DelayedLane()
+    let harness = Harness(lane: lane)
+    harness.step(to: 0)
+    harness.step(to: 600)
+    harness.step(to: 2_100)
+    lane.flush()
+    harness.grantProtection()
+    lane.flush()
+    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.coordinator.send(.keepOn)
+    harness.observer.set(reading(panel: false, foreground: .no))
+    lane.flush()
+    #expect(harness.state.restoreAttempts == 0)
+    #expect(harness.state.recoveryDeferredSequence != nil)
+    #expect(harness.writer.calls.filter(\.enabled).isEmpty)
+    harness.step(to: 3_000, reading: reading(panel: false, external: false))
+    lane.flush()
+    #expect(harness.writer.calls.filter(\.enabled).count == 1)
+    harness.step(to: 3_500, reading: reading(external: false))
+    lane.flush()
+    #expect(harness.state.ownership == nil)
+  }
+
   @Test(arguments: [Event.keepOn, .willSleep, .protectionAvailable(false), .quit])
   func queuedDisableIsRevokedBeforeItsCall(_ interruption: Event) {
     let lane = DelayedLane()
@@ -256,8 +309,8 @@ struct ProductionCoordinatorTests {
     harness.step(to: 0)
     harness.step(to: 600)
     harness.step(to: 2_100)
-    lane.flush() // Persist the journal and request the lease.
-    harness.grantProtection() // Queue a write but do not run it.
+    lane.flush()  // Persist the journal and request the lease.
+    harness.grantProtection()  // Queue a write but do not run it.
     harness.coordinator.send(interruption)
     lane.flush()
     #expect(harness.writer.calls.isEmpty)
@@ -272,7 +325,7 @@ struct ProductionCoordinatorTests {
     harness.step(to: 2_100)
     lane.flush()
     harness.grantProtection()
-    harness.clock.set(10_000) // No main-loop tick to announce expiry.
+    harness.clock.set(10_000)  // No main-loop tick to announce expiry.
     lane.flush()
     #expect(harness.writer.calls.isEmpty)
   }
@@ -297,7 +350,7 @@ struct ProductionCoordinatorTests {
     harness.reachSuppression()
     harness.step(to: 2_200, reading: reading(panel: false))
     harness.coordinator.send(.keepOn)
-    harness.step(to: 2_400, reading: reading()) // Panel is back, but incorrectly extended.
+    harness.step(to: 2_400, reading: reading())  // Panel is back, but incorrectly extended.
     #expect(harness.state.ownership != nil)
     #expect(harness.ownership.clears == 0)
     #expect(harness.state.fault == .configurationChanged)
