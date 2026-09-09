@@ -2,7 +2,21 @@
 
 Updated 2026-09-09. `validation.md` is the chronological hardware evidence record. Historical statements describe the state at the time of each experiment, not verification of subsequent code changes.
 
-## Current recovery follow-up
+## Current shutdown diagnostics
+
+Implemented and automatically verified on 2026-09-09: typed, sparse Unified Logging
+in Debug and Release, explicit protection-loss/exit evidence, and a bounded
+best-effort previous-process history in Export Diagnostics. Existing replay readers
+remain compatible. See `shutdown-diagnostics.md` for the privacy rules, export
+limits, retrieval instructions, and failure cases.
+
+Verification: 154 package tests and 50 native tests pass. Debug and Release builds
+pass. A non-display-writing Release probe's startup and exit-reason records were
+retrieved by a separate process after its exit on this Mac. Other account access
+and system retention remain best-effort. No normal app launch or hardware tests
+were performed for this diagnostics change; earlier hardware evidence is unchanged.
+
+## Earlier recovery follow-up
 
 The three lifecycle findings from the final review are implemented and automatically verified:
 

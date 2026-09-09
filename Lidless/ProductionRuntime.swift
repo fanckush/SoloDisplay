@@ -37,6 +37,11 @@ final class HelperRuntime {
   private let recoveryClock: any CoordinatorClock
   private let recoveryPause: @Sendable () async -> Void
   private let recoveryLockDirectory: URL
+  private let diagnostics: OperationalLogger
+  private var childExit = ChildExitDiagnostics()
+  private var activityResumeCount: UInt64 = 0
+  private var loggedPairing = false
+  private var loggedLoss: HelperProtection.Reason?
 
   init(
     executable: URL, store: ProductionJournalStore,
@@ -44,6 +49,7 @@ final class HelperRuntime {
     recoveryWriter: any DisplayWriting = LiveDisplayWriter(),
     recoveryClock: any CoordinatorClock = MonotonicClock(),
     recoveryLockDirectory: URL = FileManager.default.temporaryDirectory,
+    diagnostics: OperationalLogger = .init(role: .helper),
     recoveryPause: @escaping @Sendable () async -> Void = {
       try? await Task.sleep(for: .milliseconds(500))
     }
@@ -56,13 +62,16 @@ final class HelperRuntime {
     self.recoveryClock = recoveryClock
     self.recoveryLockDirectory = recoveryLockDirectory
     self.recoveryPause = recoveryPause
+    self.diagnostics = diagnostics
   }
 
   static func now() -> Instant { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
 
   func start() async {
+    diagnostics.started()
     let reading = DisplayObserver.read()
     guard let loginID = reading.loginID else {
+      diagnostics.emit(.exitRequested, reason: .missingSession)
       report("Lidless cannot identify this login session, so it will not change any display.")
       NSApp.terminate(nil)
       return
@@ -71,12 +80,14 @@ final class HelperRuntime {
       instanceLock = try SessionWriterLock(loginID: loginID, name: "instance")
     } catch {
       // Another Lidless pair already owns this GUI session. Two supervisors is worse than one.
+      diagnostics.emit(.exitRequested, reason: .alreadyRunning, errorCode: (error as NSError).code)
       report("Lidless is already running in this login session.")
       NSApp.terminate(nil)
       return
     }
     await reconcileAtLaunch(reading)
     guard currentReconciliation() == .clean else {
+      diagnostics.emit(.recoveryBlocked, reason: .unresolvedOwnership)
       report("Recovery remains unresolved. No disabling controller was started.")
       return
     }
@@ -88,6 +99,9 @@ final class HelperRuntime {
       let token = workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
         MainActor.assumeIsolated {
           guard let self else { return }
+          self.diagnostics.emit(
+            suspended ? .suspended : .resumed,
+            session: self.protection.session, reason: suspended ? .workspaceSleep : .workspaceWake)
           self.apply(
             self.protection.receive(suspended ? .suspended : .resumed, at: Self.now()))
         }
@@ -111,19 +125,30 @@ final class HelperRuntime {
     case .clean:
       return
     case .retained(let reason):
+      diagnostics.emit(.recoveryBlocked, reason: .recordRetained)
       report(reason)
     case .priorSession(let record):
       // A restart or new login already restored the panel. Confirm that before forgetting it.
       guard reading.displays.contains(where: { $0.builtIn && $0.active }) else {
+        diagnostics.emit(.recoveryWaiting, reason: .priorSession)
         report(
           "Lidless kept an unresolved record from a previous startup because it cannot see an active internal display."
         )
         return
       }
-      try? store.clear()
-      report("Lidless cleared an unresolved record from a previous startup. Nothing was changed.")
+      diagnostics.emit(.journalClearing, reason: .priorSession)
+      do {
+        try store.clear()
+        diagnostics.emit(.journalCleared, reason: .priorSession, succeeded: true)
+        report("Lidless cleared an unresolved record from a previous startup. Nothing was changed.")
+      } catch {
+        diagnostics.emit(
+          .journalCleared, reason: .priorSession, succeeded: false,
+          errorCode: (error as NSError).code)
+      }
       _ = record
     case .unresolved(let record):
+      diagnostics.emit(.recoveryRequested, session: record.session, reason: .unresolvedOwnership)
       _ = await restore(record, reason: "unresolved ownership from an earlier run")
     }
   }
@@ -142,6 +167,10 @@ final class HelperRuntime {
     child.standardInput = commands
     child.standardOutput = replies
     do { try child.run() } catch {
+      diagnostics.emit(
+        .startupFailed, reason: .controllerLaunchFailed,
+        errorCode: (error as NSError).code)
+      diagnostics.emit(.exitRequested, reason: .controllerLaunchFailed)
       report("Lidless could not start its controller process: \(error)")
       NSApp.terminate(nil)
       return
@@ -179,23 +208,59 @@ final class HelperRuntime {
       apply(protection.receive(.peerFailed(.disconnected), at: now))
     }
     if controller?.isRunning == false, !recovering {
+      if let controller {
+        childExit.recordIfTerminated(controller, using: diagnostics, session: protection.session)
+      }
       apply(protection.receive(.controllerExited, at: now))
     }
     apply(protection.receive(.tick, at: now))
     if controller?.isRunning == false, !recovering {
       // Nothing is owned and nothing is running. The supervising process has no work left.
+      diagnostics.emit(.exitRequested, session: protection.session, reason: .nothingOwed)
       timer?.invalidate()
       NSApp.terminate(nil)
     }
   }
 
   private func apply(_ outputs: [HelperProtection.Output]) {
+    if let reason = protection.reason, loggedLoss != reason {
+      loggedLoss = reason
+      diagnostics.emit(
+        reason == .controllerExited && protection.ownership == nil
+          ? .protectionEnded : .protectionLost, session: protection.session,
+        operation: protection.progress
+      ) {
+        $0.helperLoss = reason
+        $0.progressAgeMS = max(0, Self.now() - protection.lastProgressAt)
+        if let progress = protection.progress {
+          $0.deadlineOverdueMS = max(0, Self.now() - progress.deadline)
+        }
+      }
+    }
+    if protection.activityResumeCount != activityResumeCount {
+      activityResumeCount = protection.activityResumeCount
+      diagnostics.emit(.resumed, session: protection.session, reason: .activityFallback)
+    }
+    if !loggedPairing, protection.session != nil {
+      loggedPairing = true
+      diagnostics.emit(.paired, session: protection.session)
+    }
     for output in outputs {
       switch output {
       case .send(let message): try? link?.send(message)
       case .standDown: break
       case .recoveryRequired(let ownership, let reason):
         guard !recovering else { continue }
+        diagnostics.emit(
+          .recoveryRequested, session: protection.session,
+          operation: protection.progress
+        ) {
+          $0.helperLoss = reason
+          $0.progressAgeMS = max(0, Self.now() - protection.lastProgressAt)
+          if let progress = protection.progress {
+            $0.deadlineOverdueMS = max(0, Self.now() - progress.deadline)
+          }
+        }
         recovering = true
         Task { @MainActor in await self.takeOver(ownership, reason: reason.rawValue) }
       }
@@ -208,16 +273,30 @@ final class HelperRuntime {
     guard let child = controller else { return }
     var takeover = RecoveryTakeover()
     takeover.receive(.recoveryNeeded)
-    if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+    if child.isRunning {
+      diagnostics.emit(
+        .childTerminationRequested, session: protection.session,
+        reason: .protectionFailure
+      ) { $0.helperLoss = protection.reason }
+      let result = kill(child.processIdentifier, SIGKILL)
+      if result != 0 {
+        diagnostics.emit(
+          .childTerminationRequested, session: protection.session,
+          reason: .protectionFailure, succeeded: false, errorCode: Int(errno))
+      }
+    }
     guard await awaitExit(child, seconds: 3) else {
+      diagnostics.emit(.childExitUnconfirmed, session: protection.session, succeeded: false)
       takeover.receive(.failed)
       report("Lidless could not confirm its controller stopped, so it changed no display.")
       return
     }
+    childExit.recordIfTerminated(child, using: diagnostics, session: protection.session)
     takeover.receive(.writerTerminationConfirmed)
     let record: ProductionRecord
     do {
       guard let retained = try store.load() else {
+        diagnostics.emit(.exitRequested, session: protection.session, reason: .nothingOwed)
         timer?.invalidate()
         NSApp.terminate(nil)
         return
@@ -226,15 +305,20 @@ final class HelperRuntime {
       guard retained.target == ownership.target, retained.operationID == ownership.operationID,
         retained.session == protection.session
       else {
+        diagnostics.emit(.recoveryBlocked, session: protection.session, reason: .recordMismatch)
         report("The recovery record does not match this live ownership. It was retained.")
         return
       }
       record = retained
     } catch {
+      diagnostics.emit(
+        .recoveryBlocked, session: protection.session, reason: .recordUnreadable,
+        errorCode: (error as NSError).code)
       report("The recovery record cannot be read. Recovery remains unresolved: \(error)")
       return
     }
     if await restore(record, reason: reason, liveOwnership: ownership, transaction: takeover) {
+      diagnostics.emit(.exitRequested, session: protection.session, reason: .recoveryComplete)
       timer?.invalidate()
       NSApp.terminate(nil)
     }
@@ -256,7 +340,11 @@ final class HelperRuntime {
     do {
       // Acquiring the writer lock is the evidence that no live writer owns this session.
       lock = try SessionWriterLock(loginID: record.target.loginID, directory: recoveryLockDirectory)
+      diagnostics.emit(.writerLockAcquired, session: record.session)
     } catch {
+      diagnostics.emit(
+        .writerLockUnavailable, session: record.session, reason: .writerBusy,
+        errorCode: (error as NSError).code)
       takeover.receive(.failed)
       report("Another display writer holds this session, so Lidless changed no display.")
       return false
@@ -270,6 +358,7 @@ final class HelperRuntime {
     }
     takeover.receive(.lockAcquired)
     guard takeover.receive(.restoreAuthorized) == [.restore] else {
+      diagnostics.emit(.recoveryBlocked, session: record.session, reason: .orderingRefused)
       report("Recovery refused: writer termination and lock ordering were not established.")
       return false
     }
@@ -277,12 +366,15 @@ final class HelperRuntime {
     var reportedWaiting = false
     let observer = recoveryObserver
     let writer = recoveryWriter
+    let diagnostics = diagnostics
+    let clock = recoveryClock
     while continuation.phase != .finished && continuation.phase != .blocked {
       let reading = observer.read()
       let readiness = RecoveryIdentity.readiness(
         reading, target: record.target,
         liveOwnership: liveOwnership)
       if readiness == .waiting && !reportedWaiting {
+        diagnostics.emit(.recoveryWaiting, session: record.session, reason: .evidenceUnavailable)
         report("Waiting for recovery evidence. Ownership and the writer lock are retained.")
         reportedWaiting = true
       }
@@ -300,10 +392,29 @@ final class HelperRuntime {
           guard fresh == .ready else { return fresh }
           // Only this quiescent recovery owns the writer lock. A platform error still needs
           // verification, since it may have changed the panel before returning an error.
-          try? writer.setEnabled(true, displayID: record.target.displayID, scope: .session)
+          let started = clock.now()
+          diagnostics.emit(.operationStarted, session: record.session) {
+            $0.operationID = record.operationID
+          }
+          do {
+            try writer.setEnabled(true, displayID: record.target.displayID, scope: .session)
+            diagnostics.emit(.operationReturned, session: record.session, succeeded: true) {
+              $0.operationID = record.operationID
+              $0.elapsedMS = max(0, clock.now() - started)
+            }
+          } catch {
+            diagnostics.emit(
+              .operationReturned, session: record.session, succeeded: false,
+              errorCode: OperationalEvent.numericErrorCode(error)
+            ) {
+              $0.operationID = record.operationID
+              $0.elapsedMS = max(0, clock.now() - started)
+            }
+          }
           return .ready
         }.value
         if outcome == .waiting {
+          diagnostics.emit(.restoreDeferred, session: record.session)
           continuation.writeDeferred()
         } else if outcome == .blocked {
           continuation.block()
@@ -311,10 +422,18 @@ final class HelperRuntime {
           continuation.writeReturned()
         }
       case .clear:
+        diagnostics.emit(.operationVerified, session: record.session) {
+          $0.operationID = record.operationID
+        }
+        diagnostics.emit(.journalClearing, session: record.session)
         do {
           try store.clear()
+          diagnostics.emit(.journalCleared, session: record.session, succeeded: true)
           continuation.journalCleared(succeeded: true)
         } catch {
+          diagnostics.emit(
+            .journalCleared, session: record.session, succeeded: false,
+            errorCode: (error as NSError).code)
           continuation.journalCleared(succeeded: false)
         }
       }
@@ -323,6 +442,10 @@ final class HelperRuntime {
       }
     }
     let finished = continuation.phase == .finished
+    diagnostics.emit(
+      finished ? .recoveryVerified : .recoveryBlocked,
+      session: record.session, reason: finished ? .recoveryComplete : .verificationFailed,
+      succeeded: finished)
     report(
       finished
         ? "Lidless restored the internal display after \(reason)."

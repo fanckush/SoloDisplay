@@ -68,7 +68,7 @@ struct ContentView: View {
           model.callbackRegistrationError.map { "Callback registration failed: \($0)" }
             ?? "Callback subscription: \(model.reading == nil ? "not started" : "registered")")
         Text(
-          "Recent events stay in memory only. No diagnostics are saved or uploaded. Discarded entries: \(model.history.discarded). Dropped callbacks: \(model.droppedCallbacks)."
+          "This timeline stays in memory. Sparse operational events use macOS system logging. No uploads. Discarded entries: \(model.history.discarded). Dropped callbacks: \(model.droppedCallbacks)."
         )
         .font(.caption).foregroundStyle(.secondary)
         ForEach(model.history.entries.reversed()) { entry in

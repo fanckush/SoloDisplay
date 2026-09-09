@@ -9,6 +9,34 @@ import LidlessPlatform
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 
+// These paths emit/read diagnostics only. They never initialize observation or display writers.
+if arguments.first == "diagnostics-smoke" {
+  let logger = OperationalLogger(role: .probe)
+  logger.started()
+  logger.emit(.exitRequested, reason: .nothingOwed)
+  FileHandle.standardOutput.write(Data((logger.run.uuidString + "\n").utf8))
+  exit(0)
+}
+if arguments.first == "diagnostics-history" {
+  let now = Date()
+  let history = SystemOperationalHistoryReader().read(
+    from: now.addingTimeInterval(-300), through: now)
+  FileHandle.standardOutput.write(try JSONEncoder().encode(history))
+  exit(0)
+}
+
+/// The same typed interface, captured into the probe's existing structured test stream.
+struct ProbeOperationalSink: OperationalEventSink {
+  func record(_ event: OperationalEvent) {
+    guard let detail = try? JSONEncoder().encode(event),
+      let data = try? JSONSerialization.data(withJSONObject: [
+        "event": "operational", "detail": String(decoding: detail, as: UTF8.self),
+      ])
+    else { return }
+    FileHandle.standardOutput.write(data + Data([10]))
+  }
+}
+
 func option(_ name: String) -> String? {
   guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else { return nil }
   return arguments[index + 1]
@@ -160,6 +188,8 @@ var takeover = RecoveryTakeover()
 var lock: SessionWriterLock?
 var acknowledged = 0
 var recovering = false
+let operational = OperationalLogger(role: .probe, sink: ProbeOperationalSink())
+var childExitDiagnostics = ChildExitDiagnostics()
 emit("helper-started")
 
 @MainActor func drive(_ effects: [RecoveryTakeover.Effect]) {
@@ -167,7 +197,10 @@ emit("helper-started")
     switch effect {
     case .stopWriter:
       // Only the Process this helper actually launched, never a PID read from a file.
-      if controller.isRunning { kill(controller.processIdentifier, SIGKILL) }
+      if controller.isRunning {
+        operational.emit(.childTerminationRequested, reason: .protectionFailure)
+        kill(controller.processIdentifier, SIGKILL)
+      }
       let stopBy = now() + 3_000
       while controller.isRunning && now() < stopBy { Thread.sleep(forTimeInterval: 0.02) }
       guard !controller.isRunning else {
@@ -176,11 +209,13 @@ emit("helper-started")
         return
       }
       emit("helper-confirmed-controller-termination")
+      childExitDiagnostics.recordIfTerminated(controller, using: operational)
       drive(takeover.receive(.writerTerminationConfirmed))
     case .acquireLock:
       do {
         lock = try SessionWriterLock(loginID: target.loginID, directory: workspaceURL)
         emit("helper-acquired-writer-lock")
+        operational.emit(.writerLockAcquired)
         drive(takeover.receive(.lockAcquired))
       } catch {
         emit("helper-lock-unavailable")
@@ -207,6 +242,7 @@ emit("helper-started")
       do {
         try store.clear()
         emit("helper-cleared-journal")
+        operational.emit(.journalCleared, succeeded: true)
         drive(takeover.receive(.journalCleared))
       } catch {
         emit("helper-journal-clear-failed")
@@ -232,6 +268,10 @@ emit("helper-started")
       guard !recovering else { continue }
       recovering = true
       emit("helper-recovery-required", reason.rawValue)
+      operational.emit(.recoveryRequested, operation: protection.progress) {
+        $0.helperLoss = reason
+        $0.progressAgeMS = max(0, now() - protection.lastProgressAt)
+      }
       guard owned == ownership else {
         emit("helper-refused-unknown-ownership")
         continue
@@ -279,4 +319,5 @@ lock?.release()
 link.stop()
 emit("helper-finished", "takeover=\(takeover.phase) protection=\(protection.phase)")
 emit("controller-exit", "\(controller.terminationReason.rawValue):\(controller.terminationStatus)")
+childExitDiagnostics.recordIfTerminated(controller, using: operational)
 exit(0)

@@ -28,12 +28,23 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   /// Contact with the supervising helper is gone. Without it there is no protection, so this
   /// process finishes any restoration it owes and then stops rather than lingering unsupervised.
   private var helperLost = false
+  private let diagnostics: OperationalLogger
+  private let exporter: DiagnosticsExporter
+  private var exporting = false
+  private var exportAlert: NSAlert?
+  private var activityResumeCount: UInt64 = 0
 
   private(set) var items: [MenuItem] = []
   var onMenuChanged: (() -> Void)?
 
-  init(link: ProtectionLink) {
+  init(
+    link: ProtectionLink,
+    diagnostics: OperationalLogger = .init(role: .controller),
+    exporter: DiagnosticsExporter = .init()
+  ) {
     self.link = link
+    self.diagnostics = diagnostics
+    self.exporter = exporter
     protection = .init(session: UUID().uuidString, at: MonotonicClock().now())
     preferencesStore = try? PreferencesStore()
     preferences = preferencesStore?.load() ?? .init()
@@ -43,6 +54,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   // MARK: - Lifecycle
 
   func start() {
+    diagnostics.started()
     let validation = (try? BackendValidationStore())?.current(
       symbolName: PrivateDisplayAPI().symbolName)
     let observer = LivePlatformObserver(validation: validation)
@@ -51,6 +63,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       writerLock = try? SessionWriterLock(loginID: loginID)
     }
     lockUnavailable = writerLock == nil
+    diagnostics.emit(lockUnavailable ? .writerLockUnavailable : .writerLockAcquired)
     note(
       "login=\(reading.loginID.map(String.init) ?? "nil") lock=\(writerLock != nil) validation=\(validation != nil)"
     )
@@ -62,11 +75,12 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       let coordinator = ProductionCoordinator(
         state: state, clock: MonotonicClock(), observer: observer, writer: LiveDisplayWriter(),
         ownership: journal, preferences: store, protection: self, delegate: self,
-        session: protection.session)
+        session: protection.session, diagnostics: diagnostics)
       self.coordinator = coordinator
       coordinator.start()
     } else {
       state.fault = .journalFailed
+      diagnostics.emit(.startupFailed, reason: .journalUnavailable)
       recorder = .init(initial: state)
     }
     apply(protection.receive(.start, at: MonotonicClock().now()))
@@ -84,6 +98,13 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   /// Quit asks for restoration first and only lets the app exit once nothing is unresolved.
   /// If this process dies anyway, the helper still holds recovery responsibility.
   func beginQuit() -> Bool {
+    diagnostics.emit(
+      .exitRequested, session: protection.session,
+      reason: helperLost ? .helperLost : .userQuit
+    ) {
+      $0.panelOwned = coordinator?.state.ownership != nil
+      $0.pendingRecovery = coordinator?.presentation.pendingRecovery
+    }
     guard let coordinator else { return true }
     exiting = true
     coordinator.send(.quit)
@@ -122,13 +143,26 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
         guard let self, let coordinator = self.coordinator else { return }
         switch name {
         case NSWorkspace.willSleepNotification:
+          self.diagnostics.emit(
+            .suspended, session: self.protection.session, reason: .workspaceSleep)
           // Protection timing must stop too, or sleep looks like a peer that went silent.
           self.apply(self.protection.receive(.suspended, at: MonotonicClock().now()))
           coordinator.send(.willSleep)
         case NSWorkspace.didWakeNotification:
+          self.diagnostics.emit(.resumed, session: self.protection.session, reason: .workspaceWake)
           self.apply(self.protection.receive(.resumed, at: MonotonicClock().now()))
           coordinator.send(.waking)
-        default: coordinator.platformDidChange()
+        default:
+          let reason: OperationalEvent.Reason?
+          switch name {
+          case NSWorkspace.screensDidSleepNotification: reason = .workspaceScreenSleep
+          case NSWorkspace.screensDidWakeNotification: reason = .workspaceScreenWake
+          case NSWorkspace.sessionDidBecomeActiveNotification: reason = .workspaceSessionActive
+          case NSWorkspace.sessionDidResignActiveNotification: reason = .workspaceSessionInactive
+          default: reason = nil
+          }
+          if let reason { self.diagnostics.emit(.lifecycleReconciled, reason: reason) }
+          coordinator.platformDidChange()
         }
       }
     }
@@ -156,15 +190,32 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
 
   private func apply(_ outputs: [ControllerProtection.Output]) {
     authorization.update(protection)
+    if protection.activityResumeCount != activityResumeCount {
+      activityResumeCount = protection.activityResumeCount
+      diagnostics.emit(.resumed, session: protection.session, reason: .activityFallback)
+    }
     for output in outputs {
       switch output {
       case .send(let message): try? link.send(message)
       case .protectionEstablished:
+        diagnostics.emit(.protectionReady, session: protection.session)
         if let id = pendingArm {
           pendingArm = nil
           coordinator?.send(.protectionArmed(operationID: id, succeeded: true))
         }
       case .protectionLost:
+        diagnostics.emit(
+          .protectionLost, session: protection.session,
+          operation: protection.progress
+        ) {
+          $0.controllerLoss = protection.lossReason
+          $0.rejection = protection.rejection
+          if protection.diagnosticChallenge != nil {
+            $0.challengeAgeMS = max(0, MonotonicClock().now() - protection.lastChallengeAt)
+          }
+          $0.challenge = protection.diagnosticChallenge
+          $0.leaseDeadlineMS = protection.diagnosticLeaseDeadline
+        }
         if let id = pendingArm {
           pendingArm = nil
           coordinator?.send(.protectionArmed(operationID: id, succeeded: false))
@@ -180,6 +231,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       protection.phase == .paired || protection.phase == .arming
       || protection.phase == .protected
     if pairedNow != paired {
+      if pairedNow { diagnostics.emit(.paired, session: protection.session) }
       note(
         "protection phase=\(protection.phase) paired=\(pairedNow) lockUnavailable=\(lockUnavailable)"
       )
@@ -211,7 +263,15 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     {
       mutatePreferences { $0.manualPathValidated = true }
     }
-    if previous != presentation { note("state \(presentation)") }
+    if previous != presentation {
+      diagnostics.emit(.stateChanged, session: protection.session) {
+        $0.fault = presentation.fault
+        $0.mode = presentation.mode
+        $0.unavailability = presentation.unavailability
+        $0.panelOwned = presentation.panelOwned
+        $0.pendingRecovery = presentation.pendingRecovery
+      }
+    }
     previous = presentation
     refreshMenu()
     stopIfNothingIsOwed()
@@ -268,6 +328,9 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
 
   func perform(_ action: MenuAction) {
     let coordinator = coordinator
+    diagnostics.emit(.action, session: protection.session) {
+      $0.action = OperationalEvent.Action(rawValue: action.rawValue)
+    }
     note("action \(action.rawValue)")
     defer { note("after \(action.rawValue): \(presentation)") }
     switch action {
@@ -289,8 +352,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     refreshMenu()
   }
 
-  /// Development tracing only. Release builds stay quiet; the user-facing record is the
-  /// sanitized diagnostics export, never this stream.
+  /// Additional development tracing only. Persistent operational logging uses typed fields;
+  /// this raw debug stream is never included in user-facing exports.
   private func note(_ message: String) {
     #if DEBUG
       FileHandle.standardError.write(Data("Lidless controller: \(message)\n".utf8))
@@ -320,15 +383,78 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
 
   /// Sanitized, bounded, local. Nothing is uploaded and no raw lab log is offered as an export.
   private func exportDiagnostics() {
-    guard let data = try? recorder.exportSanitized() else { return }
+    guard !exporting else { return }
+    exporting = true
+    diagnostics.emit(.exportRequested)
     let panel = NSSavePanel()
     panel.nameFieldStringValue = "lidless-diagnostics.json"
     panel.allowedContentTypes = [.json]
-    panel.begin { response in
+    panel.begin { [weak self] response in
       MainActor.assumeIsolated {
-        guard response == .OK, let url = panel.url else { return }
-        try? data.write(to: url, options: [.atomic])
+        guard let self else { return }
+        guard response == .OK, let url = panel.url else {
+          self.exporting = false
+          return
+        }
+        let exporter = self.exporter
+        let trace = self.recorder.trace
+        Task { @MainActor [weak self] in
+          let result = await Task.detached {
+            do {
+              let data = try exporter.collect(trace: trace)
+              do { try exporter.write(data, to: url) } catch {
+                return ExportResult.failure(.exportWriting)
+              }
+              let document = try JSONDecoder().decode(DiagnosticsDocument.self, from: data)
+              return ExportResult.success(document.diagnostics.history.status)
+            } catch { return ExportResult.failure(.exportEncoding) }
+          }.value
+          guard let self else { return }
+          self.exporting = false
+          switch result {
+          case .failure(let reason):
+            self.diagnostics.emit(.exportFailed, reason: reason, succeeded: false)
+            self.showExportMessage(
+              "Diagnostics could not be saved",
+              reason == .exportWriting
+                ? "Try another location. No diagnostics were uploaded."
+                : "Lidless could not prepare the diagnostic snapshot. Please report this export error. Nothing was uploaded."
+            )
+          case .success(let status):
+            self.diagnostics.emit(.exportCompleted)
+            if status != .collected {
+              self.showExportMessage(
+                "Diagnostics saved with limited history",
+                "The current replay trace was saved, but no previous-process history was available. "
+                  + DiagnosticsMetadata.consoleInstructions)
+            }
+          }
+        }
       }
     }
+  }
+
+  private enum ExportResult: Sendable {
+    case success(OperationalHistory.Status)
+    case failure(OperationalEvent.Reason)
+  }
+
+  private func showExportMessage(_ title: String, _ message: String) {
+    exportAlert?.window.close()
+    let alert = NSAlert()
+    alert.messageText = title
+    alert.informativeText = message
+    let button = alert.addButton(withTitle: "OK")
+    // Do not enter a synchronous modal loop from a main-actor task. Recovery must keep running.
+    button.target = self
+    button.action = #selector(dismissExportMessage)
+    alert.layout()
+    exportAlert = alert
+    alert.window.makeKeyAndOrderFront(nil)
+  }
+
+  @objc private func dismissExportMessage() {
+    exportAlert?.window.close()
+    exportAlert = nil
   }
 }

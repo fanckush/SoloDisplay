@@ -217,6 +217,7 @@ private func reading(
   let protection = FakeProtection()
   let delegate = FakeDelegate()
   let scheduler = ManualScheduler()
+  let diagnostics = CapturedOperationalEvents()
   let coordinator: ProductionCoordinator
 
   init(
@@ -229,7 +230,8 @@ private func reading(
     coordinator = ProductionCoordinator(
       state: state, clock: clock, observer: observer, writer: writer, ownership: ownership,
       preferences: preferences, protection: protection, delegate: delegate,
-      lane: lane, scheduler: scheduler)
+      lane: lane, scheduler: scheduler,
+      diagnostics: .init(role: .controller, sink: diagnostics))
     coordinator.send(.protectionAvailable(true))
   }
 
@@ -446,6 +448,8 @@ struct ProductionCoordinatorTests {
     #expect(harness.state.fault == .ownershipClearFailed)
     #expect(harness.state.ownership != nil)
     #expect(harness.coordinator.presentation.pendingRecovery)
+    #expect(
+      harness.diagnostics.events.contains { $0.code == .journalCleared && $0.succeeded == false })
   }
 
   @Test func losingTheHelperRestoresTheOwnedPanel() {
@@ -472,6 +476,9 @@ struct ProductionCoordinatorTests {
     #expect(harness.state.ownership == nil)
     #expect(harness.ownership.record == nil)
     #expect(harness.ownership.clears == 1)
+    #expect(
+      harness.diagnostics.events.contains { $0.code == .operationReturned && $0.succeeded == false }
+    )
   }
 
   @Test func aStaleCompletionCannotHideOrRepeatAWrite() {
@@ -574,6 +581,11 @@ struct ProductionCoordinatorTests {
     #expect(harness.delegate.readyToExit >= 1)
     #expect(harness.state.ownership == nil)
     #expect(harness.ownership.record == nil)
+    let codes = harness.diagnostics.events.map(\.code)
+    #expect(codes.contains(.operationStarted))
+    #expect(codes.contains(.operationReturned))
+    #expect(codes.contains(.operationVerified))
+    #expect(codes.last == .journalCleared)
   }
 
   @Test func quittingWithoutOwnershipDoesNotStartAnyWrite() {

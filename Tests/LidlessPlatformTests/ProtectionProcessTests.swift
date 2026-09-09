@@ -14,6 +14,12 @@ private struct ProbeRun {
   let workspace: URL
 
   var names: [String] { events.map(\.name) }
+  var operational: [OperationalEvent] {
+    events.compactMap {
+      guard $0.name == "operational", let detail = $0.detail else { return nil }
+      return try? JSONDecoder().decode(OperationalEvent.self, from: Data(detail.utf8))
+    }
+  }
   func detail(of name: String) -> String? { events.first { $0.name == name }?.detail }
   func contains(_ name: String) -> Bool { names.contains(name) }
   var journalRemains: Bool {
@@ -86,6 +92,9 @@ struct ProtectionProcessTests {
     #expect(!outcome.contains("helper-would-restore-recorded-panel"))
     #expect(!outcome.journalRemains)
     #expect(outcome.detail(of: "controller-exit") == "1:0")
+    #expect(outcome.operational.filter { $0.code == .childExited }.count == 1)
+    #expect(outcome.operational.last?.reason == .exited)
+    #expect(outcome.operational.last?.exitStatus == 0)
   }
 
   @Test func aControllerWithNoHelperWitnessNeverGetsProtection() throws {
@@ -162,6 +171,16 @@ struct ProtectionProcessTests {
     #expect(outcome.contains("helper-cleared-journal"))
     #expect(!outcome.journalRemains)
     #expect(outcome.detail(of: "controller-exit") == "2:9")
+    let records = outcome.operational
+    #expect(
+      records.map(\.code) == [
+        .recoveryRequested, .childTerminationRequested,
+        .childExited, .writerLockAcquired, .journalCleared,
+      ])
+    #expect(records.first?.helperLoss == .operationStalled)
+    #expect(records.first?.operation?.phase == .submitted)
+    #expect(records.first?.progressAgeMS != nil)
+    #expect(records.filter { $0.code == .childExited }.count == 1)
   }
 
   @Test func theHelperTakesTheWriterLockOnlyAfterItsControllerIsGone() throws {

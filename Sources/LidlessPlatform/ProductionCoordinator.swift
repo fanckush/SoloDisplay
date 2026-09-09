@@ -124,6 +124,8 @@ public final class ProductionCoordinator {
   public var presentation: Presentation { Controller.presentation(state, at: clock.now()) }
 
   private let clock: any CoordinatorClock
+  private let diagnostics: OperationalLogger
+  private var lastDiagnosticEnvironment: OperationalEnvironment?
   private let observer: any PlatformObserving
   private let writer: any DisplayWriting
   private let ownership: any OwnershipPersisting
@@ -151,13 +153,15 @@ public final class ProductionCoordinator {
     writer: any DisplayWriting, ownership: any OwnershipPersisting,
     preferences: any PreferencePersisting, protection: (any ProtectionRequesting)?,
     delegate: (any CoordinatorDelegate)?, lane: any SerialLane = DispatchLane(),
-    scheduler: (any CoordinatorScheduler)? = nil, session: String = UUID().uuidString
+    scheduler: (any CoordinatorScheduler)? = nil, session: String = UUID().uuidString,
+    diagnostics: OperationalLogger = .init(role: .controller)
   ) {
     self.lane = lane
     self.session = session
     self.scheduler = scheduler ?? TimerScheduler()
     self.state = state
     self.clock = clock
+    self.diagnostics = diagnostics
     self.observer = observer
     self.writer = writer
     self.ownership = ownership
@@ -183,6 +187,27 @@ public final class ProductionCoordinator {
   public func send(_ event: Event) {
     let now = clock.now()
     switch event {
+    case .observed(let observation):
+      let summary = OperationalEnvironment(observation.environment)
+      if summary != lastDiagnosticEnvironment {
+        lastDiagnosticEnvironment = summary
+        diagnostics.emit(.environmentChanged, session: session) { $0.environment = summary }
+      }
+    case .journalSaved(let id, let succeeded):
+      diagnostics.emit(.journalPrepared, session: session, succeeded: succeeded) {
+        $0.operationID = id
+      }
+    case .ownershipCleared(let succeeded):
+      diagnostics.emit(.journalCleared, session: session, succeeded: succeeded)
+    case .preferencesSaved(_, let succeeded):
+      diagnostics.emit(.preferencesSaved, session: session, succeeded: succeeded)
+    case .operationRefused(let id):
+      diagnostics.emit(.operationRefused, session: session) { $0.operationID = id }
+    case .restoreDeferred(let id):
+      diagnostics.emit(.restoreDeferred, session: session) { $0.operationID = id }
+    default: break
+    }
+    switch event {
     case .willSleep:
       lifecycle = .sleeping
       lifecycleChangedAt = now
@@ -192,6 +217,7 @@ public final class ProductionCoordinator {
     default: break
     }
     if case .observed(let sample) = event, sample.environment.power != lifecycle {
+      diagnostics.emit(.lifecycleReconciled, session: session, reason: .observationFallback)
       lifecycle = sample.environment.power
       lifecycleChangedAt = now
     }
@@ -201,8 +227,21 @@ public final class ProductionCoordinator {
     {
       ownedDisableReturned = true
     }
+    let oldOperation = state.operation
     let transition = Controller.reduce(state, event, at: now)
     state = transition.state
+    if let oldOperation, oldOperation.phase == .verifying,
+      transition.effects.contains(where: {
+        if case .clearOwnership = $0 { return true }
+        return false
+      }) || (oldOperation.kind == .disable && state.operation == nil && state.fault == nil)
+    {
+      diagnostics.emit(
+        .operationVerified, session: session,
+        operation: .init(
+          id: oldOperation.id, kind: oldOperation.kind,
+          phase: oldOperation.phase, deadline: oldOperation.deadline))
+    }
     disablePermit.update(state, at: now)
     if state.ownership == nil && state.operation == nil {
       ownedDisableReturned = false
@@ -244,6 +283,7 @@ public final class ProductionCoordinator {
       prepareOwnership(owned)
     case .clearOwnership:
       let ownership = ownership
+      diagnostics.emit(.journalClearing, session: session)
       onLane { [ownership] in
         do {
           try ownership.clear()
@@ -264,6 +304,11 @@ public final class ProductionCoordinator {
     case .setPanelEnabled(let id, let target, let enabled):
       write(operationID: id, target: target, enabled: enabled)
     case .writerUnresponsive:
+      diagnostics.emit(
+        .writerUnresponsive, session: session,
+        operation: state.operation.map {
+          .init(id: $0.id, kind: $0.kind, phase: $0.phase, deadline: $0.deadline)
+        })
       // The helper learns this from the operation deadline it already receives each second.
       break
     case .wakeAt(let instant):
@@ -281,6 +326,7 @@ public final class ProductionCoordinator {
       helperPID: getppid(), topology: reading.displays)
     let ownership = ownership
     baseline = record
+    diagnostics.emit(.journalPreparing, session: session) { $0.operationID = owned.operationID }
     onLane { [ownership] in
       do {
         try ownership.prepare(record)
@@ -301,6 +347,12 @@ public final class ProductionCoordinator {
     let authorization = protection?.authorization
     let clock = clock
     let owned = state.ownership
+    let diagnostics = diagnostics
+    let session = session
+    let progress = state.operation.map {
+      OperationProgress(id: $0.id, kind: $0.kind, phase: $0.phase, deadline: $0.deadline)
+    }
+    diagnostics.emit(.operationQueued, session: session, operation: progress)
     onLane { [writer, observer] in
       if !enabled {
         let reading = observer.read()
@@ -323,10 +375,22 @@ public final class ProductionCoordinator {
           return .restoreDeferred(operationID: operationID)
         }
       }
+      let started = clock.now()
+      diagnostics.emit(.operationStarted, session: session, operation: progress)
       do {
         try writer.setEnabled(enabled, displayID: target.displayID, scope: scope)
+        diagnostics.emit(.operationReturned, session: session, operation: progress, succeeded: true)
+        {
+          $0.elapsedMS = max(0, clock.now() - started)
+        }
         return .operationReturned(operationID: operationID, succeeded: true)
       } catch {
+        diagnostics.emit(
+          .operationReturned, session: session, operation: progress,
+          succeeded: false, errorCode: OperationalEvent.numericErrorCode(error)
+        ) {
+          $0.elapsedMS = max(0, clock.now() - started)
+        }
         // An error does not establish that nothing changed, so ownership is kept either way.
         return .operationReturned(operationID: operationID, succeeded: false)
       }
