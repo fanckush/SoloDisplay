@@ -134,6 +134,8 @@ public struct ControllerState: Codable, Equatable, Sendable {
   public var nextOperationID: UInt64 = 1
   public var restoreAttempts = 0
   public var retryAt: Instant?
+  /// A pre-call deferral is not a failed display operation. Wait for a newer observation.
+  public var recoveryDeferredSequence: UInt64?
   public var shuttingDown = false
   /// A paired recovery helper exists. Per-operation protection is still leased separately.
   public var protectionAvailable = false
@@ -177,6 +179,7 @@ public enum Event: Codable, Equatable, Sendable {
   /// The helper acknowledged a protection lease bound to this one operation.
   case protectionArmed(operationID: UInt64, succeeded: Bool)
   case operationReturned(operationID: UInt64, succeeded: Bool)
+  case restoreDeferred(operationID: UInt64)
   /// The executor established, before issuing anything, that the request was no longer valid.
   /// Unlike a failed call this positively establishes that no display was touched.
   case operationRefused(operationID: UInt64)
@@ -220,6 +223,7 @@ public struct Presentation: Equatable, Sendable {
   public var pendingRecovery: Bool
   public var fault: Fault?
   public var unavailability: Unavailability?
+  public var waitingForRecovery = false
 
   public init(
     mode: Mode, manualRequestActive: Bool, panelOwned: Bool, operationInFlight: Bool,
@@ -264,10 +268,15 @@ extension Controller {
   }
 
   public static func presentation(_ state: ControllerState, at now: Instant) -> Presentation {
-    .init(
+    var result = Presentation(
       mode: state.mode, manualRequestActive: state.manualRequest,
       panelOwned: state.ownership != nil, operationInFlight: state.operation != nil,
       pendingRecovery: state.ownership != nil || state.pendingClear, fault: state.fault,
       unavailability: unavailability(state, at: now))
+    result.waitingForRecovery =
+      state.ownership != nil && !state.pendingClear
+      && (state.recoveryDeferredSequence != nil
+        || state.observation?.environment.visibilityExpected != true)
+    return result
   }
 }

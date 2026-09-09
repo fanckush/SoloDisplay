@@ -32,11 +32,30 @@ final class HelperRuntime {
   private var recovering = false
   private var witnessedAt: Instant = 0
   private var powerSubscriptions: [NSObjectProtocol] = []
+  private let recoveryObserver: any PlatformObserving
+  private let recoveryWriter: any DisplayWriting
+  private let recoveryClock: any CoordinatorClock
+  private let recoveryPause: @Sendable () async -> Void
+  private let recoveryLockDirectory: URL
 
-  init(executable: URL, store: ProductionJournalStore) {
+  init(
+    executable: URL, store: ProductionJournalStore,
+    recoveryObserver: any PlatformObserving = LivePlatformObserver(validation: nil),
+    recoveryWriter: any DisplayWriting = LiveDisplayWriter(),
+    recoveryClock: any CoordinatorClock = MonotonicClock(),
+    recoveryLockDirectory: URL = FileManager.default.temporaryDirectory,
+    recoveryPause: @escaping @Sendable () async -> Void = {
+      try? await Task.sleep(for: .milliseconds(500))
+    }
+  ) {
     self.executable = executable
     self.store = store
     protection = .init(at: Self.now())
+    self.recoveryObserver = recoveryObserver
+    self.recoveryWriter = recoveryWriter
+    self.recoveryClock = recoveryClock
+    self.recoveryLockDirectory = recoveryLockDirectory
+    self.recoveryPause = recoveryPause
   }
 
   static func now() -> Instant { Int64(ProcessInfo.processInfo.systemUptime * 1_000) }
@@ -57,6 +76,10 @@ final class HelperRuntime {
       return
     }
     await reconcileAtLaunch(reading)
+    guard currentReconciliation() == .clean else {
+      report("Recovery remains unresolved. No disabling controller was started.")
+      return
+    }
     // The helper watches the same power transitions, so its lease does not expire across sleep.
     let workspace = NSWorkspace.shared.notificationCenter
     for (name, suspended) in [
@@ -101,7 +124,7 @@ final class HelperRuntime {
       report("Lidless cleared an unresolved record from a previous startup. Nothing was changed.")
       _ = record
     case .unresolved(let record):
-      await restore(record, reason: "unresolved ownership from an earlier run")
+      _ = await restore(record, reason: "unresolved ownership from an earlier run")
     }
   }
 
@@ -144,7 +167,8 @@ final class HelperRuntime {
           guard let record = try store.load(), let claimed = message.ownership,
             record.session == message.session, record.operationID == claimed.operationID,
             record.target == claimed.target,
-            (try? record.validate()) != nil else {
+            (try? record.validate()) != nil
+          else {
             apply(protection.receive(.peerFailed(.malformed), at: now))
             break
           }
@@ -191,19 +215,29 @@ final class HelperRuntime {
       return
     }
     takeover.receive(.writerTerminationConfirmed)
-    guard case .unresolved(let record) = currentReconciliation(), record.target == ownership.target,
-      record.operationID == ownership.operationID, record.session == protection.session
-    else {
-      // The responsive controller already restored and cleared its own ownership.
-      takeover.receive(.failed)
-      report("Lidless found nothing left to restore after \(reason).")
-      timer?.invalidate()
-      NSApp.terminate(nil)
+    let record: ProductionRecord
+    do {
+      guard let retained = try store.load() else {
+        timer?.invalidate()
+        NSApp.terminate(nil)
+        return
+      }
+      try retained.validate()
+      guard retained.target == ownership.target, retained.operationID == ownership.operationID,
+        retained.session == protection.session
+      else {
+        report("The recovery record does not match this live ownership. It was retained.")
+        return
+      }
+      record = retained
+    } catch {
+      report("The recovery record cannot be read. Recovery remains unresolved: \(error)")
       return
     }
-    await restore(record, reason: reason, liveOwnership: ownership, transaction: takeover)
-    timer?.invalidate()
-    NSApp.terminate(nil)
+    if await restore(record, reason: reason, liveOwnership: ownership, transaction: takeover) {
+      timer?.invalidate()
+      NSApp.terminate(nil)
+    }
   }
 
   private func currentReconciliation() -> JournalReconciliation {
@@ -212,18 +246,20 @@ final class HelperRuntime {
       bootID: reading.bootID, loginID: reading.loginID, displays: reading.displays)
   }
 
-  private func restore(_ record: ProductionRecord, reason: String,
-    liveOwnership: Ownership? = nil, transaction: RecoveryTakeover = .init()) async {
+  func restore(
+    _ record: ProductionRecord, reason: String,
+    liveOwnership: Ownership? = nil, transaction: RecoveryTakeover = .init()
+  ) async -> Bool {
     // A transaction is scoped to this recovery attempt, never reused by a future child.
     var takeover = transaction
     let lock: SessionWriterLock
     do {
       // Acquiring the writer lock is the evidence that no live writer owns this session.
-      lock = try SessionWriterLock(loginID: record.target.loginID)
+      lock = try SessionWriterLock(loginID: record.target.loginID, directory: recoveryLockDirectory)
     } catch {
       takeover.receive(.failed)
       report("Another display writer holds this session, so Lidless changed no display.")
-      return
+      return false
     }
     defer { lock.release() }
     if takeover.phase == .watching {
@@ -233,59 +269,65 @@ final class HelperRuntime {
       takeover.receive(.writerTerminationConfirmed)
     }
     takeover.receive(.lockAcquired)
-    let reading = DisplayObserver.read()
-    guard
-      (try? RecoveryIdentity.authorizeRestore(reading, target: record.target,
-        liveOwnership: liveOwnership)) != nil
-    else {
-      takeover.receive(.failed)
-      report("Live display evidence contradicts Lidless's record, so it changed no display.")
-      return
-    }
     guard takeover.receive(.restoreAuthorized) == [.restore] else {
-      takeover.receive(.failed)
-      report("Lidless refused an out-of-order recovery write.")
-      return
+      report("Recovery refused: writer termination and lock ordering were not established.")
+      return false
     }
-    // Session scope: this process did not make the change it is undoing.
-    do {
-      try await Task.detached {
-        try PrivateDisplayAPI().setEnabled(
-          true, displayID: record.target.displayID, scope: .forSession)
-      }.value
-    } catch {
-      report("Lidless requested restoration and will verify it: \(error)")
-    }
-    takeover.receive(.restoreReturned)
-    guard await verifyRestored(record) else {
-      // An unverified restoration keeps the record. It is not reported as a success.
-      takeover.receive(.failed)
-      report("Lidless could not confirm the internal display came back on after \(reason).")
-      return
-    }
-    takeover.receive(.restorationVerified)
-    do {
-      try store.clear()
-      takeover.receive(.journalCleared)
-      report("Lidless restored the internal display after \(reason).")
-    } catch {
-      takeover.receive(.failed)
-      report("Lidless restored the internal display but could not clear its record: \(error)")
-    }
-  }
-
-  private func verifyRestored(_ record: ProductionRecord) async -> Bool {
-    let deadline = ProcessInfo.processInfo.systemUptime + 3
-    repeat {
-      try? await Task.sleep(for: .milliseconds(100))
-      let reading = DisplayObserver.read()
-      // A mirrored follower is never reported active, so requiring that would make a correct
-      // restoration look like a failure and keep the record forever.
-      if RestorationVerification.matches(record, reading: reading) == .yes {
-        return true
+    var continuation = RecoveryContinuation()
+    var reportedWaiting = false
+    let observer = recoveryObserver
+    let writer = recoveryWriter
+    while continuation.phase != .finished && continuation.phase != .blocked {
+      let reading = observer.read()
+      let readiness = RecoveryIdentity.readiness(
+        reading, target: record.target,
+        liveOwnership: liveOwnership)
+      if readiness == .waiting && !reportedWaiting {
+        report("Waiting for recovery evidence. Ownership and the writer lock are retained.")
+        reportedWaiting = true
       }
-    } while ProcessInfo.processInfo.systemUptime < deadline
-    return false
+      switch continuation.observe(
+        readiness: readiness,
+        restored: RestorationVerification.matches(record, reading: reading), at: recoveryClock.now()
+      ) {
+      case .none: break
+      case .restore:
+        // Recheck on the actual execution lane. A wait before a call is not a failed call.
+        let outcome = await Task.detached { () -> RecoveryReadiness in
+          let fresh = RecoveryIdentity.readiness(
+            observer.read(), target: record.target,
+            liveOwnership: liveOwnership)
+          guard fresh == .ready else { return fresh }
+          // Only this quiescent recovery owns the writer lock. A platform error still needs
+          // verification, since it may have changed the panel before returning an error.
+          try? writer.setEnabled(true, displayID: record.target.displayID, scope: .session)
+          return .ready
+        }.value
+        if outcome == .waiting {
+          continuation.writeDeferred()
+        } else if outcome == .blocked {
+          continuation.block()
+        } else {
+          continuation.writeReturned()
+        }
+      case .clear:
+        do {
+          try store.clear()
+          continuation.journalCleared(succeeded: true)
+        } catch {
+          continuation.journalCleared(succeeded: false)
+        }
+      }
+      if continuation.phase != .finished && continuation.phase != .blocked {
+        await recoveryPause()
+      }
+    }
+    let finished = continuation.phase == .finished
+    report(
+      finished
+        ? "Lidless restored the internal display after \(reason)."
+        : "Recovery could not be verified. The record was retained; no new controller will start.")
+    return finished
   }
 
   private func awaitExit(_ child: Process, seconds: Double) async -> Bool {

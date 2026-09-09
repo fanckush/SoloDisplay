@@ -171,7 +171,7 @@ public struct ControllerProtection: Equatable, Sendable {
   private var lease: RecoveryLease?
   private var nextSequence: UInt64 = 1
   private var lastChallengeAt: Instant = 0
-  private var suspended = false
+  private var suspension = RuntimeSuspension()
   private var now: Instant
 
   public init(session: String, at now: Instant, timing: ProtectionTiming = .init()) {
@@ -185,7 +185,7 @@ public struct ControllerProtection: Equatable, Sendable {
   /// The single gate the coordinator consults. A lease alone is not permission to disable;
   /// durable ownership and fresh platform prerequisites are checked separately.
   public func protects(at now: Instant) -> Bool {
-    !suspended && phase == .protected && lease?.protects(at: now) == true
+    !suspension.suspended && phase == .protected && lease?.protects(at: now) == true
   }
 
   /// Report the outstanding operation so heartbeats carry a stall the helper can detect.
@@ -252,21 +252,26 @@ public struct ControllerProtection: Equatable, Sendable {
       return [.send(message)]
 
     case .suspended:
-      suspended = true
+      suspension.suspend()
       return []
 
     case .resumed:
-      suspended = false
+      guard suspension.resume() else { return [] }
       let renewal = lease?.receive(.resumed, at: now)
       lastChallengeAt = now
       if case .challenge(_, let number)? = renewal?.first {
-        return [.send(next(.progress, at: now, challenge: number,
-          ownership: ownership, progress: progress))]
+        return [
+          .send(
+            next(
+              .progress, at: now, challenge: number,
+              ownership: ownership, progress: progress))
+        ]
       }
       return []
 
     case .tick:
-      guard !suspended, phase == .arming || phase == .protected else { return [] }
+      if suspension.observesActivity(at: now) { return receive(.resumed, at: now) }
+      guard !suspension.suspended, phase == .arming || phase == .protected else { return [] }
       guard var current = lease else { return fail(at: now) }
       let expiry = current.receive(.tick, at: now)
       lease = current
@@ -350,7 +355,7 @@ public struct HelperProtection: Equatable, Sendable {
   private var witnessedTarget: PanelTarget?
   private var witnessedAt: Instant?
   private var lastProgressAt: Instant
-  private var suspended = false
+  private var suspension = RuntimeSuspension()
   private var justResumed = false
   private var recoveryRequested = false
   private var now: Instant
@@ -369,11 +374,11 @@ public struct HelperProtection: Equatable, Sendable {
 
     switch input {
     case .suspended:
-      suspended = true
+      suspension.suspend()
       return []
 
     case .resumed:
-      suspended = false
+      guard suspension.resume() else { return [] }
       lastProgressAt = now
       justResumed = true
       return []
@@ -456,7 +461,9 @@ public struct HelperProtection: Equatable, Sendable {
       }
 
     case .tick:
-      guard !suspended, phase == .protecting, now - lastProgressAt >= timing.leaseDuration
+      if suspension.observesActivity(at: now) { return receive(.resumed, at: now) }
+      guard !suspension.suspended, phase == .protecting,
+        now - lastProgressAt >= timing.leaseDuration
       else { return [] }
       return revoke(.heartbeatExpired, at: now)
     }
