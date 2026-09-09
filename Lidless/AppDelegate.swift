@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var controller: ControllerRuntime?
   private var menuIsOpen = false
   private var rebuildPending = false
+  private let operationalDiagnostics = OperationalLogger(role: .bootstrap)
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Unit tests exercise the model without starting the platform observer.
@@ -25,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       runLabCommand(arguments)
       return
     }
+    operationalDiagnostics.started()
     do {
       let role = try ProductionLaunch.role(
         arguments: arguments, pipedStandardStreams: ProductionLaunch.standardStreamsArePipes())
@@ -34,6 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       case .unprotected: startUnprotectedInterface()
       }
     } catch {
+      operationalDiagnostics.emit(
+        .startupFailed, reason: .invalidLaunch,
+        errorCode: (error as NSError).code)
+      operationalDiagnostics.emit(.exitRequested, reason: .invalidLaunch)
       FileHandle.standardError.write(Data("Lidless: \(error)\n".utf8))
       exit(64)
     }
@@ -42,17 +48,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   /// A normal launch becomes the supervising process and starts its own controller child.
   private func startHelper() {
     guard let executable = Bundle.main.executableURL else {
+      operationalDiagnostics.emit(.startupFailed, reason: .missingExecutable)
+      operationalDiagnostics.emit(.exitRequested, reason: .missingExecutable)
       FileHandle.standardError.write(
         Data("Lidless cannot resolve its own executable and will not start.\n".utf8))
       exit(70)
     }
     guard let store = try? ProductionJournalStore() else {
+      operationalDiagnostics.emit(.startupFailed, reason: .journalUnavailable)
+      operationalDiagnostics.emit(.exitRequested, reason: .journalUnavailable)
       FileHandle.standardError.write(
         Data("Lidless cannot open its recovery store and will not start.\n".utf8))
       exit(70)
     }
     NSApp.setActivationPolicy(.prohibited)
-    let runtime = HelperRuntime(executable: executable, store: store)
+    let runtime = HelperRuntime(
+      executable: executable, store: store,
+      diagnostics: .init(role: .helper, run: operationalDiagnostics.run))
     helper = runtime
     Task { @MainActor in await runtime.start() }
   }
@@ -60,7 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private func startController() {
     NSApp.setActivationPolicy(.accessory)
     let runtime = ControllerRuntime(
-      link: ProtectionLink(input: .standardInput, output: .standardOutput))
+      link: ProtectionLink(input: .standardInput, output: .standardOutput),
+      diagnostics: .init(role: .controller, run: operationalDiagnostics.run))
     controller = runtime
     installStatusItem()
     runtime.onMenuChanged = { [weak self] in self?.rebuildMenu() }
