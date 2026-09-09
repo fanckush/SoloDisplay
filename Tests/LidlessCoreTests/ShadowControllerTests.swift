@@ -8,9 +8,10 @@ import Testing
   shadow.receive(.protectionAvailable(true), at: 0)
   shadow.observe(environment(), at: 0)
   shadow.observe(environment(), at: 2_000)
-  #expect(shadow.state.operation?.phase == .journaling)
+  // A shadow executor cannot acknowledge preference persistence either.
+  #expect(shadow.state.operation == nil)
   #expect(shadow.state.ownership == nil)
-  #expect(shadow.rejectedEffectCount == 2)
+  #expect(shadow.rejectedEffectCount == 1)
   shadow.tick(at: 6_000)
   #expect(shadow.state.ownership == nil)
 }

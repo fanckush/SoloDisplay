@@ -54,11 +54,13 @@ public struct RecoveryLease: Equatable, Sendable {
     }
     guard phase != .restoring else { return [] }
     if event == .resumed {
-      guard phase == .protected else { return [] }
+      guard phase == .protected, challenge < .max, now <= .max - duration else { return [] }
       deadline = now + duration
-      awaitingReply = false
+      challenge += 1
+      phase = .awaitingAcknowledgement
+      awaitingReply = true
       renewalDeadline = nil
-      return []
+      return [.challenge(session: session, number: challenge)]
     }
     // A queued acknowledgement cannot revive an expired lease, even before its timer fires.
     if now >= deadline || event == .contactLost || event == .interrupted {

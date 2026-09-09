@@ -354,8 +354,8 @@ struct ProtectionTests {
     #expect(pair.recovery.isEmpty)
     #expect(pair.helper.phase == .protecting)
 
-    pair.controller.receive(.resumed, at: 120_100)
     pair.helper.receive(.resumed, at: 120_100)
+    pair.pump(pair.controller.receive(.resumed, at: 120_100), at: 120_100)
     pair.tick(at: 121_200)
     #expect(!pair.lost)
     #expect(pair.recovery.isEmpty)
@@ -370,8 +370,9 @@ struct ProtectionTests {
       progress: .init(id: 1, kind: .restore, phase: .submitted, deadline: 2_000))
     pair.controller.receive(.suspended, at: 1_000)
     pair.helper.receive(.suspended, at: 1_000)
-    pair.controller.receive(.resumed, at: 120_000)
     pair.helper.receive(.resumed, at: 120_000)
+    pair.pump(pair.controller.receive(.resumed, at: 120_000), at: 120_000)
+    pair.controller.note(progress: .init(id: 1, kind: .restore, phase: .submitted, deadline: 121_000))
 
     pair.tick(at: 121_100)
     #expect(pair.recovery.isEmpty)

@@ -32,6 +32,7 @@ public struct Environment: Codable, Equatable, Sendable {
   public var supportedTopology: Fact
   /// A found private symbol does not establish this contract. Set only after backend validation.
   public var backendValidated: Fact
+  public var restorationMatches: Fact = .yes
 
   public init(
     panel: PanelTarget?, panelState: PanelState, power: Power, lid: Lid,
@@ -107,6 +108,7 @@ public enum Fault: String, Codable, Sendable {
   case journalFailed, operationFailed, operationTimedOut, verificationFailed
   case conflictingController, identityChanged, recoveryExhausted, priorRunUnresolved
   case protectionUnavailable, protectionLost, ownershipClearFailed, operationRefused
+  case preferencesFailed, configurationChanged
 }
 
 public struct Policy: Codable, Equatable, Sendable {
@@ -135,6 +137,7 @@ public struct ControllerState: Codable, Equatable, Sendable {
   public var shuttingDown = false
   /// A paired recovery helper exists. Per-operation protection is still leased separately.
   public var protectionAvailable = false
+  public var preferencesPending = false
   /// Restoration is verified but the durable record has not been cleared yet. Ownership is
   /// only released by a successful clear, never by a hopeful assumption that one happened.
   public var pendingClear = false
@@ -168,6 +171,7 @@ public enum Event: Codable, Equatable, Sendable {
   case quit
   case journalSaved(operationID: UInt64, succeeded: Bool)
   case ownershipCleared(succeeded: Bool)
+  case preferencesSaved(mode: Mode, succeeded: Bool)
   /// A paired helper appeared or went away. Losing it while owning a panel forces restoration.
   case protectionAvailable(Bool)
   /// The helper acknowledged a protection lease bound to this one operation.
