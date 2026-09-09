@@ -57,16 +57,44 @@ Check the name is free first: `brew info --cask lidless`.
 
 ## Cutting a release
 
-Releases are automated end to end:
+Releases are intentional and automated after the maintainer chooses to publish:
 
-1. Land Conventional Commits on `main` (`feat:`, `fix:`, and so on).
-2. release-please opens or updates a release PR (version bump and CHANGELOG).
-3. Merging that PR pushes a `vX.Y.Z` tag.
-4. The Release workflow builds, signs, notarizes, staples, uploads the
-   `.zip` and `.dmg` (plus `.sha256`) to a GitHub Release, and dispatches the
-   tap bump.
+1. Land Conventional Commits on `main`.
+2. Open **Actions → Release → Run workflow**, select `main`, and run it. There is
+   no version input.
+3. The workflow calculates the next stable version from commits since the latest
+   `vMAJOR.MINOR.PATCH` tag, runs package and app tests, builds, signs, notarizes,
+   staples, and uploads the `.zip` and `.dmg` with their checksums.
+4. It creates the tag and GitHub Release only after the artifacts are ready, then
+   dispatches the Homebrew tap bump.
 
-To release by hand instead, push a tag: `git tag v0.1.0 && git push --tags`.
+Version changes follow Conventional Commits:
+
+| Commit | Release change |
+| --- | --- |
+| `fix:` or `perf:` | Patch |
+| `feat:` | Minor |
+| `docs:` or `chore:` | None by themselves |
+| A `!` suffix or `BREAKING CHANGE:` footer | Minor before 1.0; major afterward |
+
+Scopes such as `feat(menu):` are supported. Unknown subjects remain visible in
+GitHub's generated release notes but do not affect the version. If no releasable
+commit exists, the workflow succeeds without creating a tag and explains why in
+its summary. Stable Git tags and GitHub Releases are the version and changelog
+source of truth; the workflow does not commit generated version files.
+
+For recovery, a maintainer can still push an explicit stable tag. The tag must
+point to a commit reachable from `main`:
+
+```sh
+git tag -a v0.2.0 -m "v0.2.0"
+git push origin v0.2.0
+```
+
+Release jobs are serialized. A failed run before publication can be rerun with
+the same calculated version. If a tag or release was created but one of the four
+assets is missing, running the workflow again from that tagged `main` commit
+repairs the existing release instead of incrementing the version.
 
 ## Verifying a build
 
