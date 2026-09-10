@@ -14,11 +14,6 @@
 <!-- TODO: drop a menu-bar screenshot / GIF at docs/assets/demo.gif -->
 <p align="center"><img src="docs/assets/demo.gif" alt="Lidless in the menu bar" width="520"></p>
 
-> [!NOTE]
-> Early alpha. The app works and has been hardware-verified on the author's Mac,
-> but only a narrow set of hardware has been tested so far. See
-> [Supported configurations](#supported-configurations).
-
 ## Why
 
 When a MacBook is connected to an external monitor with the lid open, macOS keeps
