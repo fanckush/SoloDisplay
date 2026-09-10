@@ -21,12 +21,8 @@ cask "solodisplay" do
 
   app "SoloDisplay.app"
 
-  # The Lidless paths stay listed for one release. An upgrader who zaps should not be left
-  # with the old support directory, and its recovery record is adopted at first launch.
   zap trash: [
     "~/Library/Preferences/dev.solodisplay.SoloDisplay.plist",
     "~/Library/Application Support/SoloDisplay",
-    "~/Library/Preferences/dev.lidless.Lidless.plist",
-    "~/Library/Application Support/Lidless",
   ]
 end

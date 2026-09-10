@@ -87,53 +87,6 @@ public final class ProductionJournalStore: Sendable {
     ).appendingPathComponent("SoloDisplay", isDirectory: true)
   }
 
-  /// Where the support directory lived before the rename to SoloDisplay.
-  public static func legacyDirectory() throws -> URL {
-    try FileManager.default.url(
-      for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true
-    ).appendingPathComponent("Lidless", isDirectory: true)
-  }
-
-  static let migratedFiles = ["recovery.json", "preferences.json", "backend-validation.json"]
-
-  /// An upgrade must not strand a durable ownership record where the new build cannot see it,
-  /// because an unresolved record is the only evidence that a panel is still turned off.
-  ///
-  /// Run this once in the supervisor before any process opens a store. It is idempotent: the
-  /// whole-directory move is a single `rename`, so a concurrent launch either wins or finds the
-  /// source already gone, and both are the intended end state. An existing destination is
-  /// authoritative and is never overwritten; only files missing from it are taken across.
-  public static func migrateLegacyDirectory(from legacy: URL, to current: URL) throws {
-    guard legacy != current else { return }
-    let manager = FileManager.default
-    var legacyIsDirectory: ObjCBool = false
-    guard manager.fileExists(atPath: legacy.path, isDirectory: &legacyIsDirectory),
-          legacyIsDirectory.boolValue
-    else { return }
-
-    if !manager.fileExists(atPath: current.path),
-       (try? manager.moveItem(at: legacy, to: current)) != nil {
-      return
-    }
-
-    try manager.createDirectory(
-      at: current, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-    )
-    for name in migratedFiles {
-      let source = legacy.appendingPathComponent(name, isDirectory: false)
-      let destination = current.appendingPathComponent(name, isDirectory: false)
-      guard manager.fileExists(atPath: source.path),
-            !manager.fileExists(atPath: destination.path)
-      else { continue }
-      try manager.moveItem(at: source, to: destination)
-    }
-
-    // Anything left behind is unrecognized, so it stays where it is rather than being deleted.
-    if let remaining = try? manager.contentsOfDirectory(atPath: legacy.path), remaining.isEmpty {
-      try? manager.removeItem(at: legacy)
-    }
-  }
-
   public init(directory: URL) throws {
     self.directory = directory
     file = directory.appendingPathComponent("recovery.json", isDirectory: false)

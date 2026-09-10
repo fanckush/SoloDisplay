@@ -1,6 +1,4 @@
-# Lidless: a small display controller built around explicit uncertainty
-
-> The original plan, kept as written. The app was renamed to SoloDisplay in v0.2.0.
+# SoloDisplay: a small display controller built around explicit uncertainty
 
 ## 1. Product and boundaries
 
@@ -18,7 +16,7 @@ Agreed behavior:
 - Machines without a positively identified laptop panel remain untouched.
 - Preserve normal macOS sleep and closed-lid behavior.
 
-Defaults: manual mode, launch at login off, working name **Lidless**. Initially target Apple Silicon and macOS 26 or later; newer releases may operate through capability checks but are not described as tested without evidence.
+Defaults: manual mode, launch at login off, working name **SoloDisplay**. Initially target Apple Silicon and macOS 26 or later; newer releases may operate through capability checks but are not described as tested without evidence.
 
 First delivery is a local build with guided hardware validation. Public signing, notarization, Homebrew packaging, and an updater follow separately.
 
@@ -64,7 +62,7 @@ Its inputs explicitly separate:
 - **Intent:** selected mode, automatic pause, temporary manual request.
 - **Evidence:** display topology, panel identity, lid/power/session state, observation time and revision.
 - **Operation:** target, identifier, originating revision, deadline, and outcome.
-- **Ownership:** whether Lidless may have disabled this particular panel.
+- **Ownership:** whether SoloDisplay may have disabled this particular panel.
 - **Recovery:** unresolved restoration or a latched fault.
 
 Evidence supports known, unknown, and conflicting values. Missing properties and failed queries never silently become “false.” Keep these dimensions separate to avoid creating a state for every hardware combination.
@@ -79,10 +77,10 @@ A serialized coordinator feeds the reducer events and executes effects through i
 - Restore owned suppression promptly when its prerequisites fail. Do not impose the disabling delay on restoration.
 - Only one display operation may be outstanding. Callbacks enqueue events; they never change displays directly.
 - Cancel obsolete scheduled decisions. A stale operation completion still represents a possible physical change and must trigger reconciliation.
-- Account for expected notifications and the panel’s disappearance during Lidless’s own operation; do not mistake these for an unrelated failure and create a toggle loop.
+- Account for expected notifications and the panel’s disappearance during SoloDisplay’s own operation; do not mistake these for an unrelated failure and create a toggle loop.
 - Verify outcomes separately from API return codes. Restoration may remain pending during sleep or lid closure without demanding a lit screen.
 - Suspend automatic disabling after an operation fault. Require an explicit Retry/Resume action; ordinary wake recovery can resume automatic mode after fresh observation.
-- If another controller changes the panel against Lidless’s intent, release ownership and pause rather than repeatedly overriding it.
+- If another controller changes the panel against SoloDisplay’s intent, release ownership and pause rather than repeatedly overriding it.
 
 Use three seconds as the initial operation-verification deadline. Retry completed, failed restoration calls at most three times, with 500 ms then two-second delays. Never retry concurrently with an unresolved call. These are testable controller deadlines, not promises about OS response time.
 
