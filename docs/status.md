@@ -4,6 +4,8 @@ Updated 2026-09-10. `validation.md` is the chronological hardware evidence recor
 
 All hardware evidence recorded before v0.2.0 was gathered under the app's previous name, Lidless. The code paths are the same; only the identifiers changed. Two identifiers deliberately did not: the `/tmp` lock file names and the support directory adopted at launch, both kept so a leftover 0.1.x build cannot run alongside this one or strand a recovery record. `DISTRIBUTION.md` records when they can be dropped.
 
+Not yet verified on hardware for v0.2.0: the support-directory adoption and the cross-version lock exclusion, both end to end. Unit tests cover the adoption's whole-directory move, its refusal to overwrite an existing record, and its inertness when there is nothing to move, and one test pins the lock file names. What has not been observed is a real 0.1.x install being upgraded in place, or a 0.1.x build and a 0.2.0 build refusing each other through the shared lock names. The first upgrade that happens is that evidence, and belongs in `validation.md` when it does.
+
 ## Sleep-transition incident correction
 
 Implemented on 2026-09-10 after a real production-path failure. The internal panel
