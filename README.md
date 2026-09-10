@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/fanckush/SoloDisplay/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/fanckush/SoloDisplay/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://codecov.io/gh/fanckush/SoloDisplay"><img alt="Test coverage" src="https://codecov.io/gh/fanckush/SoloDisplay/branch/main/graph/badge.svg"></a>
   <a href="https://github.com/fanckush/SoloDisplay/releases"><img alt="Release" src="https://img.shields.io/github/v/release/fanckush/SoloDisplay?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/License-GPLv3-blue.svg"></a>
   <img alt="Platform" src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple">
@@ -133,6 +134,10 @@ commit-message hook accepts `feat:`, `fix:`, `docs:`, `chore:`, and `perf:`
 subjects, including optional scopes and `!`. The pre-push hook runs the Swift
 package tests and unsigned app unit tests. Run the same checks manually with
 `scripts/lint.sh` and `scripts/test.sh`.
+
+The coverage badge is rebuilt from both unit-test suites on every successful
+`main` CI run. It measures production Swift sources only; guided hardware
+validation remains tracked separately in [docs/status.md](docs/status.md).
 
 ## Design and docs
 
