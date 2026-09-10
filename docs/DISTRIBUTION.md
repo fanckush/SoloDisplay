@@ -65,7 +65,15 @@ its last step.
 ### Migrating the Lidless tap
 
 `fanckush/homebrew-lidless` stays alive so 0.1.0 installs move across on their
-own instead of being orphaned. In that repo, delete `Casks/lidless.rb` and add
+own instead of being orphaned.
+
+**Do this after the v0.2.0 release exists, not before.** The migration sends
+people at `Casks/solodisplay.rb`, which points at a v0.2.0 asset; flipping it
+early breaks installs for everyone still on the old tap, and the old cask keeps
+working in the meantime because GitHub redirects the renamed repo's release
+URLs.
+
+Once v0.2.0 is published, delete `Casks/lidless.rb` in that repo and add
 `tap_migrations.json`:
 
 ```json
