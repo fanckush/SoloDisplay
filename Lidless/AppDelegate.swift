@@ -58,6 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       )
       exit(70)
     }
+    migrateLegacySupportDirectory()
     guard let store = try? ProductionJournalStore() else {
       operationalDiagnostics.emit(.startupFailed, reason: .journalUnavailable)
       operationalDiagnostics.emit(.exitRequested, reason: .journalUnavailable)
@@ -76,6 +77,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     helper = runtime
     Task { @MainActor in await runtime.start() }
+  }
+
+  /// Runs in the supervisor only, before it opens a store or launches any child. A record left
+  /// by the previous name means a panel may still be turned off, so failing to bring it across
+  /// is refused the same way an unusable journal is: this process starts blind or not at all.
+  private func migrateLegacySupportDirectory() {
+    guard let legacy = try? ProductionJournalStore.legacyDirectory(),
+          let current = try? ProductionJournalStore.defaultDirectory()
+    else { return }
+    do {
+      try ProductionJournalStore.migrateLegacyDirectory(from: legacy, to: current)
+    } catch {
+      let record = legacy.appendingPathComponent("recovery.json", isDirectory: false)
+      guard FileManager.default.fileExists(atPath: record.path) else { return }
+      let code = (error as NSError).code
+      operationalDiagnostics.emit(.startupFailed, reason: .journalUnavailable, errorCode: code)
+      operationalDiagnostics.emit(.exitRequested, reason: .journalUnavailable)
+      FileHandle.standardError.write(
+        Data("Lidless cannot migrate its recovery store and will not start.\n".utf8)
+      )
+      exit(70)
+    }
   }
 
   private func startController() {

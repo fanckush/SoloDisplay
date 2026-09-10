@@ -23,6 +23,17 @@ import Testing
   lock.release()
 }
 
+/// The lock file name is a cross-version contract, not a product name. A build that picks a
+/// different name cannot see an older build's lock, so both would believe they are the only
+/// display writer in this GUI session.
+@Test func theWriterLockKeepsItsPreRenameFileName() {
+  let directory = URL(fileURLWithPath: "/tmp", isDirectory: true)
+  let url = SessionWriterLock.lockURL(in: directory, name: "writer", loginID: 42)
+  #expect(url.lastPathComponent == "lidless-writer-\(getuid())-42.lock")
+  let instance = SessionWriterLock.lockURL(in: directory, name: "instance", loginID: 42)
+  #expect(instance.lastPathComponent == "lidless-instance-\(getuid())-42.lock")
+}
+
 @Test func journalRejectsDifferentBootOrLogin() {
   let target = PanelTarget(displayID: 1, displayUUID: "uuid", bootID: "boot", loginID: 42)
   let journal = RecoveryJournal(target: target, scope: "app", ownerPID: 123)

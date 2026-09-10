@@ -6,6 +6,18 @@ public final class SessionWriterLock {
   private var descriptor: Int32
   private let url: URL
 
+  /// The on-disk lock name is deliberately not the product name. It was "lidless" before the
+  /// rename to SoloDisplay, and it must stay that way while any 0.1.x build can still be
+  /// installed: two apps that picked different lock names would each conclude they are the only
+  /// display writer in this GUI session. Remove once 0.1.x is off the field.
+  private static let legacyNamePrefix = "lidless"
+
+  /// One derivation for both the holder and the worker that verifies an inherited descriptor.
+  /// Two independent copies of this name is a silent way to lose exclusion.
+  static func lockURL(in directory: URL, name: String, loginID: UInt32) -> URL {
+    directory.appendingPathComponent("\(legacyNamePrefix)-\(name)-\(getuid())-\(loginID).lock")
+  }
+
   /// `directory` exists so automated real-process tests can hold their own lock without
   /// competing with a live GUI session's writer. Production always uses the default.
   /// `name` separates unrelated exclusions; only "writer" gates display configuration.
@@ -13,7 +25,7 @@ public final class SessionWriterLock {
     loginID: UInt32, name: String = "writer",
     directory: URL = FileManager.default.temporaryDirectory
   ) throws {
-    url = directory.appendingPathComponent("lidless-\(name)-\(getuid())-\(loginID).lock")
+    url = Self.lockURL(in: directory, name: name, loginID: loginID)
     descriptor = open(url.path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
     guard descriptor >= 0 else { throw WriterLockError.unavailable }
     guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
@@ -45,9 +57,7 @@ public final class SessionWriterLock {
     _ inherited: Int32, loginID: UInt32,
     directory: URL = FileManager.default.temporaryDirectory
   ) -> Bool {
-    let expectedURL = directory.appendingPathComponent(
-      "lidless-writer-\(getuid())-\(loginID).lock"
-    )
+    let expectedURL = lockURL(in: directory, name: "writer", loginID: loginID)
     var inheritedStatus = stat()
     var expectedStatus = stat()
     guard fstat(inherited, &inheritedStatus) == 0,
