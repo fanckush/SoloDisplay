@@ -31,8 +31,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .build
-          key: spm-${{ matrix.os }}-${{ hashFiles('Package.swift') }}
-          restore-keys: spm-${{ matrix.os }}-
+          # The module cache stores the absolute workspace path, which is derived from the
+          # repository name. A cache from a differently named repo restores and then fails
+          # the build, so the name is part of the key and of the restore prefix.
+          key: spm-${{ matrix.os }}-${{ github.event.repository.name }}-${{ hashFiles('Package.swift') }}
+          restore-keys: spm-${{ matrix.os }}-${{ github.event.repository.name }}-
       - name: Build
         run: swift build
       - name: Test
