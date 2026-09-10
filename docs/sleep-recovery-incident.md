@@ -1,5 +1,7 @@
 # Sleep-transition recovery incident
 
+> This incident happened under the app's previous name, Lidless, before v0.2.0.
+
 ## What happened
 
 On 2026-09-10, Lidless had successfully disabled the internal panel. At 00:16:32,

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Build, sign, notarize, and package Lidless.app for distribution.
+# Build, sign, notarize, and package SoloDisplay.app for distribution.
 #
-# Produces a stapled, notarized Lidless.app plus a .zip and .dmg (with .sha256
+# Produces a stapled, notarized SoloDisplay.app plus a .zip and .dmg (with .sha256
 # sidecars) under build/dist/. Works both locally (Keychain notary profile) and
 # in CI (App Store Connect API key). See docs/DISTRIBUTION.md for setup.
 #
@@ -35,15 +35,15 @@ BUILD_NUMBER="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application}"
 DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:?set DEVELOPMENT_TEAM (Apple Team ID)}"
 
-PROJECT="Lidless.xcodeproj"
-SCHEME="Lidless"
-APP="Lidless.app"
+PROJECT="SoloDisplay.xcodeproj"
+SCHEME="SoloDisplay"
+APP="SoloDisplay.app"
 BUILD_DIR="build"
-ARCHIVE="$BUILD_DIR/Lidless.xcarchive"
+ARCHIVE="$BUILD_DIR/SoloDisplay.xcarchive"
 EXPORT_DIR="$BUILD_DIR/export"
 DIST_DIR="$BUILD_DIR/dist"
-ZIP="$DIST_DIR/Lidless-$VERSION.zip"
-DMG="$DIST_DIR/Lidless-$VERSION.dmg"
+ZIP="$DIST_DIR/SoloDisplay-$VERSION.zip"
+DMG="$DIST_DIR/SoloDisplay-$VERSION.dmg"
 
 echo ">> Cleaning $BUILD_DIR"
 rm -rf "$BUILD_DIR"
@@ -119,7 +119,7 @@ ditto -c -k --keepParent "$APP_PATH" "$ZIP"
 
 echo ">> Packaging .dmg"
 if command -v create-dmg >/dev/null 2>&1; then
-  create-dmg --volname "Lidless $VERSION" --app-drop-link 480 170 \
+  create-dmg --volname "SoloDisplay $VERSION" --app-drop-link 480 170 \
     --icon "$APP" 160 170 --window-size 640 360 \
     "$DMG" "$APP_PATH" >/dev/null
 else
@@ -128,7 +128,7 @@ else
   mkdir -p "$STAGE"
   cp -R "$APP_PATH" "$STAGE/"
   ln -s /Applications "$STAGE/Applications"
-  hdiutil create -volname "Lidless $VERSION" -srcfolder "$STAGE" \
+  hdiutil create -volname "SoloDisplay $VERSION" -srcfolder "$STAGE" \
     -ov -format UDZO "$DMG" >/dev/null
 fi
 

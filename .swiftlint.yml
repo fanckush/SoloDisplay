@@ -1,4 +1,4 @@
-# SwiftLint configuration for Lidless.
+# SwiftLint configuration for SoloDisplay.
 excluded:
   - .build
   - DerivedData

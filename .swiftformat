@@ -1,4 +1,4 @@
-# SwiftFormat configuration for Lidless.
+# SwiftFormat configuration for SoloDisplay.
 --swiftversion 6.0
 --indent 2
 --maxwidth 100

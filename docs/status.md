@@ -2,6 +2,8 @@
 
 Updated 2026-09-10. `validation.md` is the chronological hardware evidence record. Historical statements describe the state at the time of each experiment, not verification of subsequent code changes.
 
+All hardware evidence recorded before v0.2.0 was gathered under the app's previous name, Lidless. The code paths are the same; only the identifiers changed. Two identifiers deliberately did not: the `/tmp` lock file names and the support directory adopted at launch, both kept so a leftover 0.1.x build cannot run alongside this one or strand a recovery record. `DISTRIBUTION.md` records when they can be dropped.
+
 ## Sleep-transition incident correction
 
 Implemented on 2026-09-10 after a real production-path failure. The internal panel
@@ -137,4 +139,4 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 
 The dedicated bounded external-loss harness passed its second physical run, recorded in `work/external-unplug-02.log`. The supervisor detected removal and revoked protection; the responsive writer restored without a supervisor enable request. Reconnection happened after writer exit and did not reapply suppression. This validates this bounded experiment, not a production automatic-mode lifecycle or other hardware topologies. The first run expired without removal and remains inconclusive.
 
-Automated checks last passed: 126 package tests, 48 native app tests, and the UI smoke test. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation passes: the read-only diagnostics window is exercised end to end through XCUITest against `--lidless-unprotected`. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.
+Automated checks last passed: 162 package tests, 54 native app tests, and the UI smoke test. Debug and Release builds passed, and `swift-format` lint is clean. Release rejects lab commands, unpaired controller claims, and unknown arguments. UI automation passes: the read-only diagnostics window is exercised end to end through XCUITest against `--solodisplay-unprotected`. Real panel visibility is separate from macOS reporting a display active; normal external-monitor wake latency is not itself a defect.

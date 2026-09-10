@@ -1,18 +1,18 @@
-<h1 align="center">Lidless</h1>
+<h1 align="center">SoloDisplay</h1>
 
 <p align="center">
   <em>Turn your MacBook's built-in display fully <strong>off</strong> without closing the lid.</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/fanckush/Lidless/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/fanckush/Lidless/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/fanckush/Lidless/releases"><img alt="Release" src="https://img.shields.io/github/v/release/fanckush/Lidless?include_prereleases&sort=semver"></a>
+  <a href="https://github.com/fanckush/SoloDisplay/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/fanckush/SoloDisplay/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/fanckush/SoloDisplay/releases"><img alt="Release" src="https://img.shields.io/github/v/release/fanckush/SoloDisplay?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/License-GPLv3-blue.svg"></a>
   <img alt="Platform" src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple">
 </p>
 
 <!-- TODO: drop a menu-bar screenshot / GIF at docs/assets/demo.gif -->
-<p align="center"><img src="docs/assets/demo.gif" alt="Lidless in the menu bar" width="520"></p>
+<p align="center"><img src="docs/assets/demo.gif" alt="SoloDisplay in the menu bar" width="520"></p>
 
 ## Why
 
@@ -20,27 +20,43 @@ When a MacBook is connected to an external monitor with the lid open, macOS keep
 the built-in panel on, and there is no built-in way to disable it. The common
 workaround is dimming to zero and turning on mirroring, which is not great.
 
-Lidless actually turns the internal panel off, and it treats getting your screen
+SoloDisplay actually turns the internal panel off, and it treats getting your screen
 back as the main thing to get right. The paid, closed-source
 [BetterDisplay](https://github.com/waydabber/BetterDisplay) can do this among many
-other features. Lidless does just this one thing, for free and in the open.
+other features. SoloDisplay does just this one thing, for free and in the open.
 
 ## Install
 
 ```sh
-brew install --cask fanckush/lidless/lidless
+brew install --cask fanckush/solodisplay/solodisplay
 ```
 
 Builds are signed with a Developer ID and notarized by Apple, so Gatekeeper opens
 them without warnings.
 
+### Upgrading from Lidless
+
+This app was called Lidless up to v0.1.0. The name collided with three unrelated
+apps that all keep a Mac awake with the lid *closed*, which is close to the
+opposite of what this does, so v0.2.0 renamed it.
+
+`brew upgrade` moves you across on its own and removes the old app. If you
+installed by hand, turn **Launch at Login** off in Lidless first, then quit it
+and delete `Lidless.app`. That login item is registered against the old bundle
+identifier, so SoloDisplay cannot remove it and macOS keeps launching the old
+app at every login until you do.
+
+Your recovery record and preferences move to
+`~/Library/Application Support/SoloDisplay` the first time SoloDisplay starts,
+so an internal display left off by Lidless is still restored.
+
 ## Usage
 
-Launch Lidless and look for the laptop icon in the menu bar. The menu adapts to
+Launch SoloDisplay and look for the laptop icon in the menu bar. The menu adapts to
 your setup:
 
 - Manual mode: **Turn Internal Display Off** and **Turn Internal Display On**.
-- Automatic mode: Lidless turns the internal panel off on its own when a supported
+- Automatic mode: SoloDisplay turns the internal panel off on its own when a supported
   external display is present, and back on when it is not. **Keep Internal Display
   On** pauses that.
 - If a requirement is missing, the menu names it (for example a closed lid, no
@@ -49,7 +65,7 @@ your setup:
 
 ## How it works
 
-Lidless disables the internal screen through an undocumented display interface
+SoloDisplay disables the internal screen through an undocumented display interface
 that the public CoreGraphics API does not expose. The approach is the one used by
 the open-source
 [RonaldPark89/InternalDisplayOff](https://github.com/RonaldPark89/InternalDisplayOff).
@@ -101,18 +117,18 @@ dependencies.
 ```sh
 swift build
 swift test
-swift run lidless-lab observe   # read-only; reports displays/session/lid state
+swift run solodisplay-lab observe   # read-only; reports displays/session/lid state
 
-open Lidless.xcodeproj           # Scheme "Lidless" then Run
+open SoloDisplay.xcodeproj           # Scheme "SoloDisplay" then Run
 ```
 
 Account-independent app tests (ad-hoc signed):
 
 ```sh
-xcodebuild -project Lidless.xcodeproj -scheme Lidless -configuration Debug \
+xcodebuild -project SoloDisplay.xcodeproj -scheme SoloDisplay -configuration Debug \
   -destination 'platform=macOS,arch=arm64' -derivedDataPath DerivedData \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
-  test -only-testing:LidlessTests
+  test -only-testing:SoloDisplayTests
 ```
 
 No display-changing experiment runs as part of `swift test`. The guided hardware
@@ -151,5 +167,5 @@ package tests and unsigned app unit tests. Run the same checks manually with
 
 ## License
 
-[GPL-3.0-or-later](LICENSE). Lidless is free and open. If you distribute a
+[GPL-3.0-or-later](LICENSE). SoloDisplay is free and open. If you distribute a
 modified version, it has to stay free and open too.

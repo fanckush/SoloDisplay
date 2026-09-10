@@ -2,7 +2,7 @@
 
 ## Product decisions
 
-Lidless controls one positively identified internal laptop panel. It does not modify external display settings, brightness, mirroring, or system sleep preferences.
+SoloDisplay controls one positively identified internal laptop panel. It does not modify external display settings, brightness, mirroring, or system sleep preferences.
 
 Manual mode is the default. A manual off request is temporary and clears on interruption. Automatic mode is explicit opt-in. Its Keep Internal On action remains paused across wake, reconnect, and relaunch until the user resumes it. Launch at Login defaults to off.
 

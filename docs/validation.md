@@ -1,5 +1,8 @@
 # Validation record
 
+> Entries before v0.2.0 describe a build named Lidless. Commands, paths and log
+> subsystems are quoted as they were run and are not rewritten to the new name.
+
 ## Mirrored external-source round trip: physically confirmed
 
 - Added a separate Debug-only mirror baseline and experiment; ordinary extended-mode guards still reject mirroring. Baseline requires exactly one external source and the identified internal follower. Verification compares the original observed display identities, mirror source, flags, and logical geometry, not just the active flag. Refresh rate, HDR, and scaling preferences are not captured.
