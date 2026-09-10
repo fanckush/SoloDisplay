@@ -9,10 +9,10 @@ swift test
 
 echo ">> Running unsigned app unit tests"
 xcodebuild \
-  -project Lidless.xcodeproj \
-  -scheme Lidless \
+  -project SoloDisplay.xcodeproj \
+  -scheme SoloDisplay \
   -configuration Debug \
   -destination 'platform=macOS,arch=arm64' \
   -derivedDataPath DerivedData \
   CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
-  test -only-testing:LidlessTests
+  test -only-testing:SoloDisplayTests

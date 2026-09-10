@@ -2,21 +2,30 @@
 import PackageDescription
 
 let package = Package(
-  name: "LidlessKit",
+  name: "SoloDisplayKit",
   platforms: [.macOS(.v26)],
   products: [
-    .library(name: "LidlessCore", targets: ["LidlessCore"]),
-    .library(name: "LidlessPlatform", targets: ["LidlessPlatform"]),
-    .executable(name: "lidless-lab", targets: ["LidlessLab"]),
-    .executable(name: "lidless-probe", targets: ["LidlessProbe"])
+    .library(name: "SoloDisplayCore", targets: ["SoloDisplayCore"]),
+    .library(name: "SoloDisplayPlatform", targets: ["SoloDisplayPlatform"]),
+    .executable(name: "solodisplay-lab", targets: ["SoloDisplayLab"]),
+    .executable(name: "solodisplay-probe", targets: ["SoloDisplayProbe"])
   ],
   targets: [
-    .target(name: "LidlessCore"),
-    .target(name: "LidlessPlatform", dependencies: ["LidlessCore"]),
-    .executableTarget(name: "LidlessLab", dependencies: ["LidlessCore", "LidlessPlatform"]),
-    .executableTarget(name: "LidlessProbe", dependencies: ["LidlessCore", "LidlessPlatform"]),
-    .testTarget(name: "LidlessCoreTests", dependencies: ["LidlessCore"]),
-    .testTarget(name: "LidlessPlatformTests", dependencies: ["LidlessPlatform", "LidlessProbe"])
+    .target(name: "SoloDisplayCore"),
+    .target(name: "SoloDisplayPlatform", dependencies: ["SoloDisplayCore"]),
+    .executableTarget(
+      name: "SoloDisplayLab",
+      dependencies: ["SoloDisplayCore", "SoloDisplayPlatform"]
+    ),
+    .executableTarget(
+      name: "SoloDisplayProbe",
+      dependencies: ["SoloDisplayCore", "SoloDisplayPlatform"]
+    ),
+    .testTarget(name: "SoloDisplayCoreTests", dependencies: ["SoloDisplayCore"]),
+    .testTarget(
+      name: "SoloDisplayPlatformTests",
+      dependencies: ["SoloDisplayPlatform", "SoloDisplayProbe"]
+    )
   ],
   swiftLanguageModes: [.v6]
 )
