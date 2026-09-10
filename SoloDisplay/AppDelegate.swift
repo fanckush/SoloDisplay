@@ -58,7 +58,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       )
       exit(70)
     }
-    migrateLegacySupportDirectory()
     guard let store = try? ProductionJournalStore() else {
       operationalDiagnostics.emit(.startupFailed, reason: .journalUnavailable)
       operationalDiagnostics.emit(.exitRequested, reason: .journalUnavailable)
@@ -77,36 +76,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     helper = runtime
     Task { @MainActor in await runtime.start() }
-  }
-
-  /// Runs in the supervisor only, before it opens a store or launches any child. A record left
-  /// by the previous name means a panel may still be turned off, so failing to bring it across
-  /// is refused the same way an unusable journal is: this process starts blind or not at all.
-  private func migrateLegacySupportDirectory() {
-    guard let legacy = try? ProductionJournalStore.legacyDirectory(),
-          let current = try? ProductionJournalStore.defaultDirectory()
-    else { return }
-    // Nothing moves while another supervisor of either build is alive. This runs before the
-    // instance lock is held for real, and a 0.1.x helper mid-run would lose the directory it is
-    // still writing to. Sharing the lock name is what makes an older build visible here at all.
-    // A held lock means this launch is about to exit as a duplicate anyway, so skipping is free.
-    guard let loginID = DisplayObserver.read().loginID,
-          let probe = try? SessionWriterLock(loginID: loginID, name: "instance")
-    else { return }
-    defer { probe.release() }
-    do {
-      try ProductionJournalStore.migrateLegacyDirectory(from: legacy, to: current)
-    } catch {
-      let record = legacy.appendingPathComponent("recovery.json", isDirectory: false)
-      guard FileManager.default.fileExists(atPath: record.path) else { return }
-      let code = (error as NSError).code
-      operationalDiagnostics.emit(.startupFailed, reason: .journalUnavailable, errorCode: code)
-      operationalDiagnostics.emit(.exitRequested, reason: .journalUnavailable)
-      FileHandle.standardError.write(
-        Data("SoloDisplay cannot migrate its recovery store and will not start.\n".utf8)
-      )
-      exit(70)
-    }
   }
 
   private func startController() {

@@ -23,9 +23,6 @@ VERSION=0.2.0 DEVELOPMENT_TEAM=TEAMID NOTARY_PROFILE=solodisplay-notary \
   scripts/build-release.sh
 ```
 
-The profile lives in the release machine's keychain, so a machine that still has
-a `lidless-notary` profile needs this run again under the new name, or
-`NOTARY_PROFILE` pointed at the old one.
 
 Dry run (build and sign only, no Apple round-trip):
 
@@ -58,57 +55,9 @@ VERSION=0.2.0 DEVELOPMENT_TEAM=TEAMID scripts/build-release.sh --skip-notarize
 
 Check the name is free first: `brew info --cask solodisplay`.
 
-`TAP_REPO_TOKEN` has to reach the new tap. A fine-grained PAT scoped to
-`homebrew-lidless` lets a release build and sign successfully and then fail on
-its last step.
-
-### Migrating the Lidless tap
-
-`fanckush/homebrew-lidless` stays alive so 0.1.0 installs move across on their
-own instead of being orphaned.
-
-**Do this after the v0.2.0 release exists, not before.** The migration sends
-people at `Casks/solodisplay.rb`, which points at a v0.2.0 asset; flipping it
-early breaks installs for everyone still on the old tap, and the old cask keeps
-working in the meantime because GitHub redirects the renamed repo's release
-URLs.
-
-Once v0.2.0 is published, delete `Casks/lidless.rb` in that repo and add
-`tap_migrations.json`:
-
-```json
-{ "lidless": "fanckush/solodisplay/solodisplay" }
-```
-
-`brew upgrade` then replaces the old cask with the new one and removes
-`Lidless.app`. Anyone who installed by hand has to delete `Lidless.app`
-themselves, and should also turn its Launch at Login off first: that
-registration belongs to the old bundle identifier, so SoloDisplay cannot
-unregister it and macOS keeps launching the old app at every login until it is
-removed.
-
-## Lock-name compatibility window
-
-`SessionWriterLock` deliberately names its files `lidless-writer-*.lock` and
-`lidless-instance-*.lock`, not after the current product. They are the only
-thing stopping a leftover Lidless 0.1.x and SoloDisplay from each concluding it
-is the sole display writer in a login session, and two writers into the private
-display API is the worst failure this app has.
-
-Remove the compatibility name in the first release *after* both of these are
-true, never in the release that performs the rename:
-
-- `Casks/lidless.rb` has been migrated in the tap, and
-- the v0.1.0 GitHub release is marked superseded in its notes.
-
-Removal touches one line, `legacyNamePrefix` in
-`Sources/SoloDisplayPlatform/SessionWriterLock.swift`, plus its comment, the
-test that pins the file name in `Tests/SoloDisplayPlatformTests/JournalTests.swift`,
-and this section. The same release should drop
-`ProductionJournalStore.legacyDirectory` and its migration.
-
-`grep -rn lidless Sources SoloDisplay` is the check: it must return only the
-lock prefix and the legacy support directory name, both with their comments.
+`TAP_REPO_TOKEN` has to be able to dispatch into that tap. A fine-grained PAT
+scoped to the wrong repo lets a release build and sign successfully and then
+fail on its last step.
 
 ## Cutting a release
 

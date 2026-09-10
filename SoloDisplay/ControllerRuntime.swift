@@ -55,9 +55,9 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
 
   func start() {
     diagnostics.started()
-    // The login item is registered against the bundle identifier, which the rename to SoloDisplay
-    // changed, and preferences carried over from Lidless can claim a registration this bundle
-    // never had. The system is the only authority on whether it is actually registered.
+    // Preferences record what the user asked for; the registration itself lives in the system
+    // and can be revoked there without this app hearing about it. Trusting the file would show
+    // a checked menu item for a login item that does not exist, so the system is the authority.
     let registered = SMAppService.mainApp.status == .enabled
     if preferences.launchAtLogin != registered {
       mutatePreferences { $0.launchAtLogin = registered }

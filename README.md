@@ -34,22 +34,6 @@ brew install --cask fanckush/solodisplay/solodisplay
 Builds are signed with a Developer ID and notarized by Apple, so Gatekeeper opens
 them without warnings.
 
-### Upgrading from Lidless
-
-This app was called Lidless up to v0.1.0. The name collided with three unrelated
-apps that all keep a Mac awake with the lid *closed*, which is close to the
-opposite of what this does, so v0.2.0 renamed it.
-
-`brew upgrade` moves you across on its own and removes the old app. If you
-installed by hand, turn **Launch at Login** off in Lidless first, then quit it
-and delete `Lidless.app`. That login item is registered against the old bundle
-identifier, so SoloDisplay cannot remove it and macOS keeps launching the old
-app at every login until you do.
-
-Your recovery record and preferences move to
-`~/Library/Application Support/SoloDisplay` the first time SoloDisplay starts,
-so an internal display left off by Lidless is still restored.
-
 ## Usage
 
 Launch SoloDisplay and look for the laptop icon in the menu bar. The menu adapts to

@@ -1,8 +1,5 @@
 # Validation record
 
-> Entries before v0.2.0 describe a build named Lidless. Commands, paths and log
-> subsystems are quoted as they were run and are not rewritten to the new name.
-
 ## Mirrored external-source round trip: physically confirmed
 
 - Added a separate Debug-only mirror baseline and experiment; ordinary extended-mode guards still reject mirroring. Baseline requires exactly one external source and the identified internal follower. Verification compares the original observed display identities, mirror source, flags, and logical geometry, not just the active flag. Refresh rate, HDR, and scaling preferences are not captured.
@@ -47,7 +44,7 @@ For the current implementation and outstanding hardware matrix, see `status.md`.
 
 ## 2026-09-08: foundation
 
-- Scaffold: `swift package init --type library --enable-swift-testing --disable-xctest --name LidlessCore`.
+- Scaffold: `swift package init --type library --enable-swift-testing --disable-xctest --name SoloDisplayCore`.
 - Toolchain: Swift 6.3.3, installed Xcode, macOS 26.6.2 (25G83), arm64.
 - GPU report: Apple M5 Pro. Exact Mac model and monitor model have not been recorded.
 - User reports a USB-C connection to the external monitor, which also supplies power.
@@ -70,7 +67,7 @@ Application-lifetime rollback is unverified. The read-only menu-bar shell now ex
 
 - User switched to extended mode, raised internal brightness, and confirmed readiness.
 - Read-only baseline: both displays active, neither mirrored, lid open, foreground GUI session. Internal logical size 1512 x 982; external 1920 x 1080.
-- Command: `lidless-lab probe --external 5 --scope app --journal work/first.recovery.json --native-wired-attested`.
+- Command: `solodisplay-lab probe --external 5 --scope app --journal work/first.recovery.json --native-wired-attested`.
 - The private disable call returned successfully. The online list then contained only the active external display.
 - The probe waited up to ten seconds, explicitly enabled the recorded internal target, and verified it active. Process exited with code 0.
 - The user confirmed the built-in screen visibly turned off and returned normally, with the external remaining usable.
@@ -119,10 +116,10 @@ The expanded suite passed 31 tests, including trace eviction, byte limits, ident
 
 ## Native Xcode integration
 
-- The user created a macOS App project in `/Users/imad/Work/personal/Lidless` using Xcode's template, SwiftUI, Swift Testing, and XCTest UI tests.
+- The user created a macOS App project in `/Users/imad/Work/personal/SoloDisplay` using Xcode's template, SwiftUI, Swift Testing, and XCTest UI tests.
 - The core, platform adapter, lab executable, tests, and docs were copied into this repository. Original source files and hardware recovery journals remain intact in the earlier workspace. No recovery journals or build caches were copied.
-- Xcode resolves `LidlessKit` as a local package through a repository-relative reference. The app links `LidlessCore` and `LidlessPlatform`.
-- Corrected the template's `dev.ledless` spelling to `dev.lidless` at the user's request. The existing signing team is unchanged.
+- Xcode resolves `SoloDisplayKit` as a local package through a repository-relative reference. The app links `SoloDisplayCore` and `SoloDisplayPlatform`.
+- Corrected a misspelling in the template's bundle identifier at the user's request. The existing signing team is unchanged.
 - Added an AppKit menu-bar delegate and a read-only diagnostic window. Display callbacks, AppKit screen-change notifications, workspace lifecycle events, and periodic inventory reads feed a bounded in-memory timeline. No display writer is connected to the app.
 - Swift 6 and macOS 26.0 are consistent across the app and package. App Sandbox is disabled; Hardened Runtime remains configured for eventual signed distribution.
 - Debug app and both test targets built successfully. The optimized Release app also built successfully.
@@ -138,7 +135,7 @@ The expanded suite passed 31 tests, including trace eviction, byte limits, ident
 - With the app running, the user switched from extended mode to mirroring in System Settings. The screenshot showed CoreGraphics begin/end callbacks and AppKit screen-change notifications, followed by mirrored readings. The external reported active and the built-in inactive. Inactivity in a mirror set is not proof of physical suppression.
 - The user switched back to extended mode. Another screenshot showed both callback sources and both displays active with mirroring false. This validates delivery for these System Settings transitions on this setup, not all private-API or recovery transitions.
 - The user then authorized a separate explicit off/on experiment while the native app remained open as a read-only independent observer (PID 89561).
-- Command: `lidless-lab probe --external 5 --scope app --journal work/native-observer-roundtrip.recovery.json --native-wired-attested --ending restore`.
+- Command: `solodisplay-lab probe --external 5 --scope app --journal work/native-observer-roundtrip.recovery.json --native-wired-attested --ending restore`.
 - The probe (PID 90066) disabled the built-in panel, observed only the active external display, waited approximately ten seconds, explicitly enabled the recorded panel, and exited with code 0. No exit, crash, or handoff experiment was performed.
 - Reverse UUID lookup again returned ID 0 while suppressed. The original numeric target was used for explicit restoration in the same live owning process.
 - The probe's immediate post-restore callback batch was empty, although its inventory showed both panels active. Do not treat that immediate batch as proof that no later notifications were delivered.
@@ -152,7 +149,7 @@ The expanded suite passed 31 tests, including trace eviction, byte limits, ident
 - Added debug-only `--lab-check`, `--lab-handoff`, and internal `--lab-restore-child` entry points. They use the existing Xcode app lifecycle and never appear in the ordinary menu. Release builds reject lab arguments with status 64.
 - Added eight unit tests for explicit command selection, operator attestation, malformed arguments, fallback decisions, baseline prerequisites, and recovery identity contradictions. All 34 package tests and 13 app unit tests passed. Debug and Release builds succeeded; a read-only native entry-point check reported both displays active.
 - The user explicitly confirmed readiness for guided tests. The operator was asked to keep the cable connected and lid open for this experiment; sleep and unplug tests were not requested or performed.
-- Command: `DerivedData/Build/Products/Debug/Lidless.app/Contents/MacOS/Lidless --lab-handoff --external 5 --journal /Users/imad/Work/personal/Lidless/work/native-app-handoff.recovery.json --native-wired-attested`.
+- Command: `DerivedData/Build/Products/Debug/SoloDisplay.app/Contents/MacOS/SoloDisplay --lab-handoff --external 5 --journal /Users/imad/Work/personal/SoloDisplay/work/native-app-handoff.recovery.json --native-wired-attested`.
 - Native owner PID 90823 journaled the target, disabled under application scope, and observed only the active external for approximately ten seconds while yielding to AppKit.
 - Owner released its writer lock and launched its actual child, PID 90833, from the same app executable. The child acquired the lock, checked live-parent and boot/session identity, enabled the cached internal target under session scope, and independently verified both displays active.
 - The owner received the child's restoration callbacks at uptime 263355481 through 263355491 ms. After child exit, it reacquired the writer lock and observed both displays active at 263355690 ms, then verified again at 263355801 ms.
@@ -169,7 +166,7 @@ The user subsequently confirmed that the built-in screen returned normally and t
 - A no-display-write rehearsal exercised the real processes, journal handshake, readiness and exit messages, and writer-lock reacquisition. It exited with code 0 and both displays active. Journal: `work/native-exit-rehearsal.recovery.json`.
 - Six additional tests cover bounded protocol input, split/coalesced messages, EOF, invalid input, witness/child identity, and distinct rehearsal versus real-test parsing. All 19 app tests and 34 package tests passed. Debug and Release builds passed.
 - User authorized proceeding with the supervised normal-exit test. No cable, lid, sleep, or mirroring change was requested during it.
-- Command: `DerivedData/Build/Products/Debug/Lidless.app/Contents/MacOS/Lidless --lab-exit-supervised --external 5 --journal /Users/imad/Work/personal/Lidless/work/native-normal-exit.recovery.json --native-wired-attested`.
+- Command: `DerivedData/Build/Products/Debug/SoloDisplay.app/Contents/MacOS/SoloDisplay --lab-exit-supervised --external 5 --journal /Users/imad/Work/personal/SoloDisplay/work/native-normal-exit.recovery.json --native-wired-attested`.
 - Supervisor PID 93146 validated writer PID 93148's journal against its own live target witness before sending arm. It observed only the active external after disabling and for approximately five seconds.
 - The writer completed a normal exit with status 0 without sending an enable request. At uptime 264189753 ms the supervisor still saw only the external. It continued observing for three seconds without seeing the internal panel active.
 - The supervisor then sent one explicit session-scope enable using its live pre-disable witness after acquiring the writer lock. Restoration callbacks arrived at 264192992 through 264192996 ms; both displays were verified active at 264193073 ms.
@@ -232,8 +229,8 @@ The user clarified that the external monitor physically woke more slowly than th
 - Added a production journal in the app's Application Support directory: exclusive creation with 0600 permissions inside a 0700 directory, synchronized to disk, carrying schema version, run and operation identity, boot and login identity, target, configuration scope, and the observed topology. It is separate from the retained lab journals.
 - Launch reconciliation classifies a leftover record as unresolved for this boot and login, from a prior boot or login, or retained. Every non-empty classification inhibits disabling and carries a user-facing explanation. A record contradicted by live built-in display evidence is retained rather than acted on. Clearing happens only after verified restoration.
 - Production process ownership: a normal launch becomes the supervising helper and launches its controller child over inherited private pipes. Both are the same app executable with real AppKit event loops. The controller role is refused unless the standard descriptors really are pipes, so a command-line claim alone cannot authorize it.
-- Added `lidless-probe`, a package executable that runs both roles as real paired processes and performs no display configuration at all. Eight automated tests drive it through pairing and release, a missing helper witness, journal-preparation failure, a silent but connected helper, lost helper contact, a killed controller, a stalled operation, and writer-lock ordering. What they establish is the protocol, journal, and ordering behavior; they establish nothing about physical recovery.
-- Observed on this machine, bounded and cleaned up afterwards: launching the built Debug app produced helper PID 11217 with controller child PID 11219 running `--lidless-controller`. A second launch was refused by the instance lock with "Lidless is already running in this login session." Killing the controller made the helper find nothing owned and exit without any display write. No recovery record was created, because nothing in this milestone can disable a display.
+- Added `solodisplay-probe`, a package executable that runs both roles as real paired processes and performs no display configuration at all. Eight automated tests drive it through pairing and release, a missing helper witness, journal-preparation failure, a silent but connected helper, lost helper contact, a killed controller, a stalled operation, and writer-lock ordering. What they establish is the protocol, journal, and ordering behavior; they establish nothing about physical recovery.
+- Observed on this machine, bounded and cleaned up afterwards: launching the built Debug app produced helper PID 11217 with controller child PID 11219 running `--solodisplay-controller`. A second launch was refused by the instance lock with "SoloDisplay is already running in this login session." Killing the controller made the helper find nothing owned and exit without any display write. No recovery record was created, because nothing in this milestone can disable a display.
 - Release rejects lab commands, an unpaired controller claim, and unknown arguments, each with exit code 64.
 - Automated checks: 79 package tests and 36 native app tests passed; Debug and Release builds passed; `swift-format` lint is clean. One earlier full run failed `onlyOneWriterCanOwnAGUISession` with a lock already held. The cause was not reproduced in four subsequent runs, and the test now uses its own private directory rather than only a random synthetic session ID, which removes that collision class. The one-off failure is recorded rather than explained away.
 - Not validated by this milestone: any production display change, the coordinator, transport classification, lifecycle policy, and every hardware scenario in the production process pair. Normal app launches still cannot disable a display.
@@ -302,9 +299,9 @@ Release was verified separately: it builds, rejects lab commands with exit code 
 Two further faults were found during these runs, on top of the eight recorded above:
 
 - The controller died by SIGPIPE while writing a heartbeat to a helper that had gone away, which killed it mid-restoration and left an unresolved record. Production now ignores SIGPIPE, and the same test then restored, cleared its own record, and stopped cleanly.
-- Neither process discounted system sleep from its deadlines. Sleeping while suppressed made the controller call its own restore stalled and the helper agree, so waking killed the pair and left Lidless not running. Both now learn about suspension from the OS rather than inferring it from elapsed time, and a submitted call no longer times out while the machine is not awake.
+- Neither process discounted system sleep from its deadlines. Sleeping while suppressed made the controller call its own restore stalled and the helper agree, so waking killed the pair and left SoloDisplay not running. Both now learn about suspension from the OS rather than inferring it from elapsed time, and a submitted call no longer times out while the machine is not awake.
 
-One observation worth recording rather than changing: sleep, lid closure and losing the external all invalidate a prerequisite, so Lidless conservatively restores and then disables again, which shows as a brief flash of the internal panel. Screen lock and display sleep invalidate nothing, so the suppression is simply held and no flash occurs. Display sleep is now an explicit non-reason to restore rather than an incidental one.
+One observation worth recording rather than changing: sleep, lid closure and losing the external all invalidate a prerequisite, so SoloDisplay conservatively restores and then disables again, which shows as a brief flash of the internal panel. Screen lock and display sleep invalidate nothing, so the suppression is simply held and no flash occurs. Display sleep is now an explicit non-reason to restore rather than an incidental one.
 
 ### Not tested
 

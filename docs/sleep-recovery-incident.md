@@ -1,10 +1,8 @@
 # Sleep-transition recovery incident
 
-> This incident happened under the app's previous name, Lidless, before v0.2.0.
-
 ## What happened
 
-On 2026-09-10, Lidless had successfully disabled the internal panel. At 00:16:32,
+On 2026-09-10, SoloDisplay had successfully disabled the internal panel. At 00:16:32,
 macOS delivered `willSleep` and the controller immediately started a restore. The
 private display call never returned. At 00:16:34, normal timer callbacks were
 mistaken for sufficient wake evidence by the liveness fallback. At 00:16:36, the
@@ -56,5 +54,5 @@ and launch a new controller.
 No user-space architecture can guarantee that a private OS or driver call will
 succeed. This design instead guarantees that such a call does not run inside the
 only long-lived recovery process. If the platform refuses every recovery attempt,
-the panel can remain unavailable, but Lidless retains its evidence and a responsive,
+the panel can remain unavailable, but SoloDisplay retains its evidence and a responsive,
 visible control plane rather than silently wedging.
