@@ -116,6 +116,21 @@ No display-changing experiment runs as part of `swift test`. The guided hardware
 procedure ([docs/hardware-tests.md](docs/hardware-tests.md)) must be invoked
 explicitly.
 
+### Development checks
+
+Enable the repository's Git hooks once per clone:
+
+```sh
+brew install swiftformat swiftlint
+scripts/setup-hooks.sh
+```
+
+The pre-commit hook checks staged Swift files with SwiftFormat and SwiftLint. The
+commit-message hook accepts `feat:`, `fix:`, `docs:`, `chore:`, and `perf:`
+subjects, including optional scopes and `!`. The pre-push hook runs the Swift
+package tests and unsigned app unit tests. Run the same checks manually with
+`scripts/lint.sh` and `scripts/test.sh`.
+
 ## Design and docs
 
 - [Architecture and product decisions](docs/architecture.md)
