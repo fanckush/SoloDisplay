@@ -1,5 +1,7 @@
 # Lidless: a small display controller built around explicit uncertainty
 
+> The original plan, kept as written. The app was renamed to SoloDisplay in v0.2.0.
+
 ## 1. Product and boundaries
 
 Build a native Swift menu-bar app that disables a MacBook’s internal panel while eligible external displays are available.

@@ -5,7 +5,7 @@ These are developer experiments. They are not routine app usage or part of the a
 ## 1. Read-only baseline
 
 ```sh
-swift run lidless-lab observe
+swift run solodisplay-lab observe
 ```
 
 Record the OS build, Mac family, monitor, connection path, power source, and visible layout in the validation record. Avoid publishing raw boot, session, and display UUIDs.
@@ -25,7 +25,7 @@ The observer must report an open lid, foreground session, built-in target identi
 Create `work/` for local experiment artifacts. Run the command with the actual external ID:
 
 ```sh
-swift run lidless-lab probe --external EXTERNAL_ID --scope app --journal work/first.recovery.json --native-wired-attested
+swift run solodisplay-lab probe --external EXTERNAL_ID --scope app --journal work/first.recovery.json --native-wired-attested
 ```
 
 The attestation means the operator checked the connection and can see the external display. It is a lab-only substitute for the production transport classifier, which is not implemented yet.
@@ -41,7 +41,7 @@ The journal remains even after success. Use a different filename for a later exp
 Prepare a second Terminal on the external display before any exit experiment:
 
 ```sh
-.build/debug/lidless-lab restore --journal work/first.recovery.json
+.build/debug/solodisplay-lab restore --journal work/first.recovery.json
 ```
 
 Only run restoration after the original probe exits. The command refuses a writer that may still be alive, a boot/login mismatch, or a contradictory target. It acquires the same writer lock. It leaves the journal intact.
@@ -51,7 +51,7 @@ After the explicit round trip succeeds, design the next experiment around one fa
 Once the operator is ready for the separate exit test:
 
 ```sh
-swift run lidless-lab probe --external EXTERNAL_ID --scope app --journal work/exit.recovery.json --native-wired-attested --ending exit
+swift run solodisplay-lab probe --external EXTERNAL_ID --scope app --journal work/exit.recovery.json --native-wired-attested --ending exit
 ```
 
 The exit mode first checks that the journaled UUID still resolves while the panel is suppressed. If that check fails or the environment changes, it restores explicitly instead of deliberately exiting with suppression outstanding. Otherwise it exits after ten seconds without an enable call. Observe the result independently, then use `restore --journal work/exit.recovery.json` if required.
@@ -59,7 +59,7 @@ The exit mode first checks that the journaled UUID still resolves while the pane
 If reverse UUID resolution is unavailable while suppressed, do not remove that guard from ordinary crash recovery. First investigate addressability with a cooperative child while the original owner remains alive:
 
 ```sh
-swift run lidless-lab probe --external EXTERNAL_ID --scope app --journal work/handoff.recovery.json --native-wired-attested --ending handoff
+swift run solodisplay-lab probe --external EXTERNAL_ID --scope app --journal work/handoff.recovery.json --native-wired-attested --ending handoff
 ```
 
 The parent releases its writer lock and starts its own recovery child. The child verifies the boot/session, actual parent PID, and absence of contradictory live target identity before using the target recorded by the live parent. It acquires the same writer lock. The parent may take over only after the child exits and the parent reacquires the lock. A child timeout is handled with bounded termination; failure to establish termination forbids a second writer.
@@ -75,7 +75,7 @@ The independent native observer received private-API off/on callbacks, but the e
 First build the Debug app, then run this read-only entry-point check:
 
 ```sh
-DerivedData/Build/Products/Debug/Lidless.app/Contents/MacOS/Lidless --lab-check
+DerivedData/Build/Products/Debug/SoloDisplay.app/Contents/MacOS/SoloDisplay --lab-check
 ```
 
 This enters the normal app lifecycle, yields to AppKit, reports inventory, and exits without creating a journal or changing a display.
@@ -83,7 +83,7 @@ This enters the normal app lifecycle, yields to AppKit, reports inventory, and e
 Only with the operator ready, both panels visible, an open lid, and a confirmed native wired external in extended mode:
 
 ```sh
-DerivedData/Build/Products/Debug/Lidless.app/Contents/MacOS/Lidless \
+DerivedData/Build/Products/Debug/SoloDisplay.app/Contents/MacOS/SoloDisplay \
   --lab-handoff --external EXTERNAL_ID \
   --journal /ABSOLUTE/NEW/PATH/native-handoff.recovery.json \
   --native-wired-attested
@@ -104,7 +104,7 @@ The earlier unsupervised exit command remains guarded by reverse UUID lookup. Do
 Rehearse the IPC and journal handshake without display writes first:
 
 ```sh
-DerivedData/Build/Products/Debug/Lidless.app/Contents/MacOS/Lidless \
+DerivedData/Build/Products/Debug/SoloDisplay.app/Contents/MacOS/SoloDisplay \
   --lab-exit-rehearsal --external EXTERNAL_ID \
   --journal /ABSOLUTE/NEW/PATH/exit-rehearsal.recovery.json \
   --native-wired-attested
@@ -113,7 +113,7 @@ DerivedData/Build/Products/Debug/Lidless.app/Contents/MacOS/Lidless \
 Then, with the operator ready and the same open-lid, extended, native wired baseline:
 
 ```sh
-DerivedData/Build/Products/Debug/Lidless.app/Contents/MacOS/Lidless \
+DerivedData/Build/Products/Debug/SoloDisplay.app/Contents/MacOS/SoloDisplay \
   --lab-exit-supervised --external EXTERNAL_ID \
   --journal /ABSOLUTE/NEW/PATH/normal-exit.recovery.json \
   --native-wired-attested

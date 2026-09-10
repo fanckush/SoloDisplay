@@ -7,7 +7,7 @@ logs that were not recorded.
 ## Operational events
 
 `OperationalEventSink` accepts typed, allowlisted events. The production adapter
-uses macOS Unified Logging under `dev.lidless.Lidless` with lifecycle, protection,
+uses macOS Unified Logging under `dev.solodisplay.SoloDisplay` with lifecycle, protection,
 recovery, and diagnostics categories. Notice/error events remain enabled in
 Release. The pure protection reducers expose diagnostic reasons and timing but
 perform no logging or asynchronous work.
@@ -71,7 +71,7 @@ prompts, app-owned log files, or recovery-journal changes are involved.
 - Native tests use the real helper recovery loop with an injected observer, fake
   writer, isolated journal and lock, and captured events. They check deferred
   recovery ordering and blocked recovery without a false success event.
-- Debug and Release builds pass. A separate optimized `lidless-probe
+- Debug and Release builds pass. A separate optimized `solodisplay-probe
   diagnostics-smoke` process emitted startup and intentional-exit events, then
   terminated. `diagnostics-history` retrieved both from the system store afterward
   on this Mac. This establishes this account's retrieval capability, not universal

@@ -1,4 +1,4 @@
-# Lidless: remaining implementation and delivery plan
+# SoloDisplay: remaining implementation and delivery plan
 
 ## 1. Objective and source of truth
 
@@ -87,7 +87,7 @@ Preserve the original evidence policy:
 - Refresh at least every two seconds while suppressed.
 - Evidence older than five seconds cannot authorize continued suppression.
 
-Recognize a missing panel as Lidless-owned suppression only when live ownership and the validated operation context establish that interpretation. An inactive mirrored follower is neither proof of suppression nor failed restoration.
+Recognize a missing panel as SoloDisplay-owned suppression only when live ownership and the validated operation context establish that interpretation. An inactive mirrored follower is neither proof of suppression nor failed restoration.
 
 For mirroring, capture and verify source relationships and observable display configuration. Never silently switch to extended mode or repair a mismatch by rewriting external settings. Unsupported mirror arrangements remain unavailable.
 

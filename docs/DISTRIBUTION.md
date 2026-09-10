@@ -1,6 +1,6 @@
 # Distribution and release runbook
 
-Everything needed to sign, notarize, release, and publish Lidless to Homebrew.
+Everything needed to sign, notarize, release, and publish SoloDisplay to Homebrew.
 This is the operator guide. The automation lives in `.github/workflows/` and
 `scripts/build-release.sh`.
 
@@ -17,16 +17,20 @@ This is the operator guide. The automation lives in `.github/workflows/` and
 ### Local notarization (optional, for hand builds)
 
 ```sh
-xcrun notarytool store-credentials lidless-notary \
+xcrun notarytool store-credentials solodisplay-notary \
   --key /path/AuthKey_XXXX.p8 --key-id KEYID --issuer ISSUER-UUID
-VERSION=0.1.0 DEVELOPMENT_TEAM=TEAMID NOTARY_PROFILE=lidless-notary \
+VERSION=0.2.0 DEVELOPMENT_TEAM=TEAMID NOTARY_PROFILE=solodisplay-notary \
   scripts/build-release.sh
 ```
+
+The profile lives in the release machine's keychain, so a machine that still has
+a `lidless-notary` profile needs this run again under the new name, or
+`NOTARY_PROFILE` pointed at the old one.
 
 Dry run (build and sign only, no Apple round-trip):
 
 ```sh
-VERSION=0.1.0 DEVELOPMENT_TEAM=TEAMID scripts/build-release.sh --skip-notarize
+VERSION=0.2.0 DEVELOPMENT_TEAM=TEAMID scripts/build-release.sh --skip-notarize
 ```
 
 ## GitHub repository secrets (Settings > Secrets > Actions)
@@ -43,17 +47,60 @@ VERSION=0.1.0 DEVELOPMENT_TEAM=TEAMID scripts/build-release.sh --skip-notarize
 
 ## Homebrew tap (own tap, published first)
 
-1. Create a second GitHub repo named `homebrew-lidless`.
-2. Put `packaging/homebrew/lidless.rb` in it at `Casks/lidless.rb`
-  .
+1. Create a second GitHub repo named `homebrew-solodisplay`.
+2. Put `packaging/homebrew/solodisplay.rb` in it at `Casks/solodisplay.rb`.
 3. Put `packaging/homebrew/bump.yml` in it at `.github/workflows/bump.yml`.
 4. Users then install with:
 
    ```sh
-   brew install --cask fanckush/lidless/lidless
+   brew install --cask fanckush/solodisplay/solodisplay
    ```
 
-Check the name is free first: `brew info --cask lidless`.
+Check the name is free first: `brew info --cask solodisplay`.
+
+`TAP_REPO_TOKEN` has to reach the new tap. A fine-grained PAT scoped to
+`homebrew-lidless` lets a release build and sign successfully and then fail on
+its last step.
+
+### Migrating the Lidless tap
+
+`fanckush/homebrew-lidless` stays alive so 0.1.0 installs move across on their
+own instead of being orphaned. In that repo, delete `Casks/lidless.rb` and add
+`tap_migrations.json`:
+
+```json
+{ "lidless": "fanckush/solodisplay/solodisplay" }
+```
+
+`brew upgrade` then replaces the old cask with the new one and removes
+`Lidless.app`. Anyone who installed by hand has to delete `Lidless.app`
+themselves, and should also turn its Launch at Login off first: that
+registration belongs to the old bundle identifier, so SoloDisplay cannot
+unregister it and macOS keeps launching the old app at every login until it is
+removed.
+
+## Lock-name compatibility window
+
+`SessionWriterLock` deliberately names its files `lidless-writer-*.lock` and
+`lidless-instance-*.lock`, not after the current product. They are the only
+thing stopping a leftover Lidless 0.1.x and SoloDisplay from each concluding it
+is the sole display writer in a login session, and two writers into the private
+display API is the worst failure this app has.
+
+Remove the compatibility name in the first release *after* both of these are
+true, never in the release that performs the rename:
+
+- `Casks/lidless.rb` has been migrated in the tap, and
+- the v0.1.0 GitHub release is marked superseded in its notes.
+
+Removal touches one line, `legacyNamePrefix` in
+`Sources/SoloDisplayPlatform/SessionWriterLock.swift`, plus its comment, the
+test that pins the file name in `Tests/SoloDisplayPlatformTests/JournalTests.swift`,
+and this section. The same release should drop
+`ProductionJournalStore.legacyDirectory` and its migration.
+
+`grep -rn lidless Sources SoloDisplay` is the check: it must return only the
+lock prefix and the legacy support directory name, both with their comments.
 
 ## Cutting a release
 
@@ -99,6 +146,6 @@ repairs the existing release instead of incrementing the version.
 ## Verifying a build
 
 ```sh
-spctl -a -vvv --type exec build/export/Lidless.app   # "accepted, Notarized Developer ID"
-xcrun stapler validate build/export/Lidless.app
+spctl -a -vvv --type exec build/export/SoloDisplay.app   # "accepted, Notarized Developer ID"
+xcrun stapler validate build/export/SoloDisplay.app
 ```
