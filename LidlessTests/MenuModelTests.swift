@@ -1,6 +1,5 @@
 import LidlessCore
 import Testing
-
 @testable import Lidless
 
 private func presentation(
@@ -11,7 +10,8 @@ private func presentation(
   .init(
     mode: mode, manualRequestActive: manualRequestActive, panelOwned: panelOwned,
     operationInFlight: operationInFlight, pendingRecovery: pendingRecovery, fault: fault,
-    unavailability: unavailability)
+    unavailability: unavailability
+  )
 }
 
 private func menu(
@@ -38,7 +38,7 @@ struct MenuModelTests {
     for reason in [
       Unavailability.noObservation, .noConfirmedPanel, .staleEvidence, .lidClosed, .notAwake,
       .sessionNotForeground, .noNativeExternal, .unsupportedTopology, .backendUnvalidated,
-      .noRecoveryHelper, .settling, .unresolvedOwnership, .faulted, .shuttingDown,
+      .noRecoveryHelper, .settling, .unresolvedOwnership, .faulted, .shuttingDown
     ] {
       let text = MenuModel.reason(reason)
       #expect(!text.isEmpty)
@@ -48,7 +48,7 @@ struct MenuModelTests {
     for fault in [
       Fault.journalFailed, .operationFailed, .operationTimedOut, .verificationFailed,
       .conflictingController, .identityChanged, .recoveryExhausted, .priorRunUnresolved,
-      .protectionUnavailable, .protectionLost, .ownershipClearFailed, .operationRefused,
+      .protectionUnavailable, .protectionLost, .ownershipClearFailed, .operationRefused
     ] {
       let text = MenuModel.reason(fault)
       #expect(!text.isEmpty)
@@ -115,13 +115,13 @@ struct MenuModelTests {
   @Test func noProductionMenuActionCanReachALabCommand() {
     let actions: Set<MenuAction> = [
       .selectManual, .selectAutomatic, .turnInternalOff, .turnInternalOn, .keepInternalOn,
-      .resumeAutomatic, .retryRecovery, .toggleLaunchAtLogin, .exportDiagnostics, .quit,
+      .resumeAutomatic, .retryRecovery, .toggleLaunchAtLogin, .exportDiagnostics, .quit
     ]
     // The full menu surface is exactly the agreed set; nothing else is reachable.
     var offered: Set<MenuAction> = []
     for value in [
       presentation(), presentation(panelOwned: true), presentation(mode: .automatic),
-      presentation(mode: .automaticPaused), presentation(fault: .operationFailed),
+      presentation(mode: .automaticPaused), presentation(fault: .operationFailed)
     ] {
       offered.formUnion(menu(value).compactMap(\.action))
     }
@@ -132,14 +132,15 @@ struct MenuModelTests {
     }
   }
 
-  @Test func theMenuFollowsARealControllerThroughAWholeCycle() {
+  @Test func theMenuFollowsARealControllerThroughAWholeCycle() throws {
     // Driven by the actual reducer, not hand-written presentations.
     var state = ControllerState(mode: .manual)
     state.protectionAvailable = true
     let panel = PanelTarget(displayID: 1, displayUUID: "p", bootID: "b", loginID: 1)
     let ready = Environment(
       panel: panel, panelState: .enabled, power: .awake, lid: .open, foregroundSession: .yes,
-      nativeExternalAvailable: .yes, supportedTopology: .yes, backendValidated: .yes)
+      nativeExternalAvailable: .yes, supportedTopology: .yes, backendValidated: .yes
+    )
 
     func send(_ event: Event, at time: Instant) {
       state = Controller.reduce(state, event, at: time).state
@@ -148,7 +149,8 @@ struct MenuModelTests {
     func observe(_ environment: Environment, at time: Instant) {
       sequence += 1
       send(
-        .observed(.init(sequence: sequence, sampledAt: time, environment: environment)), at: time)
+        .observed(.init(sequence: sequence, sampledAt: time, environment: environment)), at: time
+      )
     }
 
     observe(ready, at: 0)
@@ -156,17 +158,23 @@ struct MenuModelTests {
 
     send(.manualOff, at: 1)
     observe(ready, at: 600)
-    observe(ready, at: 2_100)
-    let armed = Controller.presentation(state, at: 2_100)
+    observe(ready, at: 2100)
+    let armed = Controller.presentation(state, at: 2100)
     #expect(armed.operationInFlight)
 
-    send(.journalSaved(operationID: state.operation!.id, succeeded: true), at: 2_101)
-    send(.protectionArmed(operationID: state.operation!.id, succeeded: true), at: 2_102)
-    send(.operationReturned(operationID: state.operation!.id, succeeded: true), at: 2_110)
+    try send(.journalSaved(operationID: #require(state.operation?.id), succeeded: true), at: 2101)
+    try send(
+      .protectionArmed(operationID: #require(state.operation?.id), succeeded: true),
+      at: 2102
+    )
+    try send(
+      .operationReturned(operationID: #require(state.operation?.id), succeeded: true),
+      at: 2110
+    )
     var suppressed = ready
     suppressed.panelState = .disabled
-    observe(suppressed, at: 2_120)
-    let offItems = menu(Controller.presentation(state, at: 2_120))
+    observe(suppressed, at: 2120)
+    let offItems = menu(Controller.presentation(state, at: 2120))
     #expect(offItems.first?.title == "Internal display is off")
     #expect(item(offItems, .turnInternalOn) != nil)
   }

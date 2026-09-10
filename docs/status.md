@@ -1,6 +1,29 @@
 # Implementation and validation status
 
-Updated 2026-09-09. `validation.md` is the chronological hardware evidence record. Historical statements describe the state at the time of each experiment, not verification of subsequent code changes.
+Updated 2026-09-10. `validation.md` is the chronological hardware evidence record. Historical statements describe the state at the time of each experiment, not verification of subsequent code changes.
+
+## Sleep-transition incident correction
+
+Implemented on 2026-09-10 after a real production-path failure. The internal panel
+had been suppressed successfully. During `willSleep`, the controller's restore call
+did not return. Timer activity was then incorrectly accepted as a wake fallback, so
+the helper killed the controller and entered the same blocking call itself. The
+helper remained alive and held the instance lock, but the menu process was gone.
+Later launches therefore exited as duplicates while no recovery interface existed.
+
+The corrected design makes sleep and waking hard no-write states, invalidates queued
+writes across a sleep generation, retains the restoration obligation until fresh
+post-wake evidence, isolates helper recovery calls in a three-second one-shot child,
+and gives the helper a recovery-only menu whenever ownership is unresolved. A stuck
+worker receives `SIGKILL`; confirmed exit is required, and its inherited writer lock
+remains held if the OS cannot terminate it immediately. The helper, journal,
+diagnostics, and recovery interface remain available.
+
+Automated verification: 158 package tests and 54 native tests pass, including a
+real child-process timeout/reap test, generation invalidation across a complete
+sleep/wake transition, inherited-lock validation, and legacy replay decoding. Debug
+tests and the Release app build pass. No new physical display-changing experiment
+has been run, so the historical hardware matrix below does not verify these changes.
 
 ## Current shutdown diagnostics
 
@@ -17,6 +40,9 @@ and system retention remain best-effort. No normal app launch or hardware tests
 were performed for this diagnostics change; earlier hardware evidence is unchanged.
 
 ## Earlier recovery follow-up
+
+This section describes the superseded pre-incident revision. Its impending-sleep
+write and timer-activity wake fallback are not part of the current architecture.
 
 The three lifecycle findings from the final review are implemented and automatically verified:
 

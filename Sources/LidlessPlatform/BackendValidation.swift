@@ -34,7 +34,10 @@ public struct BackendValidation: Codable, Equatable, Sendable {
     guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 0 else { return "" }
     var bytes = [CChar](repeating: 0, count: size)
     guard sysctlbyname("hw.model", &bytes, &size, nil, 0) == 0 else { return "" }
-    return String(decoding: bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    return String(
+      bytes: bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
+      encoding: .utf8
+    ) ?? ""
   }
 }
 
@@ -44,12 +47,17 @@ public struct BackendValidationStore: Sendable {
   public init(directory: URL) throws {
     file = directory.appendingPathComponent("backend-validation.json", isDirectory: false)
     try FileManager.default.createDirectory(
-      at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+      at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+    )
   }
 
-  public init() throws { try self.init(directory: ProductionJournalStore.defaultDirectory()) }
+  public init() throws {
+    try self.init(directory: ProductionJournalStore.defaultDirectory())
+  }
 
-  public var url: URL { file }
+  public var url: URL {
+    file
+  }
 
   /// The path to name when telling someone how to undo a validation they do not trust.
   public static func recordPath() -> String {
@@ -58,7 +66,7 @@ public struct BackendValidationStore: Sendable {
   }
 
   public func load() -> BackendValidation? {
-    guard let data = try? Data(contentsOf: file, options: .mappedIfSafe), data.count < 16_384
+    guard let data = try? Data(contentsOf: file, options: .mappedIfSafe), data.count < 16384
     else { return nil }
     return try? JSONDecoder().decode(BackendValidation.self, from: data)
   }
@@ -66,9 +74,10 @@ public struct BackendValidationStore: Sendable {
   /// Returns the record only when it covers the configuration running right now.
   public func current(symbolName: String?) -> BackendValidation? {
     guard let record = load(),
-      record.covers(
-        osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-        hardwareModel: BackendValidation.hardwareModel(), symbolName: symbolName)
+          record.covers(
+            osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            hardwareModel: BackendValidation.hardwareModel(), symbolName: symbolName
+          )
     else { return nil }
     return record
   }

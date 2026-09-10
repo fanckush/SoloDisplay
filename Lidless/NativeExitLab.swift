@@ -6,7 +6,8 @@
   import LidlessPlatform
   import Synchronization
 
-  // Private, fixed-size pipe protocol. No filenames, shell commands, or display IDs cross these pipes.
+  /// Private, fixed-size pipe protocol. No filenames, shell commands, or display IDs cross these
+  /// pipes.
   nonisolated enum NativeExitSignal: UInt8, Sendable {
     case ready = 1
     case arm = 2
@@ -43,7 +44,9 @@
 
     mutating func pop() throws -> NativeExitSignal? {
       guard !failed else { throw NativeExitProtocolError.invalidData }
-      if !signals.isEmpty { return signals.removeFirst() }
+      if !signals.isEmpty {
+        return signals.removeFirst()
+      }
       guard !closed else { throw NativeExitProtocolError.disconnected }
       return nil
     }
@@ -53,7 +56,7 @@
     case invalidData, disconnected, unexpectedSignal, deadline
   }
 
-  nonisolated final class NativeExitInbox: Sendable {
+  final nonisolated class NativeExitInbox: Sendable {
     private let state = Mutex(NativeExitBuffer())
     private let handle: FileHandle
 
@@ -62,12 +65,20 @@
       handle.readabilityHandler = { [weak self] handle in
         let data = handle.availableData
         self?.state.withLock { $0.receive(data) }
-        if data.isEmpty { handle.readabilityHandler = nil }
+        if data.isEmpty {
+          handle.readabilityHandler = nil
+        }
       }
     }
 
-    func pop() throws -> NativeExitSignal? { try state.withLock { try $0.pop() } }
-    func stop() { handle.readabilityHandler = nil }
+    func pop() throws -> NativeExitSignal? {
+      try state.withLock { try $0.pop() }
+    }
+
+    func stop() {
+      handle.readabilityHandler = nil
+    }
+
     deinit { handle.readabilityHandler = nil }
   }
 
@@ -82,10 +93,11 @@
       case .disconnect, .silence, .unplug, .sleep, .mirror: reason == .exit && status == 1
       }
     }
+
     static func validate(journal: RecoveryJournal, witnessed: PanelTarget, childPID: Int32) throws {
       try journal.validate(bootID: witnessed.bootID, loginID: witnessed.loginID)
       guard journal.scope == "app", journal.target == witnessed,
-        childPID > 1, journal.ownerPID == childPID
+            childPID > 1, journal.ownerPID == childPID
       else {
         throw NativeLabError.refused("Writer journal does not match the supervisor's live witness.")
       }
@@ -109,8 +121,7 @@
     }
 
     private func waitFor(_ expected: NativeExitSignal, inbox: NativeExitInbox, seconds: Double)
-      async throws
-    {
+      async throws {
       let deadline = ProcessInfo.processInfo.systemUptime + seconds
       repeat {
         if let signal = try inbox.pop() {
@@ -124,14 +135,16 @@
 
     private func awaitExit(_ child: Process, seconds: Double) async -> Bool {
       let deadline = ProcessInfo.processInfo.systemUptime + seconds
-      while child.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
+      while child.isRunning, ProcessInfo.processInfo.systemUptime < deadline {
         do { try await Task.sleep(for: .milliseconds(50)) } catch { break }
       }
       return !child.isRunning
     }
 
     private func stopAndReap(_ child: Process) async throws {
-      if child.isRunning { kill(child.processIdentifier, SIGKILL) }
+      if child.isRunning {
+        kill(child.processIdentifier, SIGKILL)
+      }
       guard await awaitExit(child, seconds: 2) else {
         throw NativeLabError.refused("Writer termination is unverified. Supervisor must not write.")
       }
@@ -145,11 +158,11 @@
           waitid(P_PID, id_t(writer.processIdentifier), &info, WSTOPPED | WNOWAIT | WNOHANG) == 0
         else {
           throw NativeLabError.refused(
-            "Cannot establish that the writer stopped. No takeover authorized.")
+            "Cannot establish that the writer stopped. No takeover authorized."
+          )
         }
-        if info.si_pid == writer.processIdentifier && info.si_code == CLD_STOPPED
-          && info.si_status == SIGSTOP
-        {
+        if info.si_pid == writer.processIdentifier, info.si_code == CLD_STOPPED,
+           info.si_status == SIGSTOP {
           return
         }
         try await Task.sleep(for: .milliseconds(50))
@@ -157,6 +170,8 @@
       throw NativeLabError.refused("Writer stop was not verified.")
     }
 
+    // This lab intentionally keeps the complete supervised-exit scenario in one auditable flow.
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     func supervisedExit(
       external: UInt32, path: String, rehearsal: Bool,
       ending: NativeExitEnding = .normal
@@ -165,7 +180,7 @@
       let sleepMonitor = ending == .sleep ? NativeSleepMonitor() : nil
       defer { sleepMonitor?.stop() }
       guard let executable = Bundle.main.executableURL,
-        !FileManager.default.fileExists(atPath: path)
+            !FileManager.default.fileExists(atPath: path)
       else { throw NativeLabError.refused("A new journal and the native executable are required.") }
       let initial = DisplayObserver.read()
       let mirrorBaseline =
@@ -175,7 +190,8 @@
       if ending == .unplug {
         guard DisplayObserver.read().displays.filter({ !$0.builtIn }).count == 1 else {
           throw NativeLabError.refused(
-            "The last-external experiment requires exactly one external.")
+            "The last-external experiment requires exactly one external."
+          )
         }
       }
       guard PrivateDisplayAPI().symbolName != nil else { throw DisplayAPIError.unavailable }
@@ -191,19 +207,18 @@
       }
       let writer = Process()
       writer.executableURL = executable
-      let writerVerb: String
-      if ending == .mirror {
-        writerVerb = rehearsal ? "--lab-mirror-writer-rehearsal" : "--lab-mirror-writer"
+      let writerVerb: String = if ending == .mirror {
+        rehearsal ? "--lab-mirror-writer-rehearsal" : "--lab-mirror-writer"
       } else if ending == .sleep {
-        writerVerb = rehearsal ? "--lab-sleep-writer-rehearsal" : "--lab-sleep-writer"
+        rehearsal ? "--lab-sleep-writer-rehearsal" : "--lab-sleep-writer"
       } else if ending == .unplug {
-        writerVerb = rehearsal ? "--lab-unplug-writer-rehearsal" : "--lab-unplug-writer"
+        rehearsal ? "--lab-unplug-writer-rehearsal" : "--lab-unplug-writer"
       } else {
-        writerVerb = rehearsal ? "--lab-exit-writer-rehearsal" : "--lab-exit-writer"
+        rehearsal ? "--lab-exit-writer-rehearsal" : "--lab-exit-writer"
       }
       writer.arguments = [
         writerVerb, "--external",
-        String(external), "--journal", path, "--native-wired-attested",
+        String(external), "--journal", path, "--native-wired-attested"
       ]
       writer.standardInput = commands
       writer.standardOutput = replies
@@ -219,11 +234,12 @@
         try await waitFor(.ready, inbox: inbox, seconds: 3)
         let journal = try RecoveryJournal.load(from: URL(fileURLWithPath: path))
         try NativeExitAuthorization.validate(
-          journal: journal, witnessed: witnessed, childPID: writer.processIdentifier)
+          journal: journal, witnessed: witnessed, childPID: writer.processIdentifier
+        )
         let preArm = DisplayObserver.read()
         guard writer.isRunning,
-          try mirrorBaseline?.matches(preArm)
-            ?? (NativeLabSafety.baseline(preArm, external: external) == witnessed)
+              try mirrorBaseline?.matches(preArm)
+              ?? (NativeLabSafety.baseline(preArm, external: external) == witnessed)
         else { throw NativeLabError.refused("Baseline changed before arming the writer.") }
         // Set recovery responsibility before sending any permission to mutate.
         armedJournal = rehearsal ? nil : journal
@@ -231,7 +247,8 @@
         try send(.arm, to: commands.fileHandleForWriting)
         try await waitFor(.suppressed, inbox: inbox, seconds: 3)
         try report(
-          rehearsal ? "exit-rehearsal-simulated-suppression" : "exit-supervisor-after-disable")
+          rehearsal ? "exit-rehearsal-simulated-suppression" : "exit-supervisor-after-disable"
+        )
         if let mirrorBaseline {
           let deadline = ProcessInfo.processInfo.systemUptime + 5
           repeat {
@@ -239,15 +256,16 @@
             let current = DisplayObserver.read()
             try NativeLabSafety.ownedContext(current, journal: journal)
             guard writer.isRunning, mirrorBaseline.externalUsable(current, external: external),
-              rehearsal || !current.displays.contains(where: { $0.id == witnessed.displayID })
+                  rehearsal || !current.displays.contains(where: { $0.id == witnessed.displayID })
             else {
               throw NativeLabError.refused(
-                "Mirror suppression or external evidence was not established.")
+                "Mirror suppression or external evidence was not established."
+              )
             }
           } while ProcessInfo.processInfo.systemUptime < deadline
           try commands.fileHandleForWriting.close()
           guard await awaitExit(writer, seconds: 5), writer.terminationReason == .exit,
-            writer.terminationStatus == 1
+                writer.terminationStatus == 1
           else {
             throw NativeLabError.refused("Mirror writer restoration did not finish in time.")
           }
@@ -260,23 +278,26 @@
           try report(
             rehearsal
               ? "mirror-rehearsal-complete-no-display-writes"
-              : "mirror-roundtrip-layout-preserved-no-supervisor-enable")
+              : "mirror-roundtrip-layout-preserved-no-supervisor-enable"
+          )
           return
         }
         if ending == .unplug || ending == .sleep {
           if let sleepMonitor {
             try await awaitSleepCycle(
               external: external, journal: journal, writer: writer,
-              monitor: sleepMonitor, rehearsal: rehearsal)
+              monitor: sleepMonitor, rehearsal: rehearsal
+            )
           } else {
             try await awaitExternalRemoval(
               external: external, journal: journal,
-              writer: writer, rehearsal: rehearsal)
+              writer: writer, rehearsal: rehearsal
+            )
           }
           // Revoke protection promptly on external loss. The responsive writer owns restoration.
           try commands.fileHandleForWriting.close()
           guard await awaitExit(writer, seconds: 5), writer.terminationReason == .exit,
-            writer.terminationStatus == 1
+                writer.terminationStatus == 1
           else {
             throw NativeLabError.refused("Lifecycle writer recovery did not complete in time.")
           }
@@ -292,8 +313,9 @@
                 ? "sleep-rehearsal-complete-no-display-writes"
                 : "sleep-wake-writer-recovered-no-supervisor-enable")
               : rehearsal
-                ? "unplug-rehearsal-complete-no-display-writes"
-                : "external-loss-writer-restored-without-supervisor-enable")
+              ? "unplug-rehearsal-complete-no-display-writes"
+              : "external-loss-writer-restored-without-supervisor-enable"
+          )
           return
         }
         let deadline = ProcessInfo.processInfo.systemUptime + 5
@@ -302,9 +324,10 @@
           let current = DisplayObserver.read()
           try NativeLabSafety.ownedContext(current, journal: journal)
           guard writer.isRunning, !current.mirroringDetected,
-            rehearsal
-              || !current.displays.contains(where: { $0.id == witnessed.displayID && $0.active }),
-            current.displays.contains(where: { $0.id == external && $0.usableExternalCandidate })
+                rehearsal
+                || !current.displays.contains(where: { $0.id == witnessed.displayID && $0.active }),
+                current.displays
+                .contains(where: { $0.id == external && $0.usableExternalCandidate })
           else { throw NativeLabError.refused("The supervised suppression conditions changed.") }
         } while ProcessInfo.processInfo.systemUptime < deadline
         if ending == .freeze {
@@ -341,7 +364,8 @@
         guard
           NativeExitAuthorization.expectedTermination(
             reason: writer.terminationReason,
-            status: writer.terminationStatus, ending: ending)
+            status: writer.terminationStatus, ending: ending
+          )
         else {
           throw NativeLabError.refused("Writer termination did not match the selected experiment.")
         }
@@ -356,7 +380,8 @@
             try NativeLabSafety.baseline(DisplayObserver.read(), external: external) == witnessed
           else {
             throw NativeLabError.refused(
-              "Rehearsal baseline changed. No display requests were sent.")
+              "Rehearsal baseline changed. No display requests were sent."
+            )
           }
           try report("exit-rehearsal-complete-no-display-writes")
           return
@@ -409,16 +434,17 @@
           let current = DisplayObserver.read()
           try NativeLabSafety.ownedContext(current, journal: journal)
           if !supervisorEnableAttempted,
-            mirrorBaseline?.matches(current) != true,
-            !current.displays.contains(where: { $0.id == witnessed.displayID && $0.active })
-          {
+             mirrorBaseline?.matches(current) != true,
+             !current.displays.contains(where: { $0.id == witnessed.displayID && $0.active }) {
             guard takeover.receive(.restoreAuthorized) == [.restore] else {
               throw NativeLabError.refused(
-                "Recovery ordering rejected a competing or repeated write.")
+                "Recovery ordering rejected a competing or repeated write."
+              )
             }
             supervisorEnableAttempted = true
             try PrivateDisplayAPI().setEnabled(
-              true, displayID: witnessed.displayID, scope: .forSession)
+              true, displayID: witnessed.displayID, scope: .forSession
+            )
             if let mirrorBaseline {
               try await verifyMirror(mirrorBaseline)
             } else {
@@ -435,9 +461,9 @@
       external: UInt32, path: String, rehearsal: Bool, unplug: Bool = false,
       sleep: Bool = false, mirror: Bool = false
     ) async
-      -> Int32
-    {
-      // A disconnected pipe must produce an error, not terminate the writer before local restoration.
+      -> Int32 {
+      // A disconnected pipe must produce an error, not terminate the writer before local
+      // restoration.
       signal(SIGPIPE, SIG_IGN)
       let sleepMonitor = sleep ? NativeSleepMonitor() : nil
       defer { sleepMonitor?.stop() }
@@ -463,9 +489,9 @@
         try await waitFor(.arm, inbox: inbox, seconds: 3)
         let preArm = DisplayObserver.read()
         guard getppid() == supervisorPID,
-          sleepMonitor?.snapshot.sleepCount ?? 0 == 0,
-          try mirrorBaseline?.matches(preArm)
-            ?? (NativeLabSafety.baseline(preArm, external: external) == target)
+              sleepMonitor?.snapshot.sleepCount ?? 0 == 0,
+              try mirrorBaseline?.matches(preArm)
+              ?? (NativeLabSafety.baseline(preArm, external: external) == target)
         else {
           throw NativeLabError.refused("Writer baseline or supervisor changed before disabling.")
         }
@@ -473,7 +499,8 @@
         // The session is local to this Process handshake and is never loaded from a journal.
         let leaseSession = UUID().uuidString
         var lease = RecoveryLease(
-          session: leaseSession, at: labNow(), duration: unplug || sleep ? 45_000 : 10_000)
+          session: leaseSession, at: labNow(), duration: unplug || sleep ? 45000 : 10000
+        )
         lease.receive(.acknowledged(session: leaseSession, challenge: 1), at: labNow())
         guard lease.protects(at: labNow()) else { throw NativeExitProtocolError.deadline }
         if !rehearsal {
@@ -485,7 +512,8 @@
         while true {
           if let sleepMonitor, sleepMonitor.snapshot.sleepCount > 0 {
             throw NativeLabError.refused(
-              "System sleep invalidated suppression; recover after wake.")
+              "System sleep invalidated suppression; recover after wake."
+            )
           }
           guard lease.receive(.tick, at: labNow()).isEmpty, lease.protects(at: labNow()) else {
             throw NativeExitProtocolError.deadline
@@ -503,14 +531,15 @@
         let current = DisplayObserver.read()
         try NativeLabSafety.ownedContext(current, journal: journal)
         guard getppid() == supervisorPID,
-          !current.mirroringDetected,
-          rehearsal
-            || !current.displays.contains(where: { $0.id == target.displayID && $0.active }),
-          current.displays.contains(where: { $0.id == external && $0.usableExternalCandidate })
+              !current.mirroringDetected,
+              rehearsal
+              || !current.displays.contains(where: { $0.id == target.displayID && $0.active }),
+              current.displays.contains(where: { $0.id == external && $0.usableExternalCandidate })
         else {
           throw NativeLabError.refused("Supervisor or external unavailable at the exit boundary.")
         }
-        // Deliberately no enable. The waiting supervisor remains alive with its pre-disable witness.
+        // Deliberately no enable. The waiting supervisor remains alive with its pre-disable
+        // witness.
         return 0
       } catch {
         // A sleep interruption clears suppression intent, but a lit panel is not required asleep.
@@ -521,10 +550,11 @@
             let current = DisplayObserver.read()
             try NativeLabSafety.ownedContext(current, journal: journal)
             if mirrorBaseline?.matches(current) != true,
-              !current.displays.contains(where: { $0.id == journal.target.displayID && $0.active })
-            {
+               !current.displays
+               .contains(where: { $0.id == journal.target.displayID && $0.active }) {
               try PrivateDisplayAPI().setEnabled(
-                true, displayID: journal.target.displayID, scope: .forAppOnly)
+                true, displayID: journal.target.displayID, scope: .forAppOnly
+              )
             }
             if let mirrorBaseline {
               try await verifyMirror(mirrorBaseline)
@@ -533,18 +563,20 @@
             }
           } catch {
             try? FileHandle.standardError.write(
-              contentsOf: Data("Writer fallback unverified: \(error)\n".utf8))
+              contentsOf: Data("Writer fallback unverified: \(error)\n".utf8)
+            )
           }
         }
         try? send(.failed, to: .standardOutput)
         try? FileHandle.standardError.write(
-          contentsOf: Data("Exit writer aborted: \(error)\n".utf8))
+          contentsOf: Data("Exit writer aborted: \(error)\n".utf8)
+        )
         return 1
       }
     }
 
     private func labNow() -> Instant {
-      Int64(ProcessInfo.processInfo.systemUptime * 1_000)
+      Int64(ProcessInfo.processInfo.systemUptime * 1000)
     }
 
     private func awaitSleepCycle(
@@ -557,15 +589,15 @@
       let initial = DisplayObserver.read()
       try NativeLabSafety.ownedContext(initial, journal: journal)
       guard initial.displays.contains(where: { $0.id == external && $0.usableExternalCandidate }),
-        rehearsal
-          || !initial.displays.contains(where: { $0.id == journal.target.displayID && $0.active })
+            rehearsal
+            || !initial.displays.contains(where: { $0.id == journal.target.displayID && $0.active })
       else { throw NativeLabError.refused("Suppression was not established before sleep testing.") }
       try report(rehearsal ? "sleep-rehearsal-ready" : "sleep-now-window-open")
       let started = labNow()
       var reportedSleep = false
       while true {
         let cycle = monitor.snapshot
-        if cycle.sleepCount > 0 && !reportedSleep {
+        if cycle.sleepCount > 0, !reportedSleep {
           try report("system-sleep-notification-observed")
           reportedSleep = true
         }
@@ -577,18 +609,20 @@
           guard writer.isRunning else {
             throw NativeLabError.refused("Writer exited before sleep.")
           }
-          if rehearsal && labNow() - started >= 1_000 {
+          if rehearsal, labNow() - started >= 1000 {
             try report("sleep-rehearsal-protocol-trigger-not-real-sleep")
             return
           }
-          guard labNow() - started < 40_000 else {
+          guard labNow() - started < 40000 else {
             throw NativeLabError.refused(
-              "No system sleep within test window; recovering without a pass.")
+              "No system sleep within test window; recovering without a pass."
+            )
           }
           let current = DisplayObserver.read()
           try NativeLabSafety.ownedContext(current, journal: journal)
           guard !current.mirroringDetected,
-            current.displays.contains(where: { $0.id == external && $0.usableExternalCandidate })
+                current.displays
+                .contains(where: { $0.id == external && $0.usableExternalCandidate })
           else { throw NativeLabError.refused("Docked baseline changed before system sleep.") }
         }
         // Once asleep, both processes may be suspended. Recovery resumes on didWake, not a timer.
@@ -603,15 +637,15 @@
       let initial = DisplayObserver.read()
       try NativeLabSafety.ownedContext(initial, journal: journal)
       guard initial.displays.contains(where: { $0.id == external && $0.usableExternalCandidate }),
-        rehearsal
-          || !initial.displays.contains(where: { $0.id == journal.target.displayID && $0.active })
+            rehearsal
+            || !initial.displays.contains(where: { $0.id == journal.target.displayID && $0.active })
       else {
         throw NativeLabError.refused("Suppression was not established before unplug testing.")
       }
       try report(rehearsal ? "unplug-rehearsal-ready" : "unplug-now-window-open")
       fflush(stdout)
       let started = labNow()
-      while labNow() - started < 40_000 {
+      while labNow() - started < 40000 {
         try await Task.sleep(for: .milliseconds(100))
         guard writer.isRunning else {
           throw NativeLabError.refused("Writer exited before cable removal.")
@@ -623,14 +657,14 @@
         }
         // Absence is distinct from an asleep or temporarily inactive external.
         if !current.displays.contains(where: { $0.id == external })
-          || (rehearsal && labNow() - started >= 1_000)
-        {
+          || (rehearsal && labNow() - started >= 1000) {
           try report(rehearsal ? "unplug-rehearsal-synthetic-loss" : "external-removal-observed")
           return
         }
       }
       throw NativeLabError.refused(
-        "No cable removal within the bounded test window; restoring without a pass.")
+        "No cable removal within the bounded test window; restoring without a pass."
+      )
     }
   }
 #endif

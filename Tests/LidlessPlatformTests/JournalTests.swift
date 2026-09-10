@@ -1,8 +1,27 @@
 import Foundation
 import LidlessCore
 import Testing
-
 @testable import LidlessPlatform
+
+@Test func aRecoveryWorkerCanInheritTheExactHeldWriterLock() throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let lock = try SessionWriterLock(loginID: 42, directory: directory)
+  let inherited = try lock.fileHandleForInheritance()
+  #expect(
+    SessionWriterLock.inheritedDescriptorHoldsLock(
+      inherited.fileDescriptor, loginID: 42, directory: directory
+    )
+  )
+  #expect(
+    !SessionWriterLock.inheritedDescriptorHoldsLock(
+      inherited.fileDescriptor, loginID: 43, directory: directory
+    )
+  )
+  try inherited.close()
+  lock.release()
+}
 
 @Test func journalRejectsDifferentBootOrLogin() {
   let target = PanelTarget(displayID: 1, displayUUID: "uuid", bootID: "boot", loginID: 42)
@@ -31,7 +50,7 @@ import Testing
   let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
   defer { try? FileManager.default.removeItem(at: directory) }
-  let session = UInt32.random(in: 2_000_000_000..<3_000_000_000)
+  let session = UInt32.random(in: 2_000_000_000 ..< 3_000_000_000)
   let first = try SessionWriterLock(loginID: session, directory: directory)
   defer { first.release() }
   #expect(throws: (any Error).self) {

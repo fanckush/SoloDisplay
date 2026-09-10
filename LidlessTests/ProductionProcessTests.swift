@@ -1,6 +1,5 @@
 import Foundation
 import Testing
-
 @testable import Lidless
 
 struct ProductionProcessTests {
@@ -8,7 +7,8 @@ struct ProductionProcessTests {
     #expect(try ProductionLaunch.role(arguments: [], pipedStandardStreams: false) == .helper)
     #expect(
       try ProductionLaunch.role(arguments: ["--diagnostics"], pipedStandardStreams: false)
-        == .helper)
+        == .helper
+    )
     // Inherited pipes without the argument are not a claim to the controller role.
     #expect(try ProductionLaunch.role(arguments: [], pipedStandardStreams: true) == .helper)
   }
@@ -16,20 +16,46 @@ struct ProductionProcessTests {
   @Test func theControllerRoleRequiresActualInheritedPipes() throws {
     #expect(
       try ProductionLaunch.role(
-        arguments: [ProductionLaunch.controllerArgument], pipedStandardStreams: true)
-        == .controller)
+        arguments: [ProductionLaunch.controllerArgument], pipedStandardStreams: true
+      )
+        == .controller
+    )
     // A command-line assertion alone can never establish the pairing.
     #expect(throws: ProductionLaunchError.self) {
       try ProductionLaunch.role(
-        arguments: [ProductionLaunch.controllerArgument], pipedStandardStreams: false)
+        arguments: [ProductionLaunch.controllerArgument], pipedStandardStreams: false
+      )
     }
   }
 
   @Test func runningWithoutAHelperMustBeAskedForExplicitly() throws {
     #expect(
       try ProductionLaunch.role(
-        arguments: [ProductionLaunch.unprotectedArgument], pipedStandardStreams: false)
-        == .unprotected)
+        arguments: [ProductionLaunch.unprotectedArgument], pipedStandardStreams: false
+      )
+        == .unprotected
+    )
+  }
+
+  @Test func theRecoveryWorkerRequiresInheritedPipesAndCannotSelectAnotherRole() throws {
+    #expect(
+      try ProductionLaunch.role(
+        arguments: [ProductionLaunch.recoveryWorkerArgument], pipedStandardStreams: true
+      )
+        == .recoveryWorker
+    )
+    #expect(throws: ProductionLaunchError.self) {
+      try ProductionLaunch.role(
+        arguments: [ProductionLaunch.recoveryWorkerArgument], pipedStandardStreams: false
+      )
+    }
+    #expect(throws: ProductionLaunchError.self) {
+      try ProductionLaunch.role(
+        arguments: [
+          ProductionLaunch.recoveryWorkerArgument, ProductionLaunch.controllerArgument
+        ], pipedStandardStreams: true
+      )
+    }
   }
 
   @Test func productionParsingNeverAcceptsALabCommandOrAnyOtherArgument() {

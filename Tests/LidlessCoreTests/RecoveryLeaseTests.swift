@@ -1,5 +1,4 @@
 import Testing
-
 @testable import LidlessCore
 
 @Test func leaseRequiresMatchingLiveAcknowledgement() {
@@ -10,41 +9,41 @@ import Testing
   #expect(!lease.protects(at: 20))
   lease.receive(.acknowledged(session: "run-A", challenge: 1), at: 30)
   #expect(lease.protects(at: 30))
-  #expect(!lease.protects(at: 3_000))
+  #expect(!lease.protects(at: 3000))
 }
 
 @Test func renewalDoesNotExtendProtectionUntilAcknowledged() {
   var lease = RecoveryLease(session: "A", at: 0)
   lease.receive(.acknowledged(session: "A", challenge: 1), at: 1)
-  #expect(lease.receive(.requestRenewal, at: 1_000) == [.challenge(session: "A", number: 2)])
-  #expect(lease.deadline == 3_000)
+  #expect(lease.receive(.requestRenewal, at: 1000) == [.challenge(session: "A", number: 2)])
+  #expect(lease.deadline == 3000)
   // A duplicate reply to the previous challenge cannot renew the lease.
-  lease.receive(.acknowledged(session: "A", challenge: 1), at: 1_500)
-  #expect(lease.deadline == 3_000)
-  lease.receive(.acknowledged(session: "A", challenge: 2), at: 2_000)
-  #expect(lease.deadline == 4_000)
-  lease.receive(.acknowledged(session: "A", challenge: 2), at: 2_500)
-  #expect(lease.deadline == 4_000)
+  lease.receive(.acknowledged(session: "A", challenge: 1), at: 1500)
+  #expect(lease.deadline == 3000)
+  lease.receive(.acknowledged(session: "A", challenge: 2), at: 2000)
+  #expect(lease.deadline == 4000)
+  lease.receive(.acknowledged(session: "A", challenge: 2), at: 2500)
+  #expect(lease.deadline == 4000)
 }
 
 @Test(arguments: [RecoveryLease.Event.contactLost, .interrupted, .tick])
 func leaseLossRequestsRestorationExactlyOnce(_ event: RecoveryLease.Event) {
   var lease = RecoveryLease(session: "A", at: 0)
   lease.receive(.acknowledged(session: "A", challenge: 1), at: 1)
-  #expect(lease.receive(event, at: 3_000) == [.restore])
-  #expect(!lease.protects(at: 3_000))
-  #expect(lease.receive(event, at: 3_001).isEmpty)
-  lease.receive(.acknowledged(session: "A", challenge: 1), at: 3_002)
+  #expect(lease.receive(event, at: 3000) == [.restore])
+  #expect(!lease.protects(at: 3000))
+  #expect(lease.receive(event, at: 3001).isEmpty)
+  lease.receive(.acknowledged(session: "A", challenge: 1), at: 3002)
   #expect(lease.phase == .restoring)
-  lease.receive(.restorationVerified, at: 3_003)
+  lease.receive(.restorationVerified, at: 3003)
   #expect(lease.phase == .finished)
 }
 
 @Test func delayedReplyCannotResurrectExpiredLeaseWithoutTimer() {
   var lease = RecoveryLease(session: "A", at: 0)
   lease.receive(.acknowledged(session: "A", challenge: 1), at: 1)
-  lease.receive(.requestRenewal, at: 2_000)
-  #expect(lease.receive(.acknowledged(session: "A", challenge: 2), at: 3_000) == [.restore])
+  lease.receive(.requestRenewal, at: 2000)
+  #expect(lease.receive(.acknowledged(session: "A", challenge: 2), at: 3000) == [.restore])
   #expect(lease.phase == .restoring)
 }
 
@@ -90,19 +89,21 @@ func leaseLossRequestsRestorationExactlyOnce(_ event: RecoveryLease.Event) {
 @Test func arbitraryTakeoverEventsNeverProduceConcurrentOrRepeatedWrites() {
   let events: [RecoveryTakeover.Event] = [
     .recoveryNeeded, .writerTerminationConfirmed, .lockAcquired, .restoreAuthorized,
-    .restoreReturned, .restorationVerified, .journalCleared, .failed,
+    .restoreReturned, .restorationVerified, .journalCleared, .failed
   ]
-  for seed in 1...100 {
+  for seed in 1 ... 100 {
     var random = UInt64(seed)
     var takeover = RecoveryTakeover()
     var writes = 0
     var deathConfirmed = false
     var lockAcquiredAfterDeath = false
-    for _ in 0..<200 {
+    for _ in 0 ..< 200 {
       random = random &* 6_364_136_223_846_793_005 &+ 1
       let event = events[Int((random >> 32) % UInt64(events.count))]
-      if event == .writerTerminationConfirmed { deathConfirmed = true }
-      if event == .lockAcquired && takeover.phase == .acquiringLock {
+      if event == .writerTerminationConfirmed {
+        deathConfirmed = true
+      }
+      if event == .lockAcquired, takeover.phase == .acquiringLock {
         lockAcquiredAfterDeath = deathConfirmed
       }
       let effects = takeover.receive(event)

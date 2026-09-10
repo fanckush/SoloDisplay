@@ -1,7 +1,6 @@
 import Foundation
 import LidlessCore
 import Testing
-
 @testable import LidlessPlatform
 
 /// Real paired processes over inherited private pipes. The probe never configures a display,
@@ -13,15 +12,25 @@ private struct ProbeRun {
   let terminationStatus: Int32
   let workspace: URL
 
-  var names: [String] { events.map(\.name) }
+  var names: [String] {
+    events.map(\.name)
+  }
+
   var operational: [OperationalEvent] {
     events.compactMap {
       guard $0.name == "operational", let detail = $0.detail else { return nil }
       return try? JSONDecoder().decode(OperationalEvent.self, from: Data(detail.utf8))
     }
   }
-  func detail(of name: String) -> String? { events.first { $0.name == name }?.detail }
-  func contains(_ name: String) -> Bool { names.contains(name) }
+
+  func detail(of name: String) -> String? {
+    events.first { $0.name == name }?.detail
+  }
+
+  func contains(_ name: String) -> Bool {
+    names.contains(name)
+  }
+
   var journalRemains: Bool {
     FileManager.default.fileExists(atPath: workspace.appendingPathComponent("recovery.json").path)
   }
@@ -41,7 +50,9 @@ private func probeExecutable() throws -> URL {
   }
   for directory in candidates {
     let candidate = directory.appendingPathComponent("lidless-probe")
-    if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
+    if FileManager.default.isExecutableFile(atPath: candidate.path) {
+      return candidate
+    }
   }
   throw ProbeError.notBuilt
 }
@@ -59,7 +70,7 @@ private func run(_ scenario: String, seeding: ProductionRecord? = nil) throws ->
   let process = Process()
   process.executableURL = try probeExecutable()
   process.arguments = [
-    "helper", "--scenario", scenario, "--workspace", workspace.path,
+    "helper", "--scenario", scenario, "--workspace", workspace.path
   ]
   let output = Pipe()
   process.standardOutput = output
@@ -67,20 +78,22 @@ private func run(_ scenario: String, seeding: ProductionRecord? = nil) throws ->
   try process.run()
   let data = output.fileHandleForReading.readDataToEndOfFile()
   process.waitUntilExit()
-  let events = String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap {
-    line -> (String, String?)? in
+  let text = try #require(String(bytes: data, encoding: .utf8))
+  let events = text.split(separator: "\n").compactMap { line -> (String, String?)? in
     guard let json = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: String],
-      let name = json["event"]
+          let name = json["event"]
     else { return nil }
     return (name, json["detail"])
   }
   return .init(
     events: events, terminationReason: process.terminationReason,
-    terminationStatus: process.terminationStatus, workspace: workspace)
+    terminationStatus: process.terminationStatus, workspace: workspace
+  )
 }
 
 private let probeTarget = PanelTarget(
-  displayID: 1, displayUUID: "probe-panel", bootID: "probe-boot", loginID: 4242)
+  displayID: 1, displayUUID: "probe-panel", bootID: "probe-boot", loginID: 4242
+)
 
 struct ProtectionProcessTests {
   @Test func pairedProcessesArmProtectAndReleaseWithoutLeavingOwnership() throws {
@@ -109,7 +122,8 @@ struct ProtectionProcessTests {
   @Test func aJournalFailureStopsTheRunBeforeAnythingIsArmed() throws {
     let seeded = ProductionRecord(
       session: "earlier-run", operationID: 9, target: probeTarget, scope: "app",
-      controllerPID: 1, helperPID: 1, topology: [])
+      controllerPID: 1, helperPID: 1, topology: []
+    )
     let outcome = try run("pairing", seeding: seeded)
     #expect(!outcome.contains("helper-armed"))
     #expect(outcome.contains("helper-stood-down"))
@@ -144,7 +158,7 @@ struct ProtectionProcessTests {
         "helper-recovery-required", "helper-confirmed-controller-termination",
         "helper-acquired-writer-lock", "helper-authorized-owned-target",
         "helper-would-restore-recorded-panel", "helper-verified-restoration",
-        "helper-cleared-journal",
+        "helper-cleared-journal"
       ].contains($0)
     }
     // Termination and the writer lock come before any write, and clearing comes after verifying.
@@ -153,8 +167,9 @@ struct ProtectionProcessTests {
         "helper-recovery-required", "helper-confirmed-controller-termination",
         "helper-acquired-writer-lock", "helper-authorized-owned-target",
         "helper-would-restore-recorded-panel", "helper-verified-restoration",
-        "helper-cleared-journal",
-      ])
+        "helper-cleared-journal"
+      ]
+    )
     #expect(outcome.detail(of: "helper-recovery-required") == "contactLost")
     #expect(outcome.detail(of: "helper-finished") == "takeover=finished protection=revoked")
     #expect(!outcome.journalRemains)
@@ -175,8 +190,9 @@ struct ProtectionProcessTests {
     #expect(
       records.map(\.code) == [
         .recoveryRequested, .childTerminationRequested,
-        .childExited, .writerLockAcquired, .journalCleared,
-      ])
+        .childExited, .writerLockAcquired, .journalCleared
+      ]
+    )
     #expect(records.first?.helperLoss == .operationStalled)
     #expect(records.first?.operation?.phase == .submitted)
     #expect(records.first?.progressAgeMS != nil)
@@ -186,7 +202,8 @@ struct ProtectionProcessTests {
   @Test func theHelperTakesTheWriterLockOnlyAfterItsControllerIsGone() throws {
     let outcome = try run("controller-loss")
     let terminated = try #require(
-      outcome.names.firstIndex(of: "helper-confirmed-controller-termination"))
+      outcome.names.firstIndex(of: "helper-confirmed-controller-termination")
+    )
     let locked = try #require(outcome.names.firstIndex(of: "helper-acquired-writer-lock"))
     #expect(terminated < locked)
     // No lock is left behind holding out a future run.

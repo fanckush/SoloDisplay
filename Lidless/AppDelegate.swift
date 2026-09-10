@@ -15,7 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
   private var rebuildPending = false
   private let operationalDiagnostics = OperationalLogger(role: .bootstrap)
 
-  func applicationDidFinishLaunching(_ notification: Notification) {
+  func applicationDidFinishLaunching(_: Notification) {
     // Unit tests exercise the model without starting the platform observer.
     guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
     // A write to a peer that has gone away must surface as an error on the link, not kill this
@@ -29,16 +29,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     operationalDiagnostics.started()
     do {
       let role = try ProductionLaunch.role(
-        arguments: arguments, pipedStandardStreams: ProductionLaunch.standardStreamsArePipes())
+        arguments: arguments, pipedStandardStreams: ProductionLaunch.standardStreamsArePipes()
+      )
       switch role {
       case .helper: startHelper()
       case .controller: startController()
+      case .recoveryWorker: startRecoveryWorker()
       case .unprotected: startUnprotectedInterface()
       }
     } catch {
       operationalDiagnostics.emit(
         .startupFailed, reason: .invalidLaunch,
-        errorCode: (error as NSError).code)
+        errorCode: (error as NSError).code
+      )
       operationalDiagnostics.emit(.exitRequested, reason: .invalidLaunch)
       FileHandle.standardError.write(Data("Lidless: \(error)\n".utf8))
       exit(64)
@@ -51,20 +54,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       operationalDiagnostics.emit(.startupFailed, reason: .missingExecutable)
       operationalDiagnostics.emit(.exitRequested, reason: .missingExecutable)
       FileHandle.standardError.write(
-        Data("Lidless cannot resolve its own executable and will not start.\n".utf8))
+        Data("Lidless cannot resolve its own executable and will not start.\n".utf8)
+      )
       exit(70)
     }
     guard let store = try? ProductionJournalStore() else {
       operationalDiagnostics.emit(.startupFailed, reason: .journalUnavailable)
       operationalDiagnostics.emit(.exitRequested, reason: .journalUnavailable)
       FileHandle.standardError.write(
-        Data("Lidless cannot open its recovery store and will not start.\n".utf8))
+        Data("Lidless cannot open its recovery store and will not start.\n".utf8)
+      )
       exit(70)
     }
     NSApp.setActivationPolicy(.prohibited)
     let runtime = HelperRuntime(
       executable: executable, store: store,
-      diagnostics: .init(role: .helper, run: operationalDiagnostics.run))
+      diagnostics: .init(role: .helper, run: operationalDiagnostics.run)
+    )
+    runtime.onInterfaceStateChanged = { [weak self] state in
+      self?.updateHelperInterface(state)
+    }
     helper = runtime
     Task { @MainActor in await runtime.start() }
   }
@@ -73,13 +82,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     NSApp.setActivationPolicy(.accessory)
     let runtime = ControllerRuntime(
       link: ProtectionLink(input: .standardInput, output: .standardOutput),
-      diagnostics: .init(role: .controller, run: operationalDiagnostics.run))
+      diagnostics: .init(role: .controller, run: operationalDiagnostics.run)
+    )
     controller = runtime
     installStatusItem()
     runtime.onMenuChanged = { [weak self] in self?.rebuildMenu() }
     runtime.start()
     rebuildMenu()
-    if ProcessInfo.processInfo.arguments.contains("--diagnostics") { showDiagnostics() }
+    if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
+      showDiagnostics()
+    }
+  }
+
+  private func startRecoveryWorker() {
+    NSApp.setActivationPolicy(.prohibited)
+    Task.detached {
+      let status = RecoveryWorker.run()
+      fflush(stdout)
+      exit(status)
+    }
   }
 
   /// Explicitly unprotected: the read-only interface, with display control unavailable.
@@ -89,28 +110,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     installStatusItem()
     let menu = NSMenu()
     menu.addItem(
-      withTitle: "Lidless is running without its recovery helper", action: nil, keyEquivalent: "")
+      withTitle: "Lidless is running without its recovery helper", action: nil, keyEquivalent: ""
+    )
     menu.addItem(
-      withTitle: "Turning the internal display off is unavailable.", action: nil, keyEquivalent: "")
+      withTitle: "Turning the internal display off is unavailable.", action: nil, keyEquivalent: ""
+    )
     menu.addItem(.separator())
     addDiagnosticsWindowItem(to: menu)
     let quit = menu.addItem(withTitle: "Quit Lidless", action: #selector(quit), keyEquivalent: "q")
     quit.target = self
     statusItem?.menu = menu
-    if ProcessInfo.processInfo.arguments.contains("--diagnostics") { showDiagnostics() }
+    if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
+      showDiagnostics()
+    }
   }
 
-  private func installStatusItem() {
+  private func installStatusItem(symbol: String = "laptopcomputer") {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     item.button?.image = NSImage(
-      systemSymbolName: "laptopcomputer", accessibilityDescription: "Lidless")
+      systemSymbolName: symbol, accessibilityDescription: "Lidless"
+    )
     item.button?.toolTip = "Lidless"
     statusItem = item
   }
 
-  func menuWillOpen(_ menu: NSMenu) { menuIsOpen = true }
+  private func updateHelperInterface(_ state: HelperInterfaceState) {
+    switch state {
+    case .hidden:
+      if let statusItem {
+        NSStatusBar.system.removeStatusItem(statusItem)
+      }
+      statusItem = nil
+      NSApp.setActivationPolicy(.prohibited)
+    case let .recovering(detail), let .blocked(detail):
+      NSApp.setActivationPolicy(.accessory)
+      if statusItem == nil {
+        installStatusItem(symbol: "exclamationmark.triangle")
+      }
+      let menu = NSMenu()
+      let title = state.isRecovering
+        ? "Internal display recovery in progress"
+        : "Internal display recovery needs attention"
+      let heading = menu.addItem(
+        withTitle: title, action: nil, keyEquivalent: ""
+      )
+      heading.isEnabled = false
+      let explanation = menu.addItem(withTitle: detail, action: nil, keyEquivalent: "")
+      explanation.isEnabled = false
+      if !state.isRecovering {
+        menu.addItem(.separator())
+        let retry = menu.addItem(
+          withTitle: "Retry Recovery", action: #selector(retryHelperRecovery), keyEquivalent: "r"
+        )
+        retry.target = self
+      }
+      menu.addItem(.separator())
+      addDiagnosticsWindowItem(to: menu)
+      menu.autoenablesItems = false
+      statusItem?.menu = menu
+    }
+  }
 
-  func menuDidClose(_ menu: NSMenu) {
+  @objc private func retryHelperRecovery() {
+    helper?.retryRecovery()
+  }
+
+  func menuWillOpen(_: NSMenu) {
+    menuIsOpen = true
+  }
+
+  func menuDidClose(_: NSMenu) {
     menuIsOpen = false
     guard rebuildPending else { return }
     rebuildPending = false
@@ -137,7 +206,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       }
       let entry = menu.addItem(
         withTitle: item.title, action: #selector(performMenuAction(_:)),
-        keyEquivalent: action == .quit ? "q" : "")
+        keyEquivalent: action == .quit ? "q" : ""
+      )
       entry.target = self
       entry.isEnabled = item.enabled
       entry.state = item.checked ? .on : .off
@@ -153,7 +223,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
   private func addDiagnosticsWindowItem(to menu: NSMenu) {
     let show = menu.addItem(
-      withTitle: "Display Diagnostics…", action: #selector(showDiagnostics), keyEquivalent: "")
+      withTitle: "Display Diagnostics…", action: #selector(showDiagnostics), keyEquivalent: ""
+    )
     show.target = self
     show.isEnabled = true
   }
@@ -191,7 +262,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
       let window = NSWindow(
         contentRect: NSRect(x: 0, y: 0, width: 760, height: 640),
         styleMask: [.titled, .closable, .miniaturizable, .resizable],
-        backing: .buffered, defer: false)
+        backing: .buffered, defer: false
+      )
       window.title = "Lidless Display Diagnostics"
       window.contentViewController = NSHostingController(rootView: ContentView(model: diagnostics))
       window.isReleasedWhenClosed = false
@@ -203,18 +275,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     NSApp.activate(ignoringOtherApps: true)
   }
 
-  @objc private func quit() { NSApp.terminate(nil) }
+  @objc private func quit() {
+    NSApp.terminate(nil)
+  }
 
   /// Quit requests restoration first. The app exits once nothing is unresolved, and the helper
   /// keeps recovery responsibility if this process goes away before that happens.
-  func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+  func applicationShouldTerminate(_: NSApplication) -> NSApplication.TerminateReply {
     guard let controller else { return .terminateNow }
     return controller.beginQuit() ? .terminateNow : .terminateLater
   }
 
-  func applicationWillTerminate(_ notification: Notification) {
+  func applicationWillTerminate(_: Notification) {
     controller?.stop()
     diagnostics.stop()
-    if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+    if let statusItem {
+      NSStatusBar.system.removeStatusItem(statusItem)
+    }
+  }
+}
+
+private extension HelperInterfaceState {
+  var isRecovering: Bool {
+    if case .recovering = self {
+      return true
+    }
+    return false
   }
 }

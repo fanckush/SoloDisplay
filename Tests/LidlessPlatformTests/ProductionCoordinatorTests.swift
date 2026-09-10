@@ -2,23 +2,38 @@ import Foundation
 import LidlessCore
 import Synchronization
 import Testing
-
 @testable import LidlessPlatform
 
 // MARK: - Doubles
 
 private final class FakeClock: CoordinatorClock {
   private let value = Mutex<Instant>(0)
-  func now() -> Instant { value.withLock { $0 } }
-  func set(_ instant: Instant) { value.withLock { $0 = instant } }
-  func advance(_ by: Instant) { value.withLock { $0 += by } }
+  func now() -> Instant {
+    value.withLock { $0 }
+  }
+
+  func set(_ instant: Instant) {
+    value.withLock { $0 = instant }
+  }
+
+  func advance(_ by: Instant) {
+    value.withLock { $0 += by }
+  }
 }
 
 private final class FakeObserver: PlatformObserving {
   private let value: Mutex<PlatformReading>
-  init(_ reading: PlatformReading) { value = .init(reading) }
-  func read() -> PlatformReading { value.withLock { $0 } }
-  func set(_ reading: PlatformReading) { value.withLock { $0 = reading } }
+  init(_ reading: PlatformReading) {
+    value = .init(reading)
+  }
+
+  func read() -> PlatformReading {
+    value.withLock { $0 }
+  }
+
+  func set(_ reading: PlatformReading) {
+    value.withLock { $0 = reading }
+  }
 }
 
 private final class FakeWriter: DisplayWriting {
@@ -27,19 +42,29 @@ private final class FakeWriter: DisplayWriting {
     var displayID: UInt32
     var scope: DisplayScope
   }
+
   struct State {
     var calls: [Call] = []
     var failEnabled: Set<Bool> = []
   }
+
   let state = Mutex(State())
-  var calls: [Call] { state.withLock { $0.calls } }
-  func failWrites(enabled: Bool) { state.withLock { $0.failEnabled.insert(enabled) } }
+  var calls: [Call] {
+    state.withLock { $0.calls }
+  }
+
+  func failWrites(enabled: Bool) {
+    _ = state.withLock { $0.failEnabled.insert(enabled) }
+  }
+
   func setEnabled(_ enabled: Bool, displayID: UInt32, scope: DisplayScope) throws {
     let shouldFail = state.withLock {
       $0.calls.append(.init(enabled: enabled, displayID: displayID, scope: scope))
       return $0.failEnabled.contains(enabled)
     }
-    if shouldFail { throw DisplayAPIError.unavailable }
+    if shouldFail {
+      throw DisplayAPIError.unavailable
+    }
   }
 }
 
@@ -51,25 +76,43 @@ private final class FakeOwnership: OwnershipPersisting {
     var prepares = 0
     var clears = 0
   }
+
   let state = Mutex(State())
-  var record: ProductionRecord? { state.withLock { $0.record } }
-  var clears: Int { state.withLock { $0.clears } }
-  func failPrepare() { state.withLock { $0.prepareFails = true } }
-  func failClear(_ value: Bool) { state.withLock { $0.clearFails = value } }
+  var record: ProductionRecord? {
+    state.withLock { $0.record }
+  }
+
+  var clears: Int {
+    state.withLock { $0.clears }
+  }
+
+  func failPrepare() {
+    state.withLock { $0.prepareFails = true }
+  }
+
+  func failClear(_ value: Bool) {
+    state.withLock { $0.clearFails = value }
+  }
+
   func prepare(_ record: ProductionRecord) throws {
     // The real store validates, so the fake must too, or a malformed record passes unnoticed.
     try record.validate()
     try state.withLock {
       $0.prepares += 1
-      if $0.prepareFails { throw JournalError.writeFailed }
+      if $0.prepareFails {
+        throw JournalError.writeFailed
+      }
       guard $0.record == nil else { throw JournalError.alreadyExists }
       $0.record = record
     }
   }
+
   func clear() throws {
     try state.withLock {
       $0.clears += 1
-      if $0.clearFails { throw JournalError.clearFailed }
+      if $0.clearFails {
+        throw JournalError.clearFailed
+      }
       $0.record = nil
     }
   }
@@ -79,7 +122,9 @@ private final class FakePreferences: PreferencePersisting {
   let saved = Mutex<[Mode]>([])
   let fails = Mutex(false)
   func save(mode: Mode) throws {
-    if fails.withLock({ $0 }) { throw JournalError.writeFailed }
+    if fails.withLock({ $0 }) {
+      throw JournalError.writeFailed
+    }
     saved.withLock { $0.append(mode) }
   }
 }
@@ -97,30 +142,46 @@ private final class FakePreferences: PreferencePersisting {
       .received(
         .init(
           session: "test", sender: .helper,
-          sequence: 1, kind: .witness)), at: 0)
-    protocolState.receive(.arm(ownership), at: 2_100)
+          sequence: 1, kind: .witness
+        )
+      ), at: 0
+    )
+    protocolState.receive(.arm(ownership), at: 2100)
     protocolState.receive(
       .received(
         .init(
           session: "test", sender: .helper,
-          sequence: 2, challenge: 1, kind: .armed, ownership: ownership)), at: 2_100)
+          sequence: 2, challenge: 1, kind: .armed, ownership: ownership
+        )
+      ), at: 2100
+    )
     authorization.update(protocolState)
   }
-  func release() { releases += 1 }
-  func noteOperation(_ progress: OperationProgress?) { self.progress.append(progress) }
+
+  func release() {
+    releases += 1
+  }
+
+  func noteOperation(_ progress: OperationProgress?) {
+    self.progress.append(progress)
+  }
 }
 
 @MainActor private final class FakeDelegate: CoordinatorDelegate {
   var presentations: [Presentation] = []
   var recorded: [RecordedEvent] = []
   var readyToExit = 0
-  func coordinator(_ coordinator: ProductionCoordinator, didUpdate presentation: Presentation) {
+  func coordinator(_: ProductionCoordinator, didUpdate presentation: Presentation) {
     presentations.append(presentation)
   }
-  func coordinator(_ coordinator: ProductionCoordinator, didRecord event: RecordedEvent) {
+
+  func coordinator(_: ProductionCoordinator, didRecord event: RecordedEvent) {
     recorded.append(event)
   }
-  func coordinatorIsReadyToExit(_ coordinator: ProductionCoordinator) { readyToExit += 1 }
+
+  func coordinatorIsReadyToExit(_: ProductionCoordinator) {
+    readyToExit += 1
+  }
 }
 
 /// Runs lane work immediately so ordering is deterministic. The coordinator still treats it as
@@ -133,6 +194,7 @@ private struct SyncLane: SerialLane {
     let event = work()
     MainActor.assumeIsolated { completion(event) }
   }
+
   func observe(
     _ work: @escaping @Sendable () -> PlatformReading,
     completion: @escaping @Sendable @MainActor (PlatformReading) -> Void
@@ -140,7 +202,10 @@ private struct SyncLane: SerialLane {
     let reading = work()
     MainActor.assumeIsolated { completion(reading) }
   }
-  func detached(_ work: @escaping @Sendable () -> Void) { work() }
+
+  func detached(_ work: @escaping @Sendable () -> Void) {
+    work()
+  }
 }
 
 /// Unlike SyncLane this leaves work queued while notifications and user actions are reduced.
@@ -152,6 +217,7 @@ private final class DelayedLane: SerialLane {
   ) {
     pending.withLock { $0.append { completion(work()) } }
   }
+
   func observe(
     _ work: @escaping @Sendable () -> PlatformReading,
     completion: @escaping @Sendable @MainActor (PlatformReading) -> Void
@@ -159,23 +225,33 @@ private final class DelayedLane: SerialLane {
     let reading = work()
     MainActor.assumeIsolated { completion(reading) }
   }
-  func detached(_ work: @escaping @Sendable () -> Void) { work() }
+
+  func detached(_ work: @escaping @Sendable () -> Void) {
+    work()
+  }
+
   @MainActor func flush() {
-    while let next = pending.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) { next() }
+    while let next = pending.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) {
+      next()
+    }
   }
 }
 
 @MainActor private final class ManualScheduler: CoordinatorScheduler {
   var wakes: [Double] = []
-  func after(_ seconds: Double, _ fire: @escaping @MainActor () -> Void) { wakes.append(seconds) }
-  func startRepeating(_ seconds: Double, _ fire: @escaping @MainActor () -> Void) {}
+  func after(_ seconds: Double, _: @escaping @MainActor () -> Void) {
+    wakes.append(seconds)
+  }
+
+  func startRepeating(_: Double, _: @escaping @MainActor () -> Void) {}
   func stopRepeating() {}
 }
 
 // MARK: - Fixtures
 
 private let panelTarget = PanelTarget(
-  displayID: 1, displayUUID: "panel", bootID: "boot", loginID: 7)
+  displayID: 1, displayUUID: "panel", bootID: "boot", loginID: 7
+)
 
 private func display(
   id: UInt32, builtIn: Bool, active: Bool = true, mirrored: Bool = false, source: UInt32? = nil,
@@ -185,7 +261,8 @@ private func display(
     id: id, uuid: builtIn ? "panel" : "external-\(id)", uuidResolvedID: id, builtIn: builtIn,
     active: active, online: true, asleep: false, mirrored: mirrored, mirrorSourceID: source,
     width: 1920, height: 1080, originX: 0, originY: 0, modeAvailable: true,
-    transport: transport.rawValue)
+    transport: transport.rawValue
+  )
 }
 
 private func reading(
@@ -194,14 +271,17 @@ private func reading(
   validated: Bool = true, enumerationError: Int32? = nil
 ) -> PlatformReading {
   var displays: [DisplayReading] = []
-  if panel { displays.append(display(id: 1, builtIn: true, active: panelActive)) }
+  if panel {
+    displays.append(display(id: 1, builtIn: true, active: panelActive))
+  }
   if external {
     displays.append(display(id: 5, builtIn: false, transport: externalTransport))
   }
   var result = PlatformReading(
     osVersion: "test", monotonicMilliseconds: 0, enumerationError: enumerationError,
     displays: displays, lid: lid, bootID: "boot", loginID: 7, foregroundSession: foreground,
-    privateSymbol: "SLSConfigureDisplayEnabled", limitations: [])
+    privateSymbol: "SLSConfigureDisplayEnabled", limitations: []
+  )
   result.backendValidated = validated
   return result
 }
@@ -231,13 +311,16 @@ private func reading(
       state: state, clock: clock, observer: observer, writer: writer, ownership: ownership,
       preferences: preferences, protection: protection, delegate: delegate,
       lane: lane, scheduler: scheduler,
-      diagnostics: .init(role: .controller, sink: diagnostics))
+      diagnostics: .init(role: .controller, sink: diagnostics)
+    )
     coordinator.send(.protectionAvailable(true))
   }
 
   /// Observation, clock advance, and a tick, the way the running coordinator interleaves them.
   func step(to instant: Instant, reading value: PlatformReading? = nil) {
-    if let value { observer.set(value) }
+    if let value {
+      observer.set(value)
+    }
     clock.set(instant)
     coordinator.platformDidChange()
     coordinator.send(.tick)
@@ -252,11 +335,13 @@ private func reading(
   func reachSuppression() {
     step(to: 0)
     step(to: 600)
-    step(to: 2_100)
+    step(to: 2100)
     grantProtection()
   }
 
-  var state: ControllerState { coordinator.state }
+  var state: ControllerState {
+    coordinator.state
+  }
 }
 
 // MARK: - Tests
@@ -267,16 +352,16 @@ struct ProductionCoordinatorTests {
   func unavailableLidDoesNotExhaustRecovery(_ lid: Lid) {
     let harness = Harness()
     harness.reachSuppression()
-    harness.step(to: 2_200, reading: reading(panel: false))
-    for time in stride(from: Instant(2_400), through: 20_000, by: 500) {
+    harness.step(to: 2200, reading: reading(panel: false))
+    for time in stride(from: Instant(2400), through: 20000, by: 500) {
       harness.step(to: time, reading: reading(panel: false, lid: lid))
     }
     #expect(harness.state.restoreAttempts == 0)
     #expect(harness.state.ownership != nil)
     #expect(harness.coordinator.presentation.waitingForRecovery)
-    harness.step(to: 21_000, reading: reading(panel: false, external: false))
+    harness.step(to: 21000, reading: reading(panel: false, external: false))
     #expect(harness.writer.calls.filter(\.enabled).count == 1)
-    harness.step(to: 21_500, reading: reading(external: false))
+    harness.step(to: 21500, reading: reading(external: false))
     #expect(harness.state.ownership == nil)
   }
 
@@ -285,23 +370,49 @@ struct ProductionCoordinatorTests {
     let harness = Harness(lane: lane)
     harness.step(to: 0)
     harness.step(to: 600)
-    harness.step(to: 2_100)
+    harness.step(to: 2100)
     lane.flush()
     harness.grantProtection()
     lane.flush()
-    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.step(to: 2200, reading: reading(panel: false))
     harness.coordinator.send(.keepOn)
     harness.observer.set(reading(panel: false, foreground: .no))
     lane.flush()
     #expect(harness.state.restoreAttempts == 0)
     #expect(harness.state.recoveryDeferredSequence != nil)
     #expect(harness.writer.calls.filter(\.enabled).isEmpty)
-    harness.step(to: 3_000, reading: reading(panel: false, external: false))
+    harness.step(to: 3000, reading: reading(panel: false, external: false))
     lane.flush()
     #expect(harness.writer.calls.filter(\.enabled).count == 1)
-    harness.step(to: 3_500, reading: reading(external: false))
+    harness.step(to: 3500, reading: reading(external: false))
     lane.flush()
     #expect(harness.state.ownership == nil)
+  }
+
+  @Test func aQueuedRestoreCannotCrossACompleteSleepWakeGeneration() {
+    let lane = DelayedLane()
+    let harness = Harness(lane: lane)
+    harness.step(to: 0)
+    harness.step(to: 600)
+    harness.step(to: 2100)
+    lane.flush()
+    harness.grantProtection()
+    lane.flush()
+    harness.step(to: 2200, reading: reading(panel: false))
+
+    harness.coordinator.send(.keepOn) // Queue restore under the current awake generation.
+    harness.coordinator.send(.willSleep)
+    harness.coordinator.send(.waking)
+    harness.step(to: 3000, reading: reading(panel: false)) // Establish a new awake generation.
+    lane.flush()
+
+    // Reopening the gate does not revive the request that was authorized before sleep.
+    #expect(harness.writer.calls.filter(\.enabled).isEmpty)
+    #expect(harness.state.recoveryDeferredSequence != nil)
+
+    harness.step(to: 3600, reading: reading(panel: false))
+    lane.flush()
+    #expect(harness.writer.calls.filter(\.enabled).count == 1)
   }
 
   @Test(arguments: [Event.keepOn, .willSleep, .protectionAvailable(false), .quit])
@@ -310,9 +421,9 @@ struct ProductionCoordinatorTests {
     let harness = Harness(lane: lane)
     harness.step(to: 0)
     harness.step(to: 600)
-    harness.step(to: 2_100)
-    lane.flush()  // Persist the journal and request the lease.
-    harness.grantProtection()  // Queue a write but do not run it.
+    harness.step(to: 2100)
+    lane.flush() // Persist the journal and request the lease.
+    harness.grantProtection() // Queue a write but do not run it.
     harness.coordinator.send(interruption)
     lane.flush()
     #expect(harness.writer.calls.isEmpty)
@@ -324,10 +435,10 @@ struct ProductionCoordinatorTests {
     let harness = Harness(lane: lane)
     harness.step(to: 0)
     harness.step(to: 600)
-    harness.step(to: 2_100)
+    harness.step(to: 2100)
     lane.flush()
     harness.grantProtection()
-    harness.clock.set(10_000)  // No main-loop tick to announce expiry.
+    harness.clock.set(10000) // No main-loop tick to announce expiry.
     lane.flush()
     #expect(harness.writer.calls.isEmpty)
   }
@@ -350,9 +461,9 @@ struct ProductionCoordinatorTests {
     mirrored.displays[1].mirrored = true
     let harness = Harness(reading: mirrored)
     harness.reachSuppression()
-    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.step(to: 2200, reading: reading(panel: false))
     harness.coordinator.send(.keepOn)
-    harness.step(to: 2_400, reading: reading())  // Panel is back, but incorrectly extended.
+    harness.step(to: 2400, reading: reading()) // Panel is back, but incorrectly extended.
     #expect(harness.state.ownership != nil)
     #expect(harness.ownership.clears == 0)
     #expect(harness.state.fault == .configurationChanged)
@@ -393,12 +504,12 @@ struct ProductionCoordinatorTests {
     #expect(harness.coordinator.presentation.unavailability == .faulted)
   }
 
-  @Test func aRefusedLeaseClearsTheRecordWithoutWriting() {
+  @Test func aRefusedLeaseClearsTheRecordWithoutWriting() throws {
     let harness = Harness()
     harness.step(to: 0)
     harness.step(to: 600)
-    harness.step(to: 2_100)
-    let id = try! #require(harness.protection.armed.last)
+    harness.step(to: 2100)
+    let id = try #require(harness.protection.armed.last)
     harness.coordinator.send(.protectionArmed(operationID: id, succeeded: false))
     #expect(harness.writer.calls.isEmpty)
     #expect(harness.state.fault == .protectionUnavailable)
@@ -409,7 +520,7 @@ struct ProductionCoordinatorTests {
     let harness = Harness()
     harness.step(to: 0)
     harness.step(to: 600)
-    harness.step(to: 2_100)
+    harness.step(to: 2100)
     // The external disappears between the decision and the call itself.
     harness.observer.set(reading(external: false))
     harness.grantProtection()
@@ -424,15 +535,15 @@ struct ProductionCoordinatorTests {
   @Test func losingTheExternalRestoresAndReleasesOnlyAfterAConfirmedClear() {
     let harness = Harness()
     harness.reachSuppression()
-    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.step(to: 2200, reading: reading(panel: false))
     #expect(harness.state.ownership != nil)
 
     // Losing the last external removes a prerequisite, so restoration is immediate.
-    harness.step(to: 2_400, reading: reading(panel: false, external: false))
+    harness.step(to: 2400, reading: reading(panel: false, external: false))
     #expect(harness.writer.calls.contains(.init(enabled: true, displayID: 1, scope: .application)))
     #expect(harness.state.ownership != nil)
 
-    harness.step(to: 2_600, reading: reading(external: false))
+    harness.step(to: 2600, reading: reading(external: false))
     #expect(harness.state.ownership == nil)
     #expect(harness.ownership.clears == 1)
     #expect(harness.protection.releases >= 1)
@@ -441,21 +552,22 @@ struct ProductionCoordinatorTests {
   @Test func aFailedClearKeepsOwnershipAndBlocksNewDisabling() {
     let harness = Harness()
     harness.reachSuppression()
-    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.step(to: 2200, reading: reading(panel: false))
     harness.ownership.failClear(true)
-    harness.step(to: 2_400, reading: reading(panel: false, external: false))
-    harness.step(to: 2_600, reading: reading(external: false))
+    harness.step(to: 2400, reading: reading(panel: false, external: false))
+    harness.step(to: 2600, reading: reading(external: false))
     #expect(harness.state.fault == .ownershipClearFailed)
     #expect(harness.state.ownership != nil)
     #expect(harness.coordinator.presentation.pendingRecovery)
     #expect(
-      harness.diagnostics.events.contains { $0.code == .journalCleared && $0.succeeded == false })
+      harness.diagnostics.events.contains { $0.code == .journalCleared && $0.succeeded == false }
+    )
   }
 
   @Test func losingTheHelperRestoresTheOwnedPanel() {
     let harness = Harness()
     harness.reachSuppression()
-    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.step(to: 2200, reading: reading(panel: false))
     harness.coordinator.send(.protectionAvailable(false))
     #expect(harness.writer.calls.contains(.init(enabled: true, displayID: 1, scope: .application)))
     #expect(harness.state.fault == .protectionLost)
@@ -470,8 +582,9 @@ struct ProductionCoordinatorTests {
     #expect(
       harness.writer.calls == [
         .init(enabled: false, displayID: 1, scope: .application),
-        .init(enabled: true, displayID: 1, scope: .application),
-      ])
+        .init(enabled: true, displayID: 1, scope: .application)
+      ]
+    )
     // Ownership is released only after the panel is observed back and the record is really gone.
     #expect(harness.state.ownership == nil)
     #expect(harness.ownership.record == nil)
@@ -481,10 +594,10 @@ struct ProductionCoordinatorTests {
     )
   }
 
-  @Test func aStaleCompletionCannotHideOrRepeatAWrite() {
+  @Test func aStaleCompletionCannotHideOrRepeatAWrite() throws {
     let harness = Harness()
     harness.reachSuppression()
-    let id = harness.state.operation!.id
+    let id = try #require(harness.state.operation?.id)
     let before = harness.writer.calls.count
     // Replays and results for operations that no longer exist change nothing.
     harness.coordinator.send(.operationReturned(operationID: id, succeeded: true))
@@ -494,15 +607,16 @@ struct ProductionCoordinatorTests {
     #expect(harness.writer.calls.count == before)
   }
 
-  @Test func aMissedWakeNotificationDoesNotStrandTheCoordinatorAsleep() {
+  @Test func activityAloneCannotMasqueradeAsAWakeTransition() {
     let harness = Harness()
     harness.reachSuppression()
     harness.coordinator.send(.willSleep)
-    harness.step(to: 3_000, reading: reading(panel: false, external: false, foreground: .no))
+    harness.step(to: 3000, reading: reading(panel: false, external: false, foreground: .no))
     #expect(harness.state.observation?.environment.power == .sleeping)
-    // The wake notification never arrives, but usable evidence keeps coming back.
-    harness.step(to: 6_000, reading: reading())
-    #expect(harness.state.observation?.environment.power == .awake)
+    // Continued callbacks during willSleep are not evidence that the display stack is writable.
+    harness.step(to: 6000, reading: reading())
+    #expect(harness.state.observation?.environment.power == .sleeping)
+    #expect(harness.writer.calls.filter(\.enabled).isEmpty)
   }
 
   @Test func aWakeNotificationAloneDoesNotEstablishAUsableDisplay() {
@@ -521,7 +635,7 @@ struct ProductionCoordinatorTests {
     let harness = Harness(mode: .manual)
     harness.coordinator.send(.manualOff)
     harness.coordinator.send(.willSleep)
-    harness.step(to: 3_000, reading: reading(foreground: .no))
+    harness.step(to: 3000, reading: reading(foreground: .no))
     #expect(!harness.state.manualRequest)
     #expect(harness.writer.calls.isEmpty)
   }
@@ -529,16 +643,16 @@ struct ProductionCoordinatorTests {
   @Test func recoveryConvergesOnceThePlatformAcceptsRestoration() {
     let harness = Harness()
     harness.reachSuppression()
-    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.step(to: 2200, reading: reading(panel: false))
 
     // Restoration is refused while the environment cannot accept it.
     harness.writer.failWrites(enabled: true)
-    harness.step(to: 2_400, reading: reading(panel: false, external: false))
+    harness.step(to: 2400, reading: reading(panel: false, external: false))
     #expect(harness.state.ownership != nil)
 
     harness.writer.state.withLock { $0.failEnabled.removeAll() }
     var settled = false
-    for instant in stride(from: Instant(2_600), through: 12_000, by: 400) {
+    for instant in stride(from: Instant(2600), through: 12000, by: 400) {
       harness.step(to: instant, reading: reading(external: false))
       if harness.state.ownership == nil {
         settled = true
@@ -562,7 +676,7 @@ struct ProductionCoordinatorTests {
   @Test func heartbeatsCarryTheOutstandingOperationDeadline() {
     let harness = Harness()
     harness.reachSuppression()
-    let reported = harness.protection.progress.compactMap { $0 }
+    let reported = harness.protection.progress.compactMap(\.self)
     #expect(reported.contains { $0.phase == .arming })
     #expect(reported.contains { $0.phase == .submitted && $0.kind == .disable })
   }
@@ -570,14 +684,14 @@ struct ProductionCoordinatorTests {
   @Test func quitWaitsForRestorationAndAConfirmedClear() {
     let harness = Harness()
     harness.reachSuppression()
-    harness.step(to: 2_200, reading: reading(panel: false))
+    harness.step(to: 2200, reading: reading(panel: false))
     #expect(harness.state.ownership != nil)
 
     harness.coordinator.send(.quit)
     // The panel is still absent, so restoration is not verified and the app must not exit.
     #expect(harness.delegate.readyToExit == 0)
 
-    harness.step(to: 2_400, reading: reading())
+    harness.step(to: 2400, reading: reading())
     #expect(harness.delegate.readyToExit >= 1)
     #expect(harness.state.ownership == nil)
     #expect(harness.ownership.record == nil)
@@ -604,7 +718,7 @@ struct ProductionCoordinatorTests {
     #expect(harness.state.mode == .automaticPaused)
     // A paused choice must not keep disabling.
     harness.step(to: 600)
-    harness.step(to: 2_100)
+    harness.step(to: 2100)
     #expect(harness.writer.calls.isEmpty)
   }
 }

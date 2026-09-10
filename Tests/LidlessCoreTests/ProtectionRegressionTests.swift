@@ -7,12 +7,18 @@ import Testing
   var controller = ControllerProtection(session: "run", at: 0)
   controller.receive(.start, at: 0)
   controller.receive(.received(.init(session: "run", sender: .helper,
-    sequence: 1, kind: .witness)), at: 1)
+                                     sequence: 1, kind: .witness)), at: 1)
   controller.receive(.arm(old), at: 2)
   controller.receive(.release, at: 3)
   controller.receive(.arm(.init(target: target, operationID: 2)), at: 4)
-  let output = controller.receive(.received(.init(session: "run", sender: .helper,
-    sequence: 2, challenge: 1, kind: .armed, ownership: old)), at: 5)
+  let output = controller.receive(.received(.init(
+    session: "run",
+    sender: .helper,
+    sequence: 2,
+    challenge: 1,
+    kind: .armed,
+    ownership: old
+  )), at: 5)
   #expect(!output.contains(.protectionEstablished))
   #expect(!controller.protects(at: 5))
 }

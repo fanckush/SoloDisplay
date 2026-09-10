@@ -5,7 +5,7 @@ import LidlessCore
 /// Raw values are the journal's vocabulary, so a record's scope round trips as written.
 public enum DisplayScope: String, Sendable {
   case application = "app"
-  case session = "session"
+  case session
 }
 
 public protocol CoordinatorClock: Sendable {
@@ -35,12 +35,14 @@ public protocol PreferencePersisting: Sendable {
 public protocol SerialLane: Sendable {
   func run(
     _ work: @escaping @Sendable () -> Event,
-    completion: @escaping @Sendable @MainActor (Event) -> Void)
+    completion: @escaping @Sendable @MainActor (Event) -> Void
+  )
   /// Reading and interpreting are separate on purpose: the reading happens off the loop, and
   /// what it means is decided on the loop with the ownership context that is current then.
   func observe(
     _ work: @escaping @Sendable () -> PlatformReading,
-    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void)
+    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void
+  )
   func detached(_ work: @escaping @Sendable () -> Void)
 }
 
@@ -63,6 +65,7 @@ public struct DispatchLane: SerialLane {
       Task { @MainActor in completion(event) }
     }
   }
+
   public func observe(
     _ work: @escaping @Sendable () -> PlatformReading,
     completion: @escaping @Sendable @MainActor (PlatformReading) -> Void
@@ -72,7 +75,10 @@ public struct DispatchLane: SerialLane {
       Task { @MainActor in completion(reading) }
     }
   }
-  public func detached(_ work: @escaping @Sendable () -> Void) { queue.async(execute: work) }
+
+  public func detached(_ work: @escaping @Sendable () -> Void) {
+    queue.async(execute: work)
+  }
 }
 
 @MainActor
@@ -86,6 +92,7 @@ public final class TimerScheduler: CoordinatorScheduler {
     }
     RunLoop.main.add(timer, forMode: .common)
   }
+
   public func startRepeating(_ seconds: Double, _ fire: @escaping @MainActor () -> Void) {
     repeating?.invalidate()
     let timer = Timer(timeInterval: seconds, repeats: true) { _ in
@@ -94,6 +101,7 @@ public final class TimerScheduler: CoordinatorScheduler {
     RunLoop.main.add(timer, forMode: .common)
     repeating = timer
   }
+
   public func stopRepeating() {
     repeating?.invalidate()
     repeating = nil
@@ -121,7 +129,9 @@ public final class TimerScheduler: CoordinatorScheduler {
 @MainActor
 public final class ProductionCoordinator {
   public private(set) var state: ControllerState
-  public var presentation: Presentation { Controller.presentation(state, at: clock.now()) }
+  public var presentation: Presentation {
+    Controller.presentation(state, at: clock.now())
+  }
 
   private let clock: any CoordinatorClock
   private let diagnostics: OperationalLogger
@@ -144,6 +154,7 @@ public final class ProductionCoordinator {
   private var lifecycleChangedAt: Instant = 0
   private let session: String
   private let disablePermit = DisablePermit()
+  private let writeAvailability = WriteAvailability(awake: false)
   private var baseline: ProductionRecord?
   /// The scope actually used for a disable, recorded so recovery can match it.
   public var scope: DisplayScope = .application
@@ -178,7 +189,9 @@ public final class ProductionCoordinator {
     scheduler.startRepeating(0.5) { [weak self] in self?.tick() }
   }
 
-  public func stop() { scheduler.stopRepeating() }
+  public func stop() {
+    scheduler.stopRepeating()
+  }
 
   // MARK: - Events
 
@@ -187,23 +200,23 @@ public final class ProductionCoordinator {
   public func send(_ event: Event) {
     let now = clock.now()
     switch event {
-    case .observed(let observation):
+    case let .observed(observation):
       let summary = OperationalEnvironment(observation.environment)
       if summary != lastDiagnosticEnvironment {
         lastDiagnosticEnvironment = summary
         diagnostics.emit(.environmentChanged, session: session) { $0.environment = summary }
       }
-    case .journalSaved(let id, let succeeded):
+    case let .journalSaved(id, succeeded):
       diagnostics.emit(.journalPrepared, session: session, succeeded: succeeded) {
         $0.operationID = id
       }
-    case .ownershipCleared(let succeeded):
+    case let .ownershipCleared(succeeded):
       diagnostics.emit(.journalCleared, session: session, succeeded: succeeded)
-    case .preferencesSaved(_, let succeeded):
+    case let .preferencesSaved(_, succeeded):
       diagnostics.emit(.preferencesSaved, session: session, succeeded: succeeded)
-    case .operationRefused(let id):
+    case let .operationRefused(id):
       diagnostics.emit(.operationRefused, session: session) { $0.operationID = id }
-    case .restoreDeferred(let id):
+    case let .restoreDeferred(id):
       diagnostics.emit(.restoreDeferred, session: session) { $0.operationID = id }
     default: break
     }
@@ -216,34 +229,37 @@ public final class ProductionCoordinator {
       lifecycleChangedAt = now
     default: break
     }
-    if case .observed(let sample) = event, sample.environment.power != lifecycle {
+    if case let .observed(sample) = event, sample.environment.power != lifecycle {
       diagnostics.emit(.lifecycleReconciled, session: session, reason: .observationFallback)
       lifecycle = sample.environment.power
       lifecycleChangedAt = now
     }
+    writeAvailability.update(awake: lifecycle == .awake)
     // A returned disable is what makes a later absence readable as our own suppression.
-    if case .operationReturned(let id, _) = event, state.operation?.id == id,
-      state.operation?.kind == .disable
-    {
+    if case let .operationReturned(id, _) = event, state.operation?.id == id,
+       state.operation?.kind == .disable {
       ownedDisableReturned = true
     }
     let oldOperation = state.operation
     let transition = Controller.reduce(state, event, at: now)
     state = transition.state
     if let oldOperation, oldOperation.phase == .verifying,
-      transition.effects.contains(where: {
-        if case .clearOwnership = $0 { return true }
-        return false
-      }) || (oldOperation.kind == .disable && state.operation == nil && state.fault == nil)
-    {
+       transition.effects.contains(where: {
+         if case .clearOwnership = $0 {
+           return true
+         }
+         return false
+       }) || (oldOperation.kind == .disable && state.operation == nil && state.fault == nil) {
       diagnostics.emit(
         .operationVerified, session: session,
         operation: .init(
           id: oldOperation.id, kind: oldOperation.kind,
-          phase: oldOperation.phase, deadline: oldOperation.deadline))
+          phase: oldOperation.phase, deadline: oldOperation.deadline
+        )
+      )
     }
     disablePermit.update(state, at: now)
-    if state.ownership == nil && state.operation == nil {
+    if state.ownership == nil, state.operation == nil {
       ownedDisableReturned = false
       baseline = nil
     }
@@ -251,17 +267,24 @@ public final class ProductionCoordinator {
     protection?.noteOperation(
       state.operation.map {
         .init(id: $0.id, kind: $0.kind, phase: $0.phase, deadline: $0.deadline)
-      })
-    for effect in transition.effects { execute(effect, at: now) }
+      }
+    )
+    for effect in transition.effects {
+      execute(effect, at: now)
+    }
     delegate?.coordinator(self, didUpdate: Controller.presentation(state, at: now))
   }
 
   /// A display callback or workspace notification only ever schedules work. It never writes.
-  public func platformDidChange() { observe() }
+  public func platformDidChange() {
+    observe()
+  }
 
   private func tick() {
     let now = clock.now()
-    if let sample = state.observation, now - sample.sampledAt >= 2_000 { observe() }
+    if let sample = state.observation, now - sample.sampledAt >= 2000 {
+      observe()
+    }
     send(.tick)
   }
 
@@ -271,7 +294,7 @@ public final class ProductionCoordinator {
     switch effect {
     case .observe:
       observe()
-    case .savePreferences(let mode):
+    case let .savePreferences(mode):
       let preferences = preferences
       onLane {
         do {
@@ -279,7 +302,7 @@ public final class ProductionCoordinator {
           return .preferencesSaved(mode: mode, succeeded: true)
         } catch { return .preferencesSaved(mode: mode, succeeded: false) }
       }
-    case .saveOwnership(let owned):
+    case let .saveOwnership(owned):
       prepareOwnership(owned)
     case .clearOwnership:
       let ownership = ownership
@@ -292,7 +315,7 @@ public final class ProductionCoordinator {
           return .ownershipCleared(succeeded: false)
         }
       }
-    case .armProtection(let id, let owned):
+    case let .armProtection(id, owned):
       guard let protection else {
         send(.protectionArmed(operationID: id, succeeded: false))
         return
@@ -301,17 +324,17 @@ public final class ProductionCoordinator {
     case .releaseProtection:
       protection?.release()
       ownedDisableReturned = false
-    case .setPanelEnabled(let id, let target, let enabled):
+    case let .setPanelEnabled(id, target, enabled):
       write(operationID: id, target: target, enabled: enabled)
     case .writerUnresponsive:
       diagnostics.emit(
         .writerUnresponsive, session: session,
         operation: state.operation.map {
           .init(id: $0.id, kind: $0.kind, phase: $0.phase, deadline: $0.deadline)
-        })
-      // The helper learns this from the operation deadline it already receives each second.
-      break
-    case .wakeAt(let instant):
+        }
+      )
+    // The helper learns this from the operation deadline it already receives each second.
+    case let .wakeAt(instant):
       scheduleWake(at: instant, from: now)
     case .exitReady:
       delegate?.coordinatorIsReadyToExit(self)
@@ -323,7 +346,8 @@ public final class ProductionCoordinator {
     let record = ProductionRecord(
       session: session, operationID: owned.operationID, target: owned.target,
       scope: scope.rawValue, controllerPID: ProcessInfo.processInfo.processIdentifier,
-      helperPID: getppid(), topology: reading.displays)
+      helperPID: getppid(), topology: reading.displays
+    )
     let ownership = ownership
     baseline = record
     diagnostics.emit(.journalPreparing, session: session) { $0.operationID = owned.operationID }
@@ -344,6 +368,8 @@ public final class ProductionCoordinator {
     let observer = observer
     let scope = scope
     let permit = disablePermit
+    let availability = writeAvailability
+    let availabilityGrant = availability.grant()
     let authorization = protection?.authorization
     let clock = clock
     let owned = state.ownership
@@ -354,23 +380,29 @@ public final class ProductionCoordinator {
     }
     diagnostics.emit(.operationQueued, session: session, operation: progress)
     onLane { [writer, observer] in
+      guard let availabilityGrant, availability.permits(availabilityGrant) else {
+        return enabled
+          ? .restoreDeferred(operationID: operationID)
+          : .operationRefused(operationID: operationID)
+      }
       if !enabled {
         let reading = observer.read()
         let environment = ControllerObservation.environment(reading, power: .awake)
         guard environment.panel == target, environment.prerequisitesMet,
-          environment.panelState == .enabled
+              environment.panelState == .enabled
         else {
           // Refusing before the call is different from a call that failed: nothing was sent.
           return .operationRefused(operationID: operationID)
         }
         guard let owned, authorization?.permits(owned, at: clock.now()) == true,
-          permit.consume(operationID: operationID, target: target, at: clock.now())
+              permit.consume(operationID: operationID, target: target, at: clock.now())
         else { return .operationRefused(operationID: operationID) }
       } else {
         guard
           (try? RecoveryIdentity.authorizeRestore(
             observer.read(), target: target,
-            liveOwnership: owned)) != nil
+            liveOwnership: owned
+          )) != nil
         else {
           return .restoreDeferred(operationID: operationID)
         }
@@ -379,8 +411,12 @@ public final class ProductionCoordinator {
       diagnostics.emit(.operationStarted, session: session, operation: progress)
       do {
         try writer.setEnabled(enabled, displayID: target.displayID, scope: scope)
-        diagnostics.emit(.operationReturned, session: session, operation: progress, succeeded: true)
-        {
+        diagnostics.emit(
+          .operationReturned,
+          session: session,
+          operation: progress,
+          succeeded: true
+        ) {
           $0.elapsedMS = max(0, clock.now() - started)
         }
         return .operationReturned(operationID: operationID, succeeded: true)
@@ -411,49 +447,53 @@ public final class ProductionCoordinator {
       observer.read()
     } completion: { [weak self] reading in
       guard let self else { return }
-      self.observationInFlight = false
+      observationInFlight = false
       // Ownership context is read here, not at dispatch. A reading that arrives after a disable
       // returned must be interpreted with that knowledge, or an owned panel reads as missing.
-      let owned = self.state.ownership.map {
+      let owned = state.ownership.map {
         OwnedPanelContext(target: $0.target, disableReturned: self.ownedDisableReturned)
       }
       let power = Self.reconciledLifecycle(
-        reading, current: self.lifecycle, changedAt: self.lifecycleChangedAt, at: sampledAt)
+        reading, current: lifecycle, changedAt: lifecycleChangedAt, at: sampledAt
+      )
       var environment = ControllerObservation.environment(reading, power: power, owned: owned)
-      if let baseline = self.baseline, self.state.ownership != nil {
+      if let baseline, state.ownership != nil {
         environment.restorationMatches = RestorationVerification.matches(baseline, reading: reading)
       }
-      self.send(
+      send(
         .observed(
           .init(
             sequence: sequence, sampledAt: sampledAt,
-            environment: environment)))
+            environment: environment
+          )
+        )
+      )
     }
   }
 
-  /// An independent path back to a usable lifecycle state. A missed workspace notification must
-  /// not leave the coordinator believing the machine is asleep for the rest of the run, and a
-  /// wake notification on its own never establishes that anything is usable yet.
-  nonisolated public static func reconciledLifecycle(
-    _ reading: PlatformReading, current: Power, changedAt: Instant, at now: Instant
+  /// A wake signal starts the transition and a usable observation completes it. Observation
+  /// alone can never reinterpret `willSleep` as a completed wake.
+  public nonisolated static func reconciledLifecycle(
+    _ reading: PlatformReading, current: Power, changedAt _: Instant, at _: Instant
   ) -> Power {
     let usable =
       reading.enumerationError == nil && !reading.displays.isEmpty
-      && reading.foregroundSession == .yes && reading.displays.contains { $0.online && !$0.asleep }
+        && reading.foregroundSession == .yes && reading.displays
+        .contains { $0.online && !$0.asleep }
     switch current {
     case .waking: return usable ? .awake : .waking
-    // Two seconds of usable evidence outrank a sleep notification that was never followed by a
-    // wake. This is reconciliation from observation, not an assumption about timing.
-    case .sleeping: return usable && now - changedAt >= 2_000 ? .awake : .sleeping
+    case .sleeping: return .sleeping
     case .unknown: return usable ? .awake : .unknown
     case .awake: return .awake
     }
   }
 
-  private func currentReading() -> PlatformReading { observer.read() }
+  private func currentReading() -> PlatformReading {
+    observer.read()
+  }
 
   private func scheduleWake(at instant: Instant, from now: Instant) {
-    scheduler.after(Double(max(instant - now, 0)) / 1_000) { [weak self] in self?.send(.tick) }
+    scheduler.after(Double(max(instant - now, 0)) / 1000) { [weak self] in self?.send(.tick) }
   }
 
   private func onLane(_ work: @escaping @Sendable () -> Event) {

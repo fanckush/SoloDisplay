@@ -11,7 +11,8 @@ public final class PrivateDisplayAPI {
 
   public init() {
     let library = dlopen(
-      "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY | RTLD_LOCAL)
+      "/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY | RTLD_LOCAL
+    )
     handle = library
     var found: Configure?
     var name: String?
@@ -29,7 +30,11 @@ public final class PrivateDisplayAPI {
     symbolName = name
   }
 
-  deinit { if let handle { dlclose(handle) } }
+  deinit {
+    if let handle {
+      dlclose(handle)
+    }
+  }
 
   public func setEnabled(_ enabled: Bool, displayID: UInt32, scope: CGConfigureOption) throws {
     guard let configure else { throw DisplayAPIError.unavailable }
@@ -53,7 +58,7 @@ public enum DisplayAPIError: Error, CustomStringConvertible {
   public var description: String {
     switch self {
     case .unavailable: "Private display API unavailable."
-    case .call(let stage, let code):
+    case let .call(stage, code):
       "Display operation failed at \(stage), code \(code). The physical outcome must be checked."
     }
   }

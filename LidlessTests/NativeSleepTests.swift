@@ -44,10 +44,13 @@
         #expect(
           try NativeLabCommand.parse(["--lab-sleep" + suffix] + options)
             == .failure(
-              external: 5, journal: "/tmp/sleep.json", ending: .sleep, rehearsal: rehearsal))
+              external: 5, journal: "/tmp/sleep.json", ending: .sleep, rehearsal: rehearsal
+            )
+        )
         #expect(
           try NativeLabCommand.parse(["--lab-sleep-writer" + suffix] + options)
-            == .sleepWriter(external: 5, journal: "/tmp/sleep.json", rehearsal: rehearsal))
+            == .sleepWriter(external: 5, journal: "/tmp/sleep.json", rehearsal: rehearsal)
+        )
       }
       #expect(throws: (any Error).self) {
         try NativeLabCommand.parse(["--lab-sleep"] + options.dropLast())

@@ -56,7 +56,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   func start() {
     diagnostics.started()
     let validation = (try? BackendValidationStore())?.current(
-      symbolName: PrivateDisplayAPI().symbolName)
+      symbolName: PrivateDisplayAPI().symbolName
+    )
     let observer = LivePlatformObserver(validation: validation)
     let reading = observer.read()
     if let loginID = reading.loginID {
@@ -75,7 +76,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       let coordinator = ProductionCoordinator(
         state: state, clock: MonotonicClock(), observer: observer, writer: LiveDisplayWriter(),
         ownership: journal, preferences: store, protection: self, delegate: self,
-        session: protection.session, diagnostics: diagnostics)
+        session: protection.session, diagnostics: diagnostics
+      )
       self.coordinator = coordinator
       coordinator.start()
     } else {
@@ -115,7 +117,9 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     protectionTimer?.invalidate()
     protectionTimer = nil
     coordinator?.stop()
-    for (center, token) in subscriptions { center.removeObserver(token) }
+    for (center, token) in subscriptions {
+      center.removeObserver(token)
+    }
     subscriptions.removeAll()
     monitor = nil
     apply(protection.receive(.shutdown, at: MonotonicClock().now()))
@@ -132,8 +136,10 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification,
       NSWorkspace.screensDidSleepNotification, NSWorkspace.screensDidWakeNotification,
       NSWorkspace.sessionDidBecomeActiveNotification,
-      NSWorkspace.sessionDidResignActiveNotification,
-    ] { subscribe(workspace, name) }
+      NSWorkspace.sessionDidResignActiveNotification
+    ] {
+      subscribe(workspace, name)
+    }
   }
 
   /// Notifications and display callbacks only ever queue work. They never configure a display.
@@ -144,7 +150,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
         switch name {
         case NSWorkspace.willSleepNotification:
           self.diagnostics.emit(
-            .suspended, session: self.protection.session, reason: .workspaceSleep)
+            .suspended, session: self.protection.session, reason: .workspaceSleep
+          )
           // Protection timing must stop too, or sleep looks like a peer that went silent.
           self.apply(self.protection.receive(.suspended, at: MonotonicClock().now()))
           coordinator.send(.willSleep)
@@ -152,16 +159,20 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
           self.diagnostics.emit(.resumed, session: self.protection.session, reason: .workspaceWake)
           self.apply(self.protection.receive(.resumed, at: MonotonicClock().now()))
           coordinator.send(.waking)
+        case NSWorkspace.screensDidWakeNotification:
+          self.diagnostics.emit(.resumed, session: self.protection.session, reason: .workspaceWake)
+          self.apply(self.protection.receive(.resumed, at: MonotonicClock().now()))
+          coordinator.send(.waking)
         default:
-          let reason: OperationalEvent.Reason?
-          switch name {
-          case NSWorkspace.screensDidSleepNotification: reason = .workspaceScreenSleep
-          case NSWorkspace.screensDidWakeNotification: reason = .workspaceScreenWake
-          case NSWorkspace.sessionDidBecomeActiveNotification: reason = .workspaceSessionActive
-          case NSWorkspace.sessionDidResignActiveNotification: reason = .workspaceSessionInactive
-          default: reason = nil
+          let reason: OperationalEvent.Reason? = switch name {
+          case NSWorkspace.screensDidSleepNotification: .workspaceScreenSleep
+          case NSWorkspace.sessionDidBecomeActiveNotification: .workspaceSessionActive
+          case NSWorkspace.sessionDidResignActiveNotification: .workspaceSessionInactive
+          default: nil
           }
-          if let reason { self.diagnostics.emit(.lifecycleReconciled, reason: reason) }
+          if let reason {
+            self.diagnostics.emit(.lifecycleReconciled, reason: reason)
+          }
           coordinator.platformDidChange()
         }
       }
@@ -196,7 +207,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     }
     for output in outputs {
       switch output {
-      case .send(let message): try? link.send(message)
+      case let .send(message): try? link.send(message)
       case .protectionEstablished:
         diagnostics.emit(.protectionReady, session: protection.session)
         if let id = pendingArm {
@@ -229,9 +240,11 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     // Pairing, not the lease, is what makes disabling available at rest.
     let pairedNow =
       protection.phase == .paired || protection.phase == .arming
-      || protection.phase == .protected
+        || protection.phase == .protected
     if pairedNow != paired {
-      if pairedNow { diagnostics.emit(.paired, session: protection.session) }
+      if pairedNow {
+        diagnostics.emit(.paired, session: protection.session)
+      }
       note(
         "protection phase=\(protection.phase) paired=\(pairedNow) lockUnavailable=\(lockUnavailable)"
       )
@@ -250,17 +263,18 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     apply(protection.receive(.release, at: MonotonicClock().now()))
   }
 
-  func noteOperation(_ progress: OperationProgress?) { protection.note(progress: progress) }
+  func noteOperation(_ progress: OperationProgress?) {
+    protection.note(progress: progress)
+  }
 
   // MARK: - Coordinator delegate
 
-  func coordinator(_ coordinator: ProductionCoordinator, didUpdate presentation: Presentation) {
+  func coordinator(_: ProductionCoordinator, didUpdate presentation: Presentation) {
     // Automatic mode unlocks only after this installation has actually turned the panel off in
     // manual mode and seen it verified back on. Offering it earlier would be asking for trust
     // in a path nothing has exercised here.
     if previous?.panelOwned == true, !presentation.panelOwned, !presentation.pendingRecovery,
-      presentation.fault == nil, presentation.mode == .manual, !preferences.manualPathValidated
-    {
+       presentation.fault == nil, presentation.mode == .manual, !preferences.manualPathValidated {
       mutatePreferences { $0.manualPathValidated = true }
     }
     if previous != presentation {
@@ -287,15 +301,15 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     NSApp.terminate(nil)
   }
 
-  func coordinator(_ coordinator: ProductionCoordinator, didRecord event: RecordedEvent) {
+  func coordinator(_: ProductionCoordinator, didRecord event: RecordedEvent) {
     switch event.event {
     case .observed, .tick: break
     default: note("event \(event.event)")
     }
-    try? recorder.append(event)
+    _ = try? recorder.append(event)
   }
 
-  func coordinatorIsReadyToExit(_ coordinator: ProductionCoordinator) {
+  func coordinatorIsReadyToExit(_: ProductionCoordinator) {
     guard exiting else { return }
     exiting = false
     NSApp.reply(toApplicationShouldTerminate: true)
@@ -303,14 +317,17 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
 
   // MARK: - Menu
 
-  private var automaticAvailable: Bool { preferences.manualPathValidated }
+  private var automaticAvailable: Bool {
+    preferences.manualPathValidated
+  }
 
   var presentation: Presentation {
     coordinator?.presentation
       ?? .init(
         mode: preferences.mode, manualRequestActive: false, panelOwned: false,
         operationInFlight: false, pendingRecovery: false, fault: .journalFailed,
-        unavailability: .faulted)
+        unavailability: .faulted
+      )
   }
 
   private func refreshMenu() {
@@ -319,7 +336,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       current.unavailability = .noRecoveryHelper
     }
     let next = MenuModel.items(
-      current, launchAtLogin: preferences.launchAtLogin, automaticAvailable: automaticAvailable)
+      current, launchAtLogin: preferences.launchAtLogin, automaticAvailable: automaticAvailable
+    )
     // Rebuilding an identical menu would replace the one the user is currently clicking in.
     guard next != items else { return }
     items = next
@@ -372,7 +390,11 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     let service = SMAppService.mainApp
     let wanted = !preferences.launchAtLogin
     do {
-      if wanted { try service.register() } else { try service.unregister() }
+      if wanted {
+        try service.register()
+      } else {
+        try service.unregister()
+      }
       mutatePreferences { $0.launchAtLogin = wanted }
     } catch {
       // Record the real state, never the requested one.
@@ -398,6 +420,8 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
         }
         let exporter = self.exporter
         let trace = self.recorder.trace
+        // Swift 6 requires explicit self after weak-self promotion in this isolated closure.
+        // swiftformat:disable redundantSelf
         Task { @MainActor [weak self] in
           let result = await Task.detached {
             do {
@@ -412,7 +436,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
           guard let self else { return }
           self.exporting = false
           switch result {
-          case .failure(let reason):
+          case let .failure(reason):
             self.diagnostics.emit(.exportFailed, reason: reason, succeeded: false)
             self.showExportMessage(
               "Diagnostics could not be saved",
@@ -420,16 +444,18 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
                 ? "Try another location. No diagnostics were uploaded."
                 : "Lidless could not prepare the diagnostic snapshot. Please report this export error. Nothing was uploaded."
             )
-          case .success(let status):
+          case let .success(status):
             self.diagnostics.emit(.exportCompleted)
             if status != .collected {
               self.showExportMessage(
                 "Diagnostics saved with limited history",
                 "The current replay trace was saved, but no previous-process history was available. "
-                  + DiagnosticsMetadata.consoleInstructions)
+                  + DiagnosticsMetadata.consoleInstructions
+              )
             }
           }
         }
+        // swiftformat:enable redundantSelf
       }
     }
   }

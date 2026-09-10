@@ -61,8 +61,8 @@ public struct ProtectionMessage: Codable, Equatable, Sendable {
   /// Shape validation only. It establishes nothing about the physical display state.
   public var wellFormed: Bool {
     guard version == Self.currentVersion, !session.isEmpty,
-      session.count <= Self.maximumSessionLength, sequence > 0,
-      (detail?.count ?? 0) <= Self.maximumDetailLength
+          session.count <= Self.maximumSessionLength, sequence > 0,
+          (detail?.count ?? 0) <= Self.maximumDetailLength
     else { return false }
     switch kind {
     case .hello, .release:
@@ -98,14 +98,20 @@ public struct ProtectionInbox: Equatable, Sendable {
     self.peer = peer
   }
 
-  public var isClosed: Bool { rejection != nil }
+  public var isClosed: Bool {
+    rejection != nil
+  }
 
   public mutating func close(_ reason: ProtectionRejection = .disconnected) {
-    if rejection == nil { rejection = reason }
+    if rejection == nil {
+      rejection = reason
+    }
   }
 
   public mutating func accept(_ message: ProtectionMessage) throws -> ProtectionMessage {
-    if let rejection { throw rejection }
+    if let rejection {
+      throw rejection
+    }
     func refuse(_ reason: ProtectionRejection) -> ProtectionRejection {
       rejection = reason
       return reason
@@ -125,10 +131,10 @@ public struct ProtectionInbox: Equatable, Sendable {
 
 public struct ProtectionTiming: Equatable, Sendable {
   /// Heartbeat interval. Leases are revoked after `leaseDuration` without a valid exchange.
-  public var heartbeat: Instant = 1_000
-  public var leaseDuration: Instant = 5_000
+  public var heartbeat: Instant = 1000
+  public var leaseDuration: Instant = 5000
   /// Allowance for scheduling jitter before a passed operation deadline counts as stalled.
-  public var stallGrace: Instant = 1_000
+  public var stallGrace: Instant = 1000
   public init() {}
 }
 
@@ -139,11 +145,18 @@ public struct ControllerProtection: Equatable, Sendable {
     case disconnected, rejectedMessage, ownershipMismatch, missingLease, invalidAcknowledgement
     case peerFault, unexpectedMessage, leaseExpired
   }
+
   public private(set) var lossReason: LossReason?
   public private(set) var rejection: ProtectionRejection?
   public private(set) var activityResumeCount: UInt64 = 0
-  public var diagnosticChallenge: UInt64? { lease?.challenge }
-  public var diagnosticLeaseDeadline: Instant? { lease?.deadline }
+  public var diagnosticChallenge: UInt64? {
+    lease?.challenge
+  }
+
+  public var diagnosticLeaseDeadline: Instant? {
+    lease?.deadline
+  }
+
   public enum Phase: Equatable, Sendable {
     case pairing, paired, arming, protected, lost, released
   }
@@ -199,7 +212,9 @@ public struct ControllerProtection: Equatable, Sendable {
   }
 
   /// Report the outstanding operation so heartbeats carry a stall the helper can detect.
-  public mutating func note(progress: OperationProgress?) { self.progress = progress }
+  public mutating func note(progress: OperationProgress?) {
+    self.progress = progress
+  }
 
   @discardableResult public mutating func receive(_ input: Input, at now: Instant) -> [Output] {
     guard now >= self.now else { return [] }
@@ -211,12 +226,12 @@ public struct ControllerProtection: Equatable, Sendable {
       guard phase == .pairing else { return [] }
       return [.send(next(.hello, at: now))]
 
-    case .peerFailed(let reason):
+    case let .peerFailed(reason):
       inbox.close(reason)
       rejection = reason
       return fail(at: now, reason: reason == .disconnected ? .disconnected : .rejectedMessage)
 
-    case .received(let raw):
+    case let .received(raw):
       let message: ProtectionMessage
       do { message = try inbox.accept(raw) } catch {
         rejection = inbox.rejection
@@ -252,7 +267,7 @@ public struct ControllerProtection: Equatable, Sendable {
         return fail(at: now, reason: .unexpectedMessage)
       }
 
-    case .arm(let owned):
+    case let .arm(owned):
       guard phase == .paired else { return [] }
       ownership = owned
       phase = .arming
@@ -278,12 +293,14 @@ public struct ControllerProtection: Equatable, Sendable {
       guard suspension.resume() else { return [] }
       let renewal = lease?.receive(.resumed, at: now)
       lastChallengeAt = now
-      if case .challenge(_, let number)? = renewal?.first {
+      if case let .challenge(_, number)? = renewal?.first {
         return [
           .send(
             next(
               .progress, at: now, challenge: number,
-              ownership: ownership, progress: progress))
+              ownership: ownership, progress: progress
+            )
+          )
         ]
       }
       return []
@@ -302,10 +319,16 @@ public struct ControllerProtection: Equatable, Sendable {
       guard phase == .protected, now - lastChallengeAt >= timing.heartbeat else { return [] }
       let renewal = current.receive(.requestRenewal, at: now)
       lease = current
-      guard case .challenge(_, let number)? = renewal.first else { return [] }
+      guard case let .challenge(_, number)? = renewal.first else { return [] }
       lastChallengeAt = now
       return [
-        .send(next(.progress, at: now, challenge: number, ownership: ownership, progress: progress))
+        .send(next(
+          .progress,
+          at: now,
+          challenge: number,
+          ownership: ownership,
+          progress: progress
+        ))
       ]
     }
   }
@@ -319,14 +342,15 @@ public struct ControllerProtection: Equatable, Sendable {
   }
 
   private mutating func next(
-    _ kind: ProtectionKind, at now: Instant, challenge: UInt64 = 0,
+    _ kind: ProtectionKind, at _: Instant, challenge: UInt64 = 0,
     ownership: Ownership? = nil, progress: OperationProgress? = nil
   ) -> ProtectionMessage {
     let sequence = nextSequence
     nextSequence += 1
     return .init(
       session: session, sender: .controller, sequence: sequence, challenge: challenge,
-      kind: kind, ownership: ownership, progress: progress)
+      kind: kind, ownership: ownership, progress: progress
+    )
   }
 }
 
@@ -408,7 +432,7 @@ public struct HelperProtection: Equatable, Sendable {
       justResumed = true
       return []
 
-    case .witness(let target):
+    case let .witness(target):
       witnessedTarget = target
       witnessedAt = target == nil ? nil : now
       return []
@@ -417,12 +441,12 @@ public struct HelperProtection: Equatable, Sendable {
       // Only an armed, still-owned protection authorizes recovery. Otherwise stand down.
       return revoke(.controllerExited, at: now)
 
-    case .peerFailed(let rejection):
+    case let .peerFailed(rejection):
       inbox?.close(rejection)
       // A closed pipe is lost contact, not confirmed termination. Takeover still proves that.
       return revoke(rejection == .disconnected ? .contactLost : .protocolViolation, at: now)
 
-    case .received(let raw):
+    case let .received(raw):
       if inbox == nil {
         // The opening frame establishes this pairing's session. Everything after it is
         // validated against that session as strictly as any other stream.
@@ -449,7 +473,7 @@ public struct HelperProtection: Equatable, Sendable {
         // The claimed target must agree with this process's own fresh observation. A stale
         // witness is no witness: the panel could have changed since it was taken.
         guard let claimed = message.ownership, let witnessedTarget, let witnessedAt,
-          claimed.target == witnessedTarget, now - witnessedAt <= timing.leaseDuration
+              claimed.target == witnessedTarget, now - witnessedAt <= timing.leaseDuration
         else {
           return revoke(.protocolViolation, at: now)
         }
@@ -465,8 +489,7 @@ public struct HelperProtection: Equatable, Sendable {
         // Heartbeats prove the loop runs. They never prove the display call returned. The
         // first report after a resume carries a deadline set before the machine slept.
         if let progress = message.progress, !justResumed,
-          now > progress.deadline + timing.stallGrace
-        {
+           now > progress.deadline + timing.stallGrace {
           return revoke(.operationStalled, at: now)
         }
         justResumed = false
@@ -493,14 +516,16 @@ public struct HelperProtection: Equatable, Sendable {
         return receive(.resumed, at: now)
       }
       guard !suspension.suspended, phase == .protecting,
-        now - lastProgressAt >= timing.leaseDuration
+            now - lastProgressAt >= timing.leaseDuration
       else { return [] }
       return revoke(.heartbeatExpired, at: now)
     }
   }
 
-  private mutating func revoke(_ reason: Reason, at now: Instant) -> [Output] {
-    if self.reason == nil { self.reason = reason }
+  private mutating func revoke(_ reason: Reason, at _: Instant) -> [Output] {
+    if self.reason == nil {
+      self.reason = reason
+    }
     guard phase == .protecting || phase == .revoked, let ownership else {
       // Nothing was ever armed, so there is no owned panel this helper may restore.
       phase = .standingDown
@@ -513,12 +538,13 @@ public struct HelperProtection: Equatable, Sendable {
   }
 
   private mutating func next(
-    _ kind: ProtectionKind, at now: Instant, challenge: UInt64 = 0
+    _ kind: ProtectionKind, at _: Instant, challenge: UInt64 = 0
   ) -> ProtectionMessage {
     let sequence = nextSequence
     nextSequence += 1
     return .init(
       session: session ?? "", sender: .helper, sequence: sequence, challenge: challenge, kind: kind,
-      ownership: kind == .armed || kind == .acknowledge ? ownership : nil)
+      ownership: kind == .armed || kind == .acknowledge ? ownership : nil
+    )
   }
 }

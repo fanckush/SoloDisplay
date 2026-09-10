@@ -7,6 +7,7 @@ public struct RecoveryContinuation: Equatable, Sendable {
   public enum Phase: Equatable, Sendable {
     case waiting, writing, verifying, clearing, finished, blocked
   }
+
   public enum Action: Equatable, Sendable { case none, restore, clear }
   public private(set) var phase: Phase = .waiting
   private var verificationDeadline: Instant?
@@ -33,22 +34,37 @@ public struct RecoveryContinuation: Equatable, Sendable {
       phase = .writing
       return .restore
     }
-    if verificationDeadline == nil { verificationDeadline = now + 3_000 }
-    if now >= verificationDeadline! { phase = .blocked }
+    if verificationDeadline == nil {
+      verificationDeadline = now + 3000
+    }
+    if now >= verificationDeadline! {
+      phase = .blocked
+    }
     return .none
   }
 
   public mutating func writeDeferred() {
-    if phase == .writing { phase = .waiting }
+    if phase == .writing {
+      phase = .waiting
+    }
   }
+
   public mutating func writeReturned() {
     if phase == .writing {
       phase = .verifying
       verificationDeadline = nil
     }
   }
+
   public mutating func journalCleared(succeeded: Bool) {
-    if phase == .clearing { phase = succeeded ? .finished : .blocked }
+    if phase == .clearing {
+      phase = succeeded ? .finished : .blocked
+    }
   }
-  public mutating func block() { if phase != .finished { phase = .blocked } }
+
+  public mutating func block() {
+    if phase != .finished {
+      phase = .blocked
+    }
+  }
 }

@@ -1,5 +1,4 @@
 import Testing
-
 @testable import LidlessCore
 
 @Test func shadowCannotAcknowledgeItsOwnJournalOrExecuteEffects() {
@@ -7,12 +6,12 @@ import Testing
   shadow.receive(.selectMode(.automatic), at: 0)
   shadow.receive(.protectionAvailable(true), at: 0)
   shadow.observe(environment(), at: 0)
-  shadow.observe(environment(), at: 2_000)
+  shadow.observe(environment(), at: 2000)
   // A shadow executor cannot acknowledge preference persistence either.
   #expect(shadow.state.operation == nil)
   #expect(shadow.state.ownership == nil)
   #expect(shadow.rejectedEffectCount == 1)
-  shadow.tick(at: 6_000)
+  shadow.tick(at: 6000)
   #expect(shadow.state.ownership == nil)
 }
 

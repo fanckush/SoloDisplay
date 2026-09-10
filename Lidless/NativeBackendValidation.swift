@@ -29,7 +29,8 @@
         """
         Lidless will turn the internal display off for about three seconds, then turn it back on.
         Watch the internal screen. Arrangement: \(mirror == nil ? "extended" : "mirrored").
-        """)
+        """
+      )
       fflush(stdout)
 
       var suppressed = false
@@ -38,7 +39,8 @@
         suppressed = true
         try await confirmSuppressed(
           target: target, external: external, mirror: mirror,
-          wasActive: initial.displays.contains { $0.id == target.displayID && $0.active })
+          wasActive: initial.displays.contains { $0.id == target.displayID && $0.active }
+        )
         try report("backend-validation-suppressed")
         try await Task.sleep(for: .seconds(3))
         try NativeLabSafety.ownedContext(DisplayObserver.read(), journal: journal)
@@ -68,7 +70,7 @@
         osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
         hardwareModel: BackendValidation.hardwareModel(), symbolName: symbol,
         evidence:
-          "Verified off and on round trip on a \(mirror == nil ? "extended" : "mirrored") arrangement, with the observed layout restored."
+        "Verified off and on round trip on a \(mirror == nil ? "extended" : "mirrored") arrangement, with the observed layout restored."
       )
       try BackendValidationStore().save(record)
       print(
@@ -78,7 +80,8 @@
         This record only covers this Mac and this macOS build. Confirm you actually saw the
         internal screen go off and come back. If you did not, delete:
         \(BackendValidationStore.recordPath())
-        """)
+        """
+      )
       fflush(stdout)
     }
 
@@ -97,11 +100,14 @@
         let panelSuppressed = entry == nil || (wasActive && entry?.active == false)
         let externalUsable =
           mirror?.externalUsable(current, external: external)
-          ?? current.displays.contains { $0.id == external && $0.usableExternalCandidate }
-        if panelSuppressed && externalUsable { return }
+            ?? current.displays.contains { $0.id == external && $0.usableExternalCandidate }
+        if panelSuppressed, externalUsable {
+          return
+        }
       } while ProcessInfo.processInfo.systemUptime < deadline
       throw NativeLabError.refused(
-        "The internal panel was not observed off, so the backend is not validated.")
+        "The internal panel was not observed off, so the backend is not validated."
+      )
     }
   }
 #endif

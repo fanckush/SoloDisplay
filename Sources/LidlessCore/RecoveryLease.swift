@@ -29,7 +29,7 @@ public struct RecoveryLease: Equatable, Sendable {
   public private(set) var challenge: UInt64 = 1
   public private(set) var awaitingReply = true
 
-  public init(session: String, at now: Instant, duration: Instant = 3_000) {
+  public init(session: String, at now: Instant, duration: Instant = 3000) {
     precondition(!session.isEmpty && now >= 0 && duration > 0 && now <= .max - duration)
     self.session = session
     self.duration = duration
@@ -68,14 +68,14 @@ public struct RecoveryLease: Equatable, Sendable {
       return [.restore]
     }
     switch event {
-    case .acknowledged(let session, let number):
+    case let .acknowledged(session, number):
       guard session == self.session, number == challenge, awaitingReply else { return [] }
       awaitingReply = false
       phase = .protected
     // Bound renewed validity to when the challenge was sent, not when a delayed reply arrived.
     case .requestRenewal:
       guard phase == .protected, !awaitingReply, challenge < .max,
-        now <= .max - duration
+            now <= .max - duration
       else { return [] }
       challenge += 1
       awaitingReply = true
@@ -101,6 +101,7 @@ public struct RecoveryTakeover: Equatable, Sendable {
     case watching, stoppingWriter, acquiringLock, readyToRestore, restoring, verifying
     case clearingJournal, finished, blocked
   }
+
   public enum Event: Equatable, Sendable {
     case recoveryNeeded
     case writerTerminationConfirmed
@@ -111,9 +112,11 @@ public struct RecoveryTakeover: Equatable, Sendable {
     case journalCleared
     case failed
   }
+
   public enum Effect: Equatable, Sendable {
     case stopWriter, acquireLock, inspectOwnedTarget, restore, verify, clearJournal
   }
+
   public private(set) var phase: Phase = .watching
   public init() {}
 

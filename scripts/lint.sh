@@ -19,15 +19,15 @@ if [[ "${1:-}" == "--staged" ]]; then
 
   echo ">> Checking staged Swift files with SwiftFormat"
   git diff --cached --name-only --diff-filter=ACMR -z -- '*.swift' \
-    | xargs -0 swiftformat --lint
+    | xargs -0 swiftformat --lint --cache ignore
 
   echo ">> Checking staged Swift files with SwiftLint"
   git diff --cached --name-only --diff-filter=ACMR -z -- '*.swift' \
-    | xargs -0 swiftlint lint --strict --config .swiftlint.yml
+    | xargs -0 swiftlint lint --strict --no-cache --config .swiftlint.yml
 else
   echo ">> Checking repository with SwiftFormat"
-  swiftformat --lint .
+  swiftformat --lint --cache ignore .
 
   echo ">> Checking repository with SwiftLint"
-  swiftlint lint --strict --config .swiftlint.yml
+  swiftlint lint --strict --no-cache --config .swiftlint.yml
 fi

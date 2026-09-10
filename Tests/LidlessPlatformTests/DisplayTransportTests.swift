@@ -1,5 +1,4 @@
 import Testing
-
 @testable import LidlessPlatform
 
 /// Fixtures captured from the tested Mac on 2026-09-08 with the Dell U3223QE connected by
@@ -8,13 +7,15 @@ private let capturedExternal = TransportEvidence(
   displayID: 5, builtIn: false, vendor: 4268, model: 17020, serial: 808_923_980, unit: 4,
   match: .vendorModelSerial,
   providerChain: ["IOMobileFramebufferShim", "AppleARMIODevice", "AppleSoCIO"],
-  providerNames: ["IOMobileFramebufferShim", "dispext0", "AppleSoCIO"])
+  providerNames: ["IOMobileFramebufferShim", "dispext0", "AppleSoCIO"]
+)
 
 private let capturedInternal = TransportEvidence(
   displayID: 1, builtIn: true, vendor: 1552, model: 41052, serial: 4_251_086_178, unit: 0,
   match: .vendor,
   providerChain: ["IOMobileFramebufferShim", "AppleARMIODevice", "AppleSoCIO"],
-  providerNames: ["IOMobileFramebufferShim", "disp0", "AppleSoCIO"])
+  providerNames: ["IOMobileFramebufferShim", "disp0", "AppleSoCIO"]
+)
 
 struct DisplayTransportTests {
   @Test func capturedHardwareClassifiesAsNative() {

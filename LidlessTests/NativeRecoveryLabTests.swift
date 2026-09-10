@@ -3,7 +3,6 @@
   import LidlessCore
   import LidlessPlatform
   import Testing
-
   @testable import Lidless
 
   @MainActor
@@ -54,10 +53,13 @@
         #expect(
           try NativeLabCommand.parse(["--lab-mirror" + suffix] + options)
             == .failure(
-              external: 5, journal: "/tmp/mirror.json", ending: .mirror, rehearsal: rehearsal))
+              external: 5, journal: "/tmp/mirror.json", ending: .mirror, rehearsal: rehearsal
+            )
+        )
         #expect(
           try NativeLabCommand.parse(["--lab-mirror-writer" + suffix] + options)
-            == .mirrorWriter(external: 5, journal: "/tmp/mirror.json", rehearsal: rehearsal))
+            == .mirrorWriter(external: 5, journal: "/tmp/mirror.json", rehearsal: rehearsal)
+        )
       }
     }
 
@@ -69,6 +71,7 @@
       reading.displays[1].mirrored = true
       return reading
     }
+
     @Test func ordinaryLaunchNeverSelectsAHardwareExperiment() throws {
       #expect(try NativeLabCommand.parse([]) == nil)
       #expect(try NativeLabCommand.parse(["--diagnostics"]) == nil)
@@ -78,11 +81,12 @@
     @Test func handoffRequiresAnExactExplicitAttestation() throws {
       let args = [
         "--lab-handoff", "--external", "5", "--journal", "/tmp/example.recovery.json",
-        "--native-wired-attested",
+        "--native-wired-attested"
       ]
       #expect(
         try NativeLabCommand.parse(args)
-          == .handoff(external: 5, journal: "/tmp/example.recovery.json"))
+          == .handoff(external: 5, journal: "/tmp/example.recovery.json")
+      )
       #expect(throws: (any Error).self) { try NativeLabCommand.parse(Array(args.dropLast())) }
       #expect(throws: (any Error).self) { try NativeLabCommand.parse(args + ["--external", "6"]) }
       #expect(throws: (any Error).self) { try NativeLabCommand.parse(args + ["--ending", "exit"]) }
@@ -93,7 +97,7 @@
         #expect(throws: (any Error).self) {
           try NativeLabCommand.parse([
             "--lab-handoff", "--external", external, "--journal", "/tmp/example.json",
-            "--native-wired-attested",
+            "--native-wired-attested"
           ])
         }
       }
@@ -109,10 +113,11 @@
     @Test func childCommandCannotSelectASeparateTarget() throws {
       #expect(
         try NativeLabCommand.parse(["--lab-restore-child", "--journal", "/tmp/example.json"])
-          == .restoreChild(journal: "/tmp/example.json"))
+          == .restoreChild(journal: "/tmp/example.json")
+      )
       #expect(throws: (any Error).self) {
         try NativeLabCommand.parse([
-          "--lab-restore-child", "--journal", "/tmp/example.json", "--external", "5",
+          "--lab-restore-child", "--journal", "/tmp/example.json", "--external", "5"
         ])
       }
     }
@@ -120,19 +125,23 @@
     @Test func childSuccessNeverAuthorizesADuplicateEnable() {
       for active in [false, true] {
         #expect(
-          NativeLabHandoffDecision.decide(child: .exited(0), panelActive: active) == .verifyOnly)
+          NativeLabHandoffDecision.decide(child: .exited(0), panelActive: active) == .verifyOnly
+        )
         #expect(
           NativeLabHandoffDecision.decide(child: .terminationUnverified, panelActive: active)
-            == .forbidSecondWriter)
+            == .forbidSecondWriter
+        )
       }
     }
 
     @Test func fallbackRequiresAQuiescentFailedChildAndMissingActivePanel() {
       for outcome: NativeLabChildOutcome in [.exited(1), .exited(-1), .notStarted] {
         #expect(
-          NativeLabHandoffDecision.decide(child: outcome, panelActive: false) == .restoreInOwner)
+          NativeLabHandoffDecision.decide(child: outcome, panelActive: false) == .restoreInOwner
+        )
         #expect(
-          NativeLabHandoffDecision.decide(child: outcome, panelActive: true) == .reportChildFailure)
+          NativeLabHandoffDecision.decide(child: outcome, panelActive: true) == .reportChildFailure
+        )
       }
     }
 
@@ -188,7 +197,8 @@
            "online":true,"asleep":false,"mirrored":false,"width":1920,"height":1080,
            "originX":1512,"originY":0,"modeAvailable":true,"transport":"unclassified"}
          ]}
-        """#.utf8)
+        """#.utf8
+      )
       return try JSONDecoder().decode(PlatformReading.self, from: data)
     }
   }

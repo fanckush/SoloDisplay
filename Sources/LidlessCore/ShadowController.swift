@@ -13,7 +13,8 @@ public struct ShadowController: Sendable {
     observationCount += 1
     receive(
       .observed(.init(sequence: observationCount, sampledAt: now, environment: environment)),
-      at: now)
+      at: now
+    )
   }
 
   public mutating func receive(_ event: Event, at now: Instant) {
@@ -21,10 +22,12 @@ public struct ShadowController: Sendable {
     state = transition.state
     for effect in transition.effects {
       switch effect {
-      case .wakeAt(let instant): nextWake = instant
+      case let .wakeAt(instant): nextWake = instant
       case .observe, .exitReady: break
       default:
-        if rejectedEffectCount < .max { rejectedEffectCount += 1 }
+        if rejectedEffectCount < .max {
+          rejectedEffectCount += 1
+        }
       }
     }
   }

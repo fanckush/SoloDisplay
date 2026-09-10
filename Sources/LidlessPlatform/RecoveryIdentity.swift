@@ -7,22 +7,31 @@ public enum RecoveryIdentity {
     liveOwnership: Ownership? = nil
   ) -> RecoveryReadiness {
     // A positively different identity is not a temporary lifecycle condition.
-    if let boot = reading.bootID, boot != target.bootID { return .blocked }
-    if let login = reading.loginID, login != target.loginID { return .blocked }
+    if let boot = reading.bootID, boot != target.bootID {
+      return .blocked
+    }
+    if let login = reading.loginID, login != target.loginID {
+      return .blocked
+    }
     guard reading.enumerationError == nil else { return .waiting }
     guard (try? checkCurrentDisplays(reading.displays, target: target)) != nil else {
       return .blocked
     }
     guard reading.bootID != nil, reading.loginID != nil,
-      reading.foregroundSession == .yes, reading.lid == .open
+          reading.foregroundSession == .yes, reading.lid == .open
     else { return .waiting }
-    if !reading.displays.isEmpty && reading.displays.allSatisfy({ $0.asleep }) { return .waiting }
+    if !reading.displays.isEmpty && reading.displays.allSatisfy(\.asleep) {
+      return .waiting
+    }
     if let current = reading.displays.first(where: { $0.id == target.displayID }) {
-      if current.asleep { return .waiting }
+      if current.asleep {
+        return .waiting
+      }
       return current.uuidResolvedID == target.displayID ? .ready : .waiting
     }
     return liveOwnership?.target == target ? .ready : .waiting
   }
+
   /// Absence is usable only for an operation witnessed by this live process pairing. A cold
   /// journal is an obligation to reconcile, not authority to address an unresolvable ID.
   public static func authorizeRestore(
@@ -35,10 +44,11 @@ public enum RecoveryIdentity {
     case .blocked: throw IdentityError.contradictoryTarget
     }
   }
-  public static func checkCurrentDisplays(_ displays: [DisplayReading], target: PanelTarget) throws
-  {
+
+  public static func checkCurrentDisplays(_ displays: [DisplayReading],
+                                          target: PanelTarget) throws {
     if let current = displays.first(where: { $0.id == target.displayID }) {
-      guard current.builtIn && current.uuid == target.displayUUID else {
+      guard current.builtIn, current.uuid == target.displayUUID else {
         throw IdentityError.contradictoryTarget
       }
     }
@@ -56,7 +66,7 @@ public enum RecoveryIdentity {
     parentPID: Int32, displays: [DisplayReading]
   ) throws {
     try journal.validate(bootID: bootID, loginID: loginID)
-    guard parentPID > 1 && parentPID == journal.ownerPID else {
+    guard parentPID > 1, parentPID == journal.ownerPID else {
       throw IdentityError.unrelatedParent
     }
     try checkCurrentDisplays(displays, target: journal.target)

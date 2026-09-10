@@ -57,11 +57,12 @@ BetterDisplay produces the same effect but is closed-source, so its method is no
 public.
 
 Because the technique is private and the failure mode is a black screen, the app
-is built defensively. A normal launch starts two processes: a supervising recovery
-helper with no interface, and the menu-bar controller it launches as its child
-over private pipes. A durable ownership record is written before any display
-change and cleared only after a verified restoration, so the panel is brought back
-if the controller exits, crashes, hangs, or the external display is unplugged. See
+is built defensively. A normal launch starts two processes: a normally hidden
+recovery supervisor, and the menu-bar controller it launches as its child over
+private pipes. A durable ownership record is written before any display change
+and cleared only after a verified restoration. If controller recovery is unresolved,
+the supervisor takes over the menu-bar interface instead of remaining invisible.
+The potentially blocking recovery call runs only in a bounded one-shot worker. See
 [docs/architecture.md](docs/architecture.md) for the design and
 [docs/status.md](docs/status.md) for what has been tested.
 
@@ -86,9 +87,11 @@ external displays, docks, DisplayLink, wireless and virtual displays, fast user
 switching, logout, and other Macs or macOS builds. See
 [docs/status.md](docs/status.md) for the scenario-by-scenario record.
 
-Known limits: simultaneous failure of both processes, and an unresponsive OS or
-display driver, are outside what the recovery design can cover. Suppression is
-application scoped, so other processes still report the panel as present.
+Known limits: an unresponsive OS or display driver can still prevent physical
+restoration, and simultaneous loss of the controller and supervisor can discard
+live recovery authority. A stuck recovery call cannot consume the supervisor or
+its recovery interface. Suppression is application scoped, so other processes
+still report the panel as present.
 
 ## Build from source
 

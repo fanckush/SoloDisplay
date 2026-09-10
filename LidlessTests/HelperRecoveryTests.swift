@@ -3,27 +3,39 @@ import LidlessCore
 import LidlessPlatform
 import Synchronization
 import Testing
-
 @testable import Lidless
 
 private final class RecoveryObserver: PlatformObserving {
   let value: Mutex<PlatformReading>
-  init(_ reading: PlatformReading) { value = Mutex(reading) }
-  func read() -> PlatformReading { value.withLock { $0 } }
-  func set(_ reading: PlatformReading) { value.withLock { $0 = reading } }
+  init(_ reading: PlatformReading) {
+    value = Mutex(reading)
+  }
+
+  func read() -> PlatformReading {
+    value.withLock { $0 }
+  }
+
+  func set(_ reading: PlatformReading) {
+    value.withLock { $0 = reading }
+  }
 }
 
 private final class RecoveryWriter: DisplayWriting {
   let calls = Mutex<[Bool]>([])
-  func setEnabled(_ enabled: Bool, displayID: UInt32, scope: DisplayScope) throws {
+  func setEnabled(_ enabled: Bool, displayID _: UInt32, scope _: DisplayScope) throws {
     calls.withLock { $0.append(enabled) }
   }
 }
 
 private final class RecoveryLog: OperationalEventSink {
   let storage = Mutex<[OperationalEvent]>([])
-  func record(_ event: OperationalEvent) { storage.withLock { $0.append(event) } }
-  var events: [OperationalEvent] { storage.withLock { $0 } }
+  func record(_ event: OperationalEvent) {
+    storage.withLock { $0.append(event) }
+  }
+
+  var events: [OperationalEvent] {
+    storage.withLock { $0 }
+  }
 }
 
 /// Tests advance the production loop at its suspension points, without wall-clock sleeps.
@@ -37,10 +49,14 @@ private actor RecoveryGate {
       observer = nil
     }
   }
+
   func untilPaused() async {
-    if paused != nil { return }
+    if paused != nil {
+      return
+    }
     await withCheckedContinuation { observer = $0 }
   }
+
   func advance() {
     let next = paused
     paused = nil
@@ -56,7 +72,8 @@ private actor RecoveryGate {
     let store = try ProductionJournalStore(directory: folder)
     let record = ProductionRecord(
       session: "test", operationID: 1, target: target, scope: "app",
-      controllerPID: 123, helperPID: 456, topology: baseline.displays)
+      controllerPID: 123, helperPID: 456, topology: baseline.displays
+    )
     try store.prepare(record)
     var absent = baseline
     absent.displays.removeFirst()
@@ -69,10 +86,12 @@ private actor RecoveryGate {
       executable: folder.appendingPathComponent("never-launched"),
       store: store, recoveryObserver: observer, recoveryWriter: writer,
       recoveryLockDirectory: folder, diagnostics: .init(role: .helper, sink: log),
-      recoveryPause: { await gate.pause() })
+      recoveryPause: { await gate.pause() }
+    )
     let recovery = Task {
       await helper.restore(
-        record, reason: "test", liveOwnership: .init(target: target, operationID: 1))
+        record, reason: "test", liveOwnership: .init(target: target, operationID: 1)
+      )
     }
     await gate.untilPaused()
     #expect(writer.calls.withLock { $0 }.isEmpty)
@@ -100,8 +119,9 @@ private actor RecoveryGate {
     #expect(
       log.events.map(\.code) == [
         .writerLockAcquired, .recoveryWaiting, .operationStarted, .operationReturned,
-        .operationVerified, .journalClearing, .journalCleared, .recoveryVerified,
-      ])
+        .operationVerified, .journalClearing, .journalCleared, .recoveryVerified
+      ]
+    )
     let released = try SessionWriterLock(loginID: target.loginID, directory: folder)
     released.release()
   }
@@ -113,7 +133,8 @@ private actor RecoveryGate {
     let store = try ProductionJournalStore(directory: folder)
     let record = ProductionRecord(
       session: "test", operationID: 1, target: target, scope: "app",
-      controllerPID: 123, helperPID: 456, topology: baseline.displays)
+      controllerPID: 123, helperPID: 456, topology: baseline.displays
+    )
     try store.prepare(record)
     var contradictory = baseline
     contradictory.bootID = "a-different-boot"
@@ -122,7 +143,8 @@ private actor RecoveryGate {
     let helper = HelperRuntime(
       executable: folder.appendingPathComponent("never-launched"),
       store: store, recoveryObserver: RecoveryObserver(contradictory), recoveryWriter: writer,
-      recoveryLockDirectory: folder, diagnostics: .init(role: .helper, sink: log))
+      recoveryLockDirectory: folder, diagnostics: .init(role: .helper, sink: log)
+    )
     #expect(await helper.restore(record, reason: "test") == false)
     #expect(try store.load() == record)
     #expect(writer.calls.withLock { $0 }.isEmpty)
@@ -145,6 +167,8 @@ private actor RecoveryGate {
            "online":true,"asleep":false,"mirrored":false,"width":1920,"height":1080,
            "originX":1512,"originY":0,"modeAvailable":true,"transport":"unclassified"}
          ]}
-        """#.utf8))
+        """#.utf8
+      )
+    )
   }
 }

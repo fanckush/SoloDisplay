@@ -9,19 +9,21 @@ struct RuntimeSuspension: Equatable, Sendable {
     suspended = true
     firstActivity = nil
   }
+
   @discardableResult mutating func resume() -> Bool {
     let changed = suspended
     suspended = false
     firstActivity = nil
     return changed
   }
+
   mutating func observesActivity(at now: Instant) -> Bool {
     guard suspended else { return false }
     guard let firstActivity else {
-      self.firstActivity = now
+      firstActivity = now
       return false
     }
     // A single delayed callback is not a wake. Require another execution after the interval.
-    return now >= firstActivity && now - firstActivity >= 2_000
+    return now >= firstActivity && now - firstActivity >= 2000
   }
 }
