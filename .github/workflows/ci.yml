@@ -16,6 +16,9 @@ permissions:
 jobs:
   package-tests:
     name: Swift package tests
+    permissions:
+      contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -39,11 +42,28 @@ jobs:
       - name: Build
         run: swift build
       - name: Test
-        run: swift test
+        run: swift test --enable-code-coverage
+      - name: Locate coverage report
+        if: github.event_name == 'push'
+        id: coverage
+        run: echo "path=$(swift test --show-codecov-path)" >> "$GITHUB_OUTPUT"
+      - name: Upload package coverage
+        if: github.event_name == 'push'
+        uses: codecov/codecov-action@v5
+        with:
+          disable_search: true
+          fail_ci_if_error: true
+          files: ${{ steps.coverage.outputs.path }}
+          flags: package-tests
+          name: package-tests
+          use_oidc: true
 
   app-tests:
     name: App unit tests (unsigned)
     runs-on: macos-26
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Select latest Xcode
@@ -52,6 +72,7 @@ jobs:
         run: brew install xcbeautify
       # Account-independent build: ad-hoc signing, no team, unit tests only.
       # The UI test target is intentionally skipped (needs interactive automation).
+      # Keep Xcode's default DerivedData location so Codecov can find its profdata.
       - name: Build & test app
         run: |
           set -o pipefail
@@ -60,10 +81,19 @@ jobs:
             -scheme SoloDisplay \
             -configuration Debug \
             -destination 'platform=macOS,arch=arm64' \
-            -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            -enableCodeCoverage YES \
             test -only-testing:SoloDisplayTests | xcbeautify
         shell: bash
+      - name: Upload app coverage
+        if: github.event_name == 'push'
+        uses: codecov/codecov-action@v5
+        with:
+          fail_ci_if_error: true
+          flags: app-tests
+          name: app-tests
+          swift_project: SoloDisplay
+          use_oidc: true
 
   lint:
     name: Lint (non-blocking)
