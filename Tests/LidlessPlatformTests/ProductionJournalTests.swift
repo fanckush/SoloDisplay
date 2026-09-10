@@ -1,7 +1,6 @@
 import Foundation
 import LidlessCore
 import Testing
-
 @testable import LidlessPlatform
 
 private func workspace() throws -> URL {
@@ -12,7 +11,8 @@ private func workspace() throws -> URL {
 }
 
 private let target = PanelTarget(
-  displayID: 4, displayUUID: "built-in", bootID: "boot-a", loginID: 501)
+  displayID: 4, displayUUID: "built-in", bootID: "boot-a", loginID: 501
+)
 
 private func record(
   session: String = "run-1", operationID: UInt64 = 1, target: PanelTarget = target,
@@ -20,7 +20,8 @@ private func record(
 ) -> ProductionRecord {
   .init(
     session: session, operationID: operationID, target: target, scope: "app",
-    controllerPID: 100, helperPID: 99, topology: topology)
+    controllerPID: 100, helperPID: 99, topology: topology
+  )
 }
 
 struct ProductionJournalTests {
@@ -36,7 +37,8 @@ struct ProductionJournalTests {
     let attributes = try FileManager.default.attributesOfItem(atPath: store.url.path)
     #expect(attributes[.posixPermissions] as? NSNumber == 0o600)
     let directory = try FileManager.default.attributesOfItem(
-      atPath: store.url.deletingLastPathComponent().path)
+      atPath: store.url.deletingLastPathComponent().path
+    )
     #expect(directory[.posixPermissions] as? NSNumber == 0o700)
   }
 
@@ -46,8 +48,9 @@ struct ProductionJournalTests {
 
     try store.prepare(record())
     guard
-      case .unresolved(let unresolved) = store.reconcile(
-        bootID: "boot-a", loginID: 501, displays: [])
+      case let .unresolved(unresolved) = store.reconcile(
+        bootID: "boot-a", loginID: 501, displays: []
+      )
     else {
       Issue.record("expected unresolved ownership for this boot and login")
       return
@@ -72,7 +75,7 @@ struct ProductionJournalTests {
     for reconciliation in [
       store.reconcile(bootID: "boot-a", loginID: 501, displays: []),
       store.reconcile(bootID: "boot-b", loginID: 501, displays: []),
-      store.reconcile(bootID: nil, loginID: nil, displays: []),
+      store.reconcile(bootID: nil, loginID: nil, displays: [])
     ] {
       #expect(reconciliation.inhibitsDisabling)
       #expect(reconciliation.explanation != nil)
@@ -85,10 +88,12 @@ struct ProductionJournalTests {
     let impostor = DisplayReading(
       id: 9, uuid: "someone-else", uuidResolvedID: 9, builtIn: true, active: true, online: true,
       asleep: false, mirrored: false, mirrorSourceID: nil, width: 1, height: 1, originX: 0,
-      originY: 0, modeAvailable: true)
+      originY: 0, modeAvailable: true
+    )
     guard
-      case .retained(let explanation) = store.reconcile(
-        bootID: "boot-a", loginID: 501, displays: [impostor])
+      case let .retained(explanation) = store.reconcile(
+        bootID: "boot-a", loginID: 501, displays: [impostor]
+      )
     else {
       Issue.record("a contradicting built-in panel must not be treated as owned")
       return
@@ -123,7 +128,8 @@ struct ProductionJournalTests {
     let external = DisplayReading(
       id: 5, uuid: "external", uuidResolvedID: 5, builtIn: false, active: true, online: true,
       asleep: false, mirrored: true, mirrorSourceID: nil, width: 1920, height: 1080, originX: -194,
-      originY: -1080, modeAvailable: true)
+      originY: -1080, modeAvailable: true
+    )
     try store.prepare(record(topology: [external]))
     let loaded = try #require(try store.load())
     #expect(loaded.topology == [external])

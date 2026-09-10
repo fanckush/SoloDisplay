@@ -28,7 +28,9 @@ public struct TransportEvidence: Codable, Equatable, Sendable {
   /// Registry entry names for the same chain. The SoC display controllers are named `disp*`.
   public var providerNames: [String]
 
-  public var transport: DisplayTransport { DisplayTransportClassifier.classify(self) }
+  public var transport: DisplayTransport {
+    DisplayTransportClassifier.classify(self)
+  }
 }
 
 public enum DisplayTransportClassifier {
@@ -47,13 +49,14 @@ public enum DisplayTransportClassifier {
     guard evidence.match == .vendorModelSerial else { return .unclassified }
     let controllerIndex = evidence.providerChain.firstIndex(of: displayControllerClass)
     if evidence.providerChain.contains(displayServiceClass), let controllerIndex,
-      controllerIndex < evidence.providerNames.count,
-      evidence.providerNames[controllerIndex].hasPrefix(displayControllerPrefix)
-    {
+       controllerIndex < evidence.providerNames.count,
+       evidence.providerNames[controllerIndex].hasPrefix(displayControllerPrefix) {
       return .native
     }
     // A software display usually cannot supply a real vendor. That is a hint, not a verdict.
-    if evidence.vendor == unknownVendor || evidence.vendor == 0 { return .virtual }
+    if evidence.vendor == unknownVendor || evidence.vendor == 0 {
+      return .virtual
+    }
     return .unclassified
   }
 
@@ -62,7 +65,7 @@ public enum DisplayTransportClassifier {
     let services = displayServices()
     let identities = displays.map { display in
       Identity(vendor: CGDisplayVendorNumber(display.id), model: CGDisplayModelNumber(display.id),
-        serial: CGDisplaySerialNumber(display.id))
+               serial: CGDisplaySerialNumber(display.id))
     }
     return displays.map { display in
       let vendor = CGDisplayVendorNumber(display.id)
@@ -72,14 +75,21 @@ public enum DisplayTransportClassifier {
       var match = TransportMatch.none
       let identity = Identity(vendor: vendor, model: model, serial: serial)
       let index = uniqueService(for: identity, displays: identities,
-        services: services.map { .init(vendor: $0.vendor, model: $0.model, serial: $0.serial) })
+                                services: services.map { .init(
+                                  vendor: $0.vendor,
+                                  model: $0.model,
+                                  serial: $0.serial
+                                ) })
       let service = index.map { services[$0] }
-      if service != nil { match = .vendorModelSerial }
+      if service != nil {
+        match = .vendorModelSerial
+      }
       return .init(
         displayID: display.id, builtIn: display.builtIn, vendor: vendor, model: model,
         serial: serial, unit: CGDisplayUnitNumber(display.id), match: match,
         providerChain: service?.providerChain ?? [],
-        providerNames: service?.providerNames ?? [])
+        providerNames: service?.providerNames ?? []
+      )
     }
   }
 
@@ -91,9 +101,10 @@ public enum DisplayTransportClassifier {
 
   /// Ambiguous correlation is not evidence. Never let multiple CG displays borrow one
   /// physical service, and never fall back after a serial contradiction.
-  static func uniqueService(for identity: Identity, displays: [Identity], services: [Identity]) -> Int? {
+  static func uniqueService(for identity: Identity, displays: [Identity],
+                            services: [Identity]) -> Int? {
     guard identity.vendor != 0, identity.vendor != unknownVendor, identity.serial != 0,
-      displays.filter({ $0 == identity }).count == 1 else { return nil }
+          displays.filter({ $0 == identity }).count == 1 else { return nil }
     let matches = services.indices.filter { services[$0] == identity }
     return matches.count == 1 ? matches[0] : nil
   }
@@ -110,7 +121,8 @@ public enum DisplayTransportClassifier {
     var iterator: io_iterator_t = 0
     guard
       IOServiceGetMatchingServices(
-        kIOMainPortDefault, IOServiceMatching(displayServiceClass), &iterator) == KERN_SUCCESS
+        kIOMainPortDefault, IOServiceMatching(displayServiceClass), &iterator
+      ) == KERN_SUCCESS
     else { return [] }
     defer { IOObjectRelease(iterator) }
     var found: [Service] = []
@@ -118,8 +130,9 @@ public enum DisplayTransportClassifier {
       defer { IOObjectRelease(service) }
       guard
         let attributes = IORegistryEntryCreateCFProperty(
-          service, "DisplayAttributes" as CFString, nil, 0)?.takeRetainedValue()
-          as? [String: Any],
+          service, "DisplayAttributes" as CFString, nil, 0
+        )?.takeRetainedValue()
+        as? [String: Any],
         let product = attributes["ProductAttributes"] as? [String: Any]
       else { continue }
       let chain = ancestry(service)
@@ -127,7 +140,9 @@ public enum DisplayTransportClassifier {
         .init(
           vendor: number(product, "LegacyManufacturerID"), model: number(product, "ProductID"),
           serial: number(product, "SerialNumber"), providerChain: chain.classes,
-          providerNames: chain.names))
+          providerNames: chain.names
+        )
+      )
     }
     return found
   }
@@ -140,19 +155,18 @@ public enum DisplayTransportClassifier {
   }
 
   private static func ancestry(_ service: io_service_t, depth: Int = 10)
-    -> (classes: [String], names: [String])
-  {
+    -> (classes: [String], names: [String]) {
     var classes: [String] = []
     var names: [String] = []
     var current = service
     IOObjectRetain(current)
     defer { IOObjectRelease(current) }
-    for _ in 0..<depth {
+    for _ in 0 ..< depth {
       classes.append(entryText { IOObjectGetClass(current, $0) })
       names.append(entryText { IORegistryEntryGetName(current, $0) })
       var parent: io_registry_entry_t = 0
       guard IORegistryEntryGetParentEntry(current, "IOService", &parent) == KERN_SUCCESS,
-        parent != 0
+            parent != 0
       else { return (classes, names) }
       IOObjectRelease(current)
       current = parent
@@ -163,6 +177,9 @@ public enum DisplayTransportClassifier {
   private static func entryText(_ read: (UnsafeMutablePointer<CChar>) -> kern_return_t) -> String {
     var buffer = [CChar](repeating: 0, count: 128)
     guard read(&buffer) == KERN_SUCCESS else { return "" }
-    return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    return String(
+      bytes: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) },
+      encoding: .utf8
+    ) ?? ""
   }
 }

@@ -21,7 +21,7 @@ public struct RecoveryJournal: Codable, Equatable, Sendable {
       throw JournalError.identityMismatch
     }
     guard scope == "app" || scope == "session", target.displayID != 0,
-      !target.displayUUID.isEmpty, !target.bootID.isEmpty
+          !target.displayUUID.isEmpty, !target.bootID.isEmpty
     else { throw JournalError.invalidTarget }
   }
 
@@ -31,7 +31,8 @@ public struct RecoveryJournal: Codable, Equatable, Sendable {
     }
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    // Never overwrite unresolved recovery evidence. Foundation's exclusive option also closes the race.
+    // Never overwrite unresolved recovery evidence. Foundation's exclusive option also closes the
+    // race.
     try encoder.encode(self).write(to: url, options: [.withoutOverwriting])
     let file = try FileHandle(forWritingTo: url)
     defer { try? file.close() }
@@ -40,7 +41,7 @@ public struct RecoveryJournal: Codable, Equatable, Sendable {
 
   public static func load(from url: URL) throws -> Self {
     let data = try Data(contentsOf: url, options: .mappedIfSafe)
-    guard data.count < 16_384 else { throw JournalError.invalidTarget }
+    guard data.count < 16384 else { throw JournalError.invalidTarget }
     return try JSONDecoder().decode(Self.self, from: data)
   }
 }

@@ -1,7 +1,6 @@
 import Foundation
 import LidlessCore
 import Testing
-
 @testable import LidlessPlatform
 
 private func workspace() throws -> URL {
@@ -28,7 +27,8 @@ struct PreferencesStoreTests {
         var value = Preferences()
         value.mode = .automaticPaused
         return value
-      }())
+      }()
+    )
     // A separate store instance is what a relaunch actually sees.
     let reopened = try PreferencesStore(directory: directory)
     #expect(reopened.load().mode == .automaticPaused)

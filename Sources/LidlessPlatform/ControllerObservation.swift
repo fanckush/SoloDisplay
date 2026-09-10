@@ -23,7 +23,7 @@ public enum ControllerObservation {
     // this process turned the only internal panel off and no external remains to enumerate.
     let ownedAbsence =
       owned?.disableReturned == true && reading.bootID == owned?.target.bootID
-      && reading.loginID == owned?.target.loginID
+        && reading.loginID == owned?.target.loginID
     let reliable =
       reading.enumerationError == nil && (!reading.displays.isEmpty || ownedAbsence)
     let present = reliable ? reading.internalTarget : nil
@@ -36,11 +36,14 @@ public enum ControllerObservation {
       panel: target, panelState: state, power: power, lid: reading.lid,
       foregroundSession: reading.foregroundSession,
       nativeExternalAvailable: nativeExternal(reading, reliable: reliable,
-        maintainingSuppression: state == .disabled && owned?.disableReturned == true),
+                                              maintainingSuppression: state == .disabled && owned?
+                                                .disableReturned == true),
       supportedTopology: topology(
         reading, reliable: reliable, internalPresent: internalDisplay != nil,
-        panelOwnedAndAbsent: state == .disabled),
-      backendValidated: reading.backendValidated ? .yes : .unknown)
+        panelOwnedAndAbsent: state == .disabled
+      ),
+      backendValidated: reading.backendValidated ? .yes : .unknown
+    )
   }
 
   static func panelState(
@@ -54,7 +57,7 @@ public enum ControllerObservation {
       return drivable && target != nil ? .enabled : .unknown
     }
     guard let owned, owned.disableReturned, reading.bootID == owned.target.bootID,
-      reading.loginID == owned.target.loginID
+          reading.loginID == owned.target.loginID
     else { return .unknown }
     return .disabled
   }
@@ -72,11 +75,12 @@ public enum ControllerObservation {
       return reading.displays.allSatisfy { !$0.mirrored || $0.mirrorSourceID == nil } ? .yes : .no
     }
     guard internalPresent, follower.mirrored, let sourceID = follower.mirrorSourceID,
-      let source = reading.displays.first(where: { $0.id == sourceID }), !source.builtIn,
-      source.mirrorSourceID == nil,
-      reading.displays.allSatisfy({
-        !$0.mirrored || $0.id == follower.id || $0.mirrorSourceID == sourceID || $0.id == sourceID
-      })
+          let source = reading.displays.first(where: { $0.id == sourceID }), !source.builtIn,
+          source.mirrorSourceID == nil,
+          reading.displays.allSatisfy({
+            !$0.mirrored || $0.id == follower.id || $0.mirrorSourceID == sourceID || $0
+              .id == sourceID
+          })
     else { return .no }
     return .yes
   }
@@ -84,7 +88,7 @@ public enum ControllerObservation {
   /// Transport classification is the sole authority here. An active flag, a display name, and
   /// an operator's attestation in a lab are none of them evidence of a native wired output.
   static func nativeExternal(_ reading: PlatformReading, reliable: Bool,
-    maintainingSuppression: Bool = false) -> Fact {
+                             maintainingSuppression: Bool = false) -> Fact {
     guard reliable else { return .unknown }
     let externals = reading.displays.filter { !$0.builtIn && $0.online }
     guard !externals.isEmpty else { return .no }

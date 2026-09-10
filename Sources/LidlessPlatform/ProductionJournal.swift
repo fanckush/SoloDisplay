@@ -39,8 +39,8 @@ public struct ProductionRecord: Codable, Equatable, Sendable {
   public func validate() throws {
     guard schemaVersion == Self.currentSchema else { throw JournalError.unsupportedSchema }
     guard scope == "app" || scope == "session", operationID > 0, !session.isEmpty,
-      session.count <= 64, target.displayID != 0, !target.displayUUID.isEmpty,
-      !target.bootID.isEmpty, topology.count <= 32
+          session.count <= 64, target.displayID != 0, !target.displayUUID.isEmpty,
+          !target.bootID.isEmpty, topology.count <= 32
     else { throw JournalError.invalidTarget }
   }
 }
@@ -58,7 +58,9 @@ public enum JournalReconciliation: Equatable, Sendable {
   /// Corrupt, unsupported, or contradicted by live evidence. Retained, and disabling is inhibited.
   case retained(String)
 
-  public var inhibitsDisabling: Bool { self != .clean }
+  public var inhibitsDisabling: Bool {
+    self != .clean
+  }
 
   public var explanation: String? {
     switch self {
@@ -67,7 +69,7 @@ public enum JournalReconciliation: Equatable, Sendable {
       "Lidless may still have the internal display turned off from an earlier run. It is restoring that display before anything else."
     case .priorSession:
       "Lidless found unfinished recovery from a previous startup. It is confirming the internal display before allowing it to be turned off again."
-    case .retained(let reason): reason
+    case let .retained(reason): reason
     }
   }
 }
@@ -90,13 +92,18 @@ public final class ProductionJournalStore: Sendable {
     file = directory.appendingPathComponent("recovery.json", isDirectory: false)
     try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: true,
-      attributes: [.posixPermissions: 0o700])
+      attributes: [.posixPermissions: 0o700]
+    )
     try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
   }
 
-  public convenience init() throws { try self.init(directory: Self.defaultDirectory()) }
+  public convenience init() throws {
+    try self.init(directory: Self.defaultDirectory())
+  }
 
-  public var url: URL { file }
+  public var url: URL {
+    file
+  }
 
   /// Exclusive create. An existing record is unresolved ownership and is never overwritten.
   public func prepare(_ record: ProductionRecord) throws {
@@ -106,7 +113,8 @@ public final class ProductionJournalStore: Sendable {
     let data = try encoder.encode(record)
     try gate.withLock { _ in
       let descriptor = open(
-        file.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        file.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR
+      )
       guard descriptor >= 0 else {
         throw errno == EEXIST ? JournalError.alreadyExists : JournalError.writeFailed
       }
@@ -129,7 +137,7 @@ public final class ProductionJournalStore: Sendable {
     try gate.withLock { _ in
       guard FileManager.default.fileExists(atPath: file.path) else { return nil }
       let data = try Data(contentsOf: file, options: .mappedIfSafe)
-      guard data.count < 65_536 else { throw JournalError.invalidTarget }
+      guard data.count < 65536 else { throw JournalError.invalidTarget }
       return try JSONDecoder().decode(ProductionRecord.self, from: data)
     }
   }
@@ -151,8 +159,7 @@ public final class ProductionJournalStore: Sendable {
   }
 
   public func reconcile(bootID: String?, loginID: UInt32?, displays: [DisplayReading])
-    -> JournalReconciliation
-  {
+    -> JournalReconciliation {
     let record: ProductionRecord?
     do { record = try load() } catch {
       return .retained(

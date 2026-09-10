@@ -1,5 +1,9 @@
 # Recovery lifecycle follow-up
 
+This document records the earlier revision. Its impending-sleep write and
+timer-activity fallback were superseded after the 2026-09-10 sleep-transition
+incident. See `sleep-recovery-incident.md` for the replacement invariants.
+
 ## Scope
 
 Addresses three findings in the review of `9564cfa`: exhausted retries during temporary unavailability, helper exit before deferred recovery, and indefinitely suspended heartbeat expiry after a missed wake notification. Earlier hardware results are retained in `validation.md` and `status.md`.

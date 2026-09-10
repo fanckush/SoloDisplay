@@ -30,11 +30,14 @@ struct ContentView: View {
             "Process \(ProcessInfo.processInfo.processIdentifier) · Sample uptime \(reading.monotonicMilliseconds) ms"
           )
           .font(.caption).foregroundStyle(.secondary)
-          if let error = reading.enumerationError { Text("Enumeration error: \(error)") }
+          if let error = reading.enumerationError {
+            Text("Enumeration error: \(error)")
+          }
           ForEach(reading.displays, id: \.id) { display in
             VStack(alignment: .leading, spacing: 4) {
               Text("\(display.builtIn ? "Built-in" : "External") display \(display.id)").font(
-                .headline)
+                .headline
+              )
               Text(DiagnosticPresentation.activity(active: display.active, asleep: display.asleep))
               Text(
                 "\(display.width) × \(display.height) at (\(display.originX), \(display.originY)) · Mirrored: \(display.mirrored ? "yes" : "no")"
@@ -53,7 +56,8 @@ struct ContentView: View {
         Divider()
         Text("Controller safety gate").font(.headline)
         Text(
-          "Shadow mode: live observations reach the state machine, but no display effects execute.")
+          "Shadow mode: live observations reach the state machine, but no display effects execute."
+        )
         Text(
           "Observations: \(model.controller.observationCount) · Rejected effects: \(model.controller.rejectedEffectCount)"
         )
@@ -66,7 +70,8 @@ struct ContentView: View {
         Text("Event timeline").font(.headline)
         Text(
           model.callbackRegistrationError.map { "Callback registration failed: \($0)" }
-            ?? "Callback subscription: \(model.reading == nil ? "not started" : "registered")")
+            ?? "Callback subscription: \(model.reading == nil ? "not started" : "registered")"
+        )
         Text(
           "This timeline stays in memory. Sparse operational events use macOS system logging. No uploads. Discarded entries: \(model.history.discarded). Dropped callbacks: \(model.droppedCallbacks)."
         )
@@ -74,7 +79,8 @@ struct ContentView: View {
         ForEach(model.history.entries.reversed()) { entry in
           VStack(alignment: .leading, spacing: 3) {
             Text("\(entry.milliseconds) ms · \(entry.reason)").font(
-              .system(.caption, design: .monospaced))
+              .system(.caption, design: .monospaced)
+            )
             Text(entry.detail).font(.caption).foregroundStyle(.secondary)
           }
         }

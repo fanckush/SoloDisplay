@@ -13,22 +13,29 @@
     mutating func receive(_ event: Event) {
       switch event {
       case .willSleep:
-        if !sleeping { sleepCount += 1 }
+        if !sleeping {
+          sleepCount += 1
+        }
         sleeping = true
       case .didWake:
-        if sleeping { wakeCount += 1 }
+        if sleeping {
+          wakeCount += 1
+        }
         sleeping = false
       }
     }
 
-    var completed: Bool { sleepCount > 0 && wakeCount > 0 && !sleeping }
+    var completed: Bool {
+      sleepCount > 0 && wakeCount > 0 && !sleeping
+    }
   }
 
   @MainActor
   final class NativeSleepMonitor {
-    nonisolated private final class Storage: Sendable {
+    private final nonisolated class Storage: Sendable {
       let value = Mutex(NativeSleepCycle())
     }
+
     private let state = Storage()
     private var subscriptions: [NSObjectProtocol] = []
     private let center = NSWorkspace.shared.notificationCenter
@@ -39,18 +46,24 @@
         center.addObserver(
           forName: NSWorkspace.willSleepNotification,
           object: nil, queue: nil
-        ) { _ in state.value.withLock { $0.receive(.willSleep) } })
+        ) { _ in state.value.withLock { $0.receive(.willSleep) } }
+      )
       subscriptions.append(
         center.addObserver(
           forName: NSWorkspace.didWakeNotification,
           object: nil, queue: nil
-        ) { _ in state.value.withLock { $0.receive(.didWake) } })
+        ) { _ in state.value.withLock { $0.receive(.didWake) } }
+      )
     }
 
-    var snapshot: NativeSleepCycle { state.value.withLock { $0 } }
+    var snapshot: NativeSleepCycle {
+      state.value.withLock { $0 }
+    }
 
     func stop() {
-      for token in subscriptions { center.removeObserver(token) }
+      for token in subscriptions {
+        center.removeObserver(token)
+      }
       subscriptions.removeAll()
     }
 
@@ -58,7 +71,9 @@
     /// This deliberately waits for wake rather than claiming a wall-clock recovery guarantee
     /// while macOS can suspend both processes. No sleep-prevention assertion is held.
     func awaitWakeIfSleeping() async throws {
-      while snapshot.sleeping { try await Task.sleep(for: .milliseconds(100)) }
+      while snapshot.sleeping {
+        try await Task.sleep(for: .milliseconds(100))
+      }
     }
   }
 #endif

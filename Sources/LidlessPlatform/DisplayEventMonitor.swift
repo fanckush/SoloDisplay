@@ -16,11 +16,16 @@ public final class DisplayEventMonitor {
     var dropped = 0
     func append(display: CGDirectDisplayID, flags: CGDisplayChangeSummaryFlags) {
       let event = DisplayChangeEvent(
-        at: Int64(ProcessInfo.processInfo.systemUptime * 1_000),
+        at: Int64(ProcessInfo.processInfo.systemUptime * 1000),
         displayID: display, flags: flags.rawValue,
-        beginsConfiguration: flags.contains(.beginConfigurationFlag))
+        beginsConfiguration: flags.contains(.beginConfigurationFlag)
+      )
       lock.withLock {
-        if events.count < 1_024 { events.append(event) } else { dropped += 1 }
+        if events.count < 1024 {
+          events.append(event)
+        } else {
+          dropped += 1
+        }
       }
     }
   }
@@ -30,19 +35,22 @@ public final class DisplayEventMonitor {
   private static let callback: CGDisplayReconfigurationCallBack = { display, flags, context in
     guard let context else { return }
     Unmanaged<Storage>.fromOpaque(context).takeUnretainedValue().append(
-      display: display, flags: flags)
+      display: display, flags: flags
+    )
   }
 
   public init() {
     let result = CGDisplayRegisterReconfigurationCallback(
-      Self.callback, Unmanaged.passUnretained(storage).toOpaque())
+      Self.callback, Unmanaged.passUnretained(storage).toOpaque()
+    )
     registrationError = result == .success ? nil : result.rawValue
   }
 
   deinit {
     if registrationError == nil {
       CGDisplayRemoveReconfigurationCallback(
-        Self.callback, Unmanaged.passUnretained(storage).toOpaque())
+        Self.callback, Unmanaged.passUnretained(storage).toOpaque()
+      )
     }
   }
 

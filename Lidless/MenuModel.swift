@@ -39,12 +39,16 @@ nonisolated enum MenuModel {
     items.append(
       .init(
         title: "Manual", action: .selectManual, enabled: presentation.mode != .manual,
-        checked: presentation.mode == .manual))
+        checked: presentation.mode == .manual
+      )
+    )
     items.append(
       .init(
         title: automaticAvailable ? "Automatic" : "Automatic (after a manual test)",
         action: .selectAutomatic, enabled: automaticAvailable && presentation.mode == .manual,
-        checked: presentation.mode != .manual))
+        checked: presentation.mode != .manual
+      )
+    )
     items.append(.separator)
 
     switch presentation.mode {
@@ -53,12 +57,16 @@ nonisolated enum MenuModel {
         items.append(
           .init(
             title: "Turn Internal Display On", action: .turnInternalOn,
-            enabled: !presentation.operationInFlight))
+            enabled: !presentation.operationInFlight
+          )
+        )
       } else {
         items.append(
           .init(
             title: "Turn Internal Display Off", action: .turnInternalOff,
-            enabled: presentation.canDisableNow))
+            enabled: presentation.canDisableNow
+          )
+        )
       }
     case .automatic:
       items.append(.init(title: "Keep Internal Display On", action: .keepInternalOn))
@@ -70,11 +78,14 @@ nonisolated enum MenuModel {
       items.append(
         .init(
           title: "Retry Recovery", action: .retryRecovery,
-          enabled: !presentation.operationInFlight))
+          enabled: !presentation.operationInFlight
+        )
+      )
     }
     items.append(.separator)
     items.append(
-      .init(title: "Launch at Login", action: .toggleLaunchAtLogin, checked: launchAtLogin))
+      .init(title: "Launch at Login", action: .toggleLaunchAtLogin, checked: launchAtLogin)
+    )
     items.append(.init(title: "Export Diagnostics…", action: .exportDiagnostics))
     items.append(.separator)
     items.append(.init(title: "Quit Lidless", action: .quit))
@@ -82,10 +93,18 @@ nonisolated enum MenuModel {
   }
 
   static func status(_ presentation: Presentation) -> String {
-    if presentation.waitingForRecovery { return "Waiting to restore the internal display" }
-    if presentation.panelOwned { return "Internal display is off" }
-    if presentation.pendingRecovery { return "Finishing recovery" }
-    if presentation.operationInFlight { return "Working…" }
+    if presentation.waitingForRecovery {
+      return "Waiting to restore the internal display"
+    }
+    if presentation.panelOwned {
+      return "Internal display is off"
+    }
+    if presentation.pendingRecovery {
+      return "Finishing recovery"
+    }
+    if presentation.operationInFlight {
+      return "Working…"
+    }
     return presentation.canDisableNow
       ? "Ready to turn the internal display off" : "Turning the internal display off is unavailable"
   }
@@ -97,7 +116,9 @@ nonisolated enum MenuModel {
       return
         "Recovery is retained until this Mac is awake, the lid is open, and this login session is available."
     }
-    if let fault = presentation.fault { return reason(fault) }
+    if let fault = presentation.fault {
+      return reason(fault)
+    }
     guard let unavailability = presentation.unavailability else { return nil }
     return reason(unavailability)
   }

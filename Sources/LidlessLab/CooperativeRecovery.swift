@@ -18,14 +18,14 @@ func cooperativeRecovery(
   do {
     try child.run()
     let deadline = ProcessInfo.processInfo.systemUptime + 5
-    while child.isRunning && ProcessInfo.processInfo.systemUptime < deadline {
+    while child.isRunning, ProcessInfo.processInfo.systemUptime < deadline {
       RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
     }
     if child.isRunning {
       // This is the exact child this experiment spawned, never a process selected by name.
       kill(child.processIdentifier, SIGKILL)
       let reapDeadline = ProcessInfo.processInfo.systemUptime + 2
-      while child.isRunning && ProcessInfo.processInfo.systemUptime < reapDeadline {
+      while child.isRunning, ProcessInfo.processInfo.systemUptime < reapDeadline {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.05))
       }
       guard !child.isRunning else {
@@ -34,7 +34,8 @@ func cooperativeRecovery(
         )
       }
       childError = LabError.message(
-        "Recovery child timed out. It was stopped before parent recovery.")
+        "Recovery child timed out. It was stopped before parent recovery."
+      )
     } else if child.terminationStatus != 0 {
       childError = LabError.message("Recovery child failed with status \(child.terminationStatus).")
     }
@@ -66,10 +67,13 @@ func cooperativeRecovery(
       "Child did not establish active state. Original writer is explicitly restoring the recorded panel."
     )
     try PrivateDisplayAPI().setEnabled(
-      true, displayID: journal.target.displayID, scope: .forAppOnly)
+      true, displayID: journal.target.displayID, scope: .forAppOnly
+    )
     try verifyRestored(journal.target.displayID)
   }
-  if let childError { throw childError }
+  if let childError {
+    throw childError
+  }
   print(
     "Cooperative child recovery completed and the parent independently observed the internal display active."
   )
@@ -84,11 +88,13 @@ func restoreChild(_ flags: [String: String]) throws {
     throw LabError.message("restore-child accepts only --journal.")
   }
   let journal = try RecoveryJournal.load(
-    from: URL(fileURLWithPath: try required("--journal", from: flags)))
+    from: URL(fileURLWithPath: required("--journal", from: flags))
+  )
   let current = DisplayObserver.read()
   try RecoveryIdentity.authorizeHandoff(
     journal: journal, bootID: current.bootID, loginID: current.loginID,
-    parentPID: getppid(), displays: current.displays)
+    parentPID: getppid(), displays: current.displays
+  )
   guard current.foregroundSession == .yes else {
     throw LabError.message("Cooperative restoration requires the foreground GUI session.")
   }

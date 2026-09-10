@@ -1,6 +1,5 @@
 import LidlessCore
 import Testing
-
 @testable import LidlessPlatform
 
 private func snapshot() -> PlatformReading {
@@ -10,9 +9,11 @@ private func snapshot() -> PlatformReading {
       .init(
         id: 1, uuid: "panel", uuidResolvedID: 1, builtIn: true, active: true,
         online: true, asleep: false, mirrored: false, width: 100, height: 100,
-        originX: 0, originY: 0, modeAvailable: true)
+        originX: 0, originY: 0, modeAvailable: true
+      )
     ], lid: .open, bootID: "boot", loginID: 1, foregroundSession: .yes,
-    privateSymbol: "available", limitations: [])
+    privateSymbol: "available", limitations: []
+  )
 }
 
 private func external(
@@ -21,7 +22,8 @@ private func external(
   .init(
     id: id, uuid: "external-\(id)", uuidResolvedID: id, builtIn: false, active: true,
     online: true, asleep: false, mirrored: mirrored, mirrorSourceID: source, width: 1920,
-    height: 1080, originX: 0, originY: -1080, modeAvailable: true, transport: transport.rawValue)
+    height: 1080, originX: 0, originY: -1080, modeAvailable: true, transport: transport.rawValue
+  )
 }
 
 @Test func aFoundPrivateSymbolIsNotAValidatedBackend() {
@@ -41,7 +43,8 @@ private func external(
 
   reading.displays.append(external(transport: .unclassified))
   #expect(
-    ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .unknown)
+    ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .unknown
+  )
 
   reading.displays[1] = external(transport: .virtual)
   #expect(ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .no)
@@ -52,7 +55,8 @@ private func external(
   // One unclassified display among natives is enough to withhold authorization.
   reading.displays.append(external(id: 6, transport: .unclassified))
   #expect(
-    ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .unknown)
+    ControllerObservation.environment(reading, power: .awake).nativeExternalAvailable == .unknown
+  )
 }
 
 @Test func anInternalFollowerOfOnePresentSourceIsASupportedMirror() {
@@ -91,20 +95,24 @@ private func external(
   let unreturned = OwnedPanelContext(target: target, disableReturned: false)
   #expect(
     ControllerObservation.environment(reading, power: .awake, owned: unreturned).panelState
-      == .unknown)
+      == .unknown
+  )
 
   let returned = OwnedPanelContext(target: target, disableReturned: true)
   #expect(
     ControllerObservation.environment(reading, power: .awake, owned: returned).panelState
-      == .disabled)
+      == .disabled
+  )
 
   // Ownership recorded in another boot explains nothing about this one.
   let foreign = OwnedPanelContext(
     target: .init(displayID: 1, displayUUID: "panel", bootID: "other", loginID: 1),
-    disableReturned: true)
+    disableReturned: true
+  )
   #expect(
     ControllerObservation.environment(reading, power: .awake, owned: foreign).panelState
-      == .unknown)
+      == .unknown
+  )
 }
 
 @Test func missingOrMirroredPanelIsNeverInferredDisabled() {
@@ -133,7 +141,7 @@ private func external(
 @Test func liveNormalizationKeepsAutomaticControllerInhibited() {
   var shadow = ShadowController()
   shadow.receive(.selectMode(.automatic), at: 0)
-  for instant in stride(from: Int64(0), through: 10_000, by: 500) {
+  for instant in stride(from: Int64(0), through: 10000, by: 500) {
     shadow.observe(ControllerObservation.environment(snapshot(), power: .awake), at: instant)
     shadow.tick(at: instant)
   }
@@ -161,7 +169,8 @@ private func external(
   var suppressed = reading
   suppressed.displays.removeFirst()
   #expect(ControllerObservation.environment(suppressed, power: .awake,
-    owned: .init(target: target, disableReturned: true)).nativeExternalAvailable == .yes)
+                                            owned: .init(target: target, disableReturned: true))
+      .nativeExternalAvailable == .yes)
 
   // An external that is actually gone is a different matter.
   reading.displays.removeLast()

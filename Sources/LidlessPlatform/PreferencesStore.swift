@@ -24,12 +24,17 @@ public struct PreferencesStore: Sendable {
   public init(directory: URL) throws {
     file = directory.appendingPathComponent("preferences.json", isDirectory: false)
     try FileManager.default.createDirectory(
-      at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+      at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+    )
   }
 
-  public init() throws { try self.init(directory: ProductionJournalStore.defaultDirectory()) }
+  public init() throws {
+    try self.init(directory: ProductionJournalStore.defaultDirectory())
+  }
 
-  public var url: URL { file }
+  public var url: URL {
+    file
+  }
 
   /// An unreadable or unsupported file falls back to defaults. Preferences are a convenience,
   /// and the safe default is manual mode with nothing enabled.
@@ -38,9 +43,9 @@ public struct PreferencesStore: Sendable {
   }
 
   private func readUnlocked() -> Preferences {
-    guard let data = try? Data(contentsOf: file, options: .mappedIfSafe), data.count < 16_384,
-      let stored = try? JSONDecoder().decode(Preferences.self, from: data),
-      stored.schemaVersion == Preferences.currentSchema
+    guard let data = try? Data(contentsOf: file, options: .mappedIfSafe), data.count < 16384,
+          let stored = try? JSONDecoder().decode(Preferences.self, from: data),
+          stored.schemaVersion == Preferences.currentSchema
     else { return .init() }
     return stored
   }
@@ -57,8 +62,8 @@ public struct PreferencesStore: Sendable {
   }
 
   /// Read, change, write. The caller never has to hold a stale copy across a change.
-  @discardableResult public func update(_ change: (inout Preferences) -> Void) throws -> Preferences
-  {
+  @discardableResult public func update(_ change: (inout Preferences) -> Void) throws
+    -> Preferences {
     try gate.value.withLock { _ in
       var preferences = readUnlocked()
       change(&preferences)

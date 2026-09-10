@@ -44,35 +44,39 @@ public struct SystemOperationalHistoryReader: OperationalHistoryReading {
     }
     let predicate = NSPredicate(
       format: "subsystem == %@ AND category IN %@",
-      UnifiedOperationalSink.subsystem, OperationalEvent.Category.allCases.map(\.rawValue))
+      UnifiedOperationalSink.subsystem, OperationalEvent.Category.allCases.map(\.rawValue)
+    )
     do {
       let entries = try store.getEntries(
         with: [.reverse], at: store.position(date: through),
-        matching: predicate)
+        matching: predicate
+      )
       var result = OperationalHistory(status: .empty)
       var bytes = 0
       let deadline = Date().addingTimeInterval(5)
       for raw in entries {
-        if raw.date < from { break }
+        if raw.date < from {
+          break
+        }
         if Task.isCancelled || Date() >= deadline {
           result.truncated = true
           break
         }
         guard raw.date <= through, let log = raw as? OSLogEntryLog,
-          log.subsystem == UnifiedOperationalSink.subsystem,
-          let category = OperationalEvent.Category(rawValue: log.category)
+              log.subsystem == UnifiedOperationalSink.subsystem,
+              let category = OperationalEvent.Category(rawValue: log.category)
         else { continue }
         let data = Data(log.composedMessage.utf8)
-        guard data.count <= 1_000,
-          let event = try? JSONDecoder().decode(OperationalEvent.self, from: data),
-          event.isValid, event.code.category == category
+        guard data.count <= 1000,
+              let event = try? JSONDecoder().decode(OperationalEvent.self, from: data),
+              event.isValid, event.code.category == category
         else {
           result.rejectedEntries += 1
           continue
         }
         let entry = OperationalHistoryEntry(date: log.date, event: event)
         let size = try JSONEncoder().encode(entry).count + 1
-        if result.entries.count >= 2_000 || bytes + size > 500_000 {
+        if result.entries.count >= 2000 || bytes + size > 500_000 {
           result.truncated = true
           break
         }
@@ -96,9 +100,9 @@ public struct DiagnosticsMetadata: Codable, Sendable {
   public var explanation: String
   public static let consoleInstructions =
     "In Console, select this Mac and search for subsystem:dev.lidless.Lidless. "
-    + "Check the incident time and the lifecycle, protection, and recovery categories. "
-    + "macOS controls access and retention; Console may require administrator access. "
-    + "If historical entries are unavailable, start streaming before reproducing the issue."
+      + "Check the incident time and the lifecycle, protection, and recovery categories. "
+      + "macOS controls access and retention; Console may require administrator access. "
+      + "If historical entries are unavailable, start streaming before reproducing the issue."
 }
 
 /// Replay fields stay at the top level so existing ReplayTrace decoders continue to work.
@@ -112,9 +116,12 @@ public struct DiagnosticsDocument: Codable, Sendable {
 public protocol DiagnosticsFileWriting: Sendable {
   func write(_ data: Data, to url: URL) throws
 }
+
 public struct AtomicDiagnosticsFileWriter: DiagnosticsFileWriting {
   public init() {}
-  public func write(_ data: Data, to url: URL) throws { try data.write(to: url, options: .atomic) }
+  public func write(_ data: Data, to url: URL) throws {
+    try data.write(to: url, options: .atomic)
+  }
 }
 
 public struct DiagnosticsExporter: Sendable {
@@ -127,13 +134,18 @@ public struct DiagnosticsExporter: Sendable {
     self.reader = reader
     self.writer = writer
   }
+
   public func collect(trace: ReplayTrace, at date: Date = Date()) throws -> Data {
     let from = date.addingTimeInterval(-24 * 60 * 60)
     return try Self.encode(
       trace: trace, history: reader.read(from: from, through: date),
-      from: from, through: date, collectedAt: Date())
+      from: from, through: date, collectedAt: Date()
+    )
   }
-  public func write(_ data: Data, to url: URL) throws { try writer.write(data, to: url) }
+
+  public func write(_ data: Data, to url: URL) throws {
+    try writer.write(data, to: url)
+  }
 
   public static func encode(
     trace: ReplayTrace, history: OperationalHistory,
@@ -150,7 +162,7 @@ public struct DiagnosticsExporter: Sendable {
     var bytes = 0
     for entry in valid.reversed() {
       let size = try encoder.encode(entry).count + 1
-      guard history.entries.count < 2_000, bytes + size <= 500_000 else {
+      guard history.entries.count < 2000, bytes + size <= 500_000 else {
         history.truncated = true
         break
       }
@@ -164,7 +176,9 @@ public struct DiagnosticsExporter: Sendable {
     // A single namespace preserves pairing relationships without retaining original run IDs.
     var aliases: [String: String] = [:]
     func alias(_ id: String) -> String {
-      if let existing = aliases[id] { return existing }
+      if let existing = aliases[id] {
+        return existing
+      }
       let name = "run-\(aliases.count + 1)"
       aliases[id] = name
       return name
@@ -176,21 +190,20 @@ public struct DiagnosticsExporter: Sendable {
       }
     }
     // Leave room for metadata and JSON framing inside the existing overall 5 MB ceiling.
-    var recorder = TraceRecorder(initial: trace.initial, maxEvents: 8_000, maxBytes: 4_450_000)
-    for entry in trace.events { try recorder.append(entry) }
+    var recorder = TraceRecorder(initial: trace.initial, maxEvents: 8000, maxBytes: 4_450_000)
+    for entry in trace.events {
+      try recorder.append(entry)
+    }
     let replay = try JSONDecoder().decode(ReplayTrace.self, from: recorder.exportSanitized())
-    let explanation: String
-    switch history.status {
+    let explanation = switch history.status {
     case .collected:
-      explanation = "Available Lidless history only, not a complete record of every exit."
+      "Available Lidless history only, not a complete record of every exit."
     case .empty:
-      explanation =
-        "No readable Lidless history was returned. This does not prove nothing happened."
+      "No readable Lidless history was returned. This does not prove nothing happened."
     case .unavailable:
-      explanation =
-        "macOS did not grant system-log access. The current replay trace is still included."
+      "macOS did not grant system-log access. The current replay trace is still included."
     case .failed:
-      explanation = "System-log collection failed. The current replay trace is still included."
+      "System-log collection failed. The current replay trace is still included."
     }
     let document = DiagnosticsDocument(
       schemaVersion: replay.schemaVersion, initial: replay.initial,
@@ -198,7 +211,9 @@ public struct DiagnosticsExporter: Sendable {
       diagnostics: .init(
         collectedAt: collectedAt, requestedFrom: from,
         requestedThrough: through, traceTruncated: replay.events.count < trace.events.count,
-        history: history, explanation: explanation + " " + DiagnosticsMetadata.consoleInstructions))
+        history: history, explanation: explanation + " " + DiagnosticsMetadata.consoleInstructions
+      )
+    )
     let data = try encoder.encode(document)
     guard data.count <= 5_000_000 else { throw TraceError.stateExceedsLimit }
     return data

@@ -1,10 +1,9 @@
 #if DEBUG
-  import Foundation
   import Darwin
+  import Foundation
   import LidlessCore
   import LidlessPlatform
   import Testing
-
   @testable import Lidless
 
   @MainActor
@@ -16,41 +15,53 @@
         #expect(
           try NativeLabCommand.parse(["--lab-unplug" + suffix] + options)
             == .failure(
-              external: 5, journal: "/tmp/unplug.json", ending: .unplug, rehearsal: rehearsal))
+              external: 5, journal: "/tmp/unplug.json", ending: .unplug, rehearsal: rehearsal
+            )
+        )
         #expect(
           try NativeLabCommand.parse(["--lab-unplug-writer" + suffix] + options)
-            == .unplugWriter(external: 5, journal: "/tmp/unplug.json", rehearsal: rehearsal))
+            == .unplugWriter(external: 5, journal: "/tmp/unplug.json", rehearsal: rehearsal)
+        )
       }
       #expect(throws: (any Error).self) {
         try NativeLabCommand.parse(["--lab-unplug"] + options.dropLast())
       }
     }
+
     @Test func contactFailureModesKeepRehearsalsExplicit() throws {
       let options = ["--external", "5", "--journal", "/tmp/new.json", "--native-wired-attested"]
       for (verb, ending) in [
         ("--lab-contact-loss", NativeExitEnding.disconnect),
-        ("--lab-lease-expiry", NativeExitEnding.silence),
+        ("--lab-lease-expiry", NativeExitEnding.silence)
       ] {
         for rehearsal in [false, true] {
           #expect(
             try NativeLabCommand.parse([verb + (rehearsal ? "-rehearsal" : "")] + options)
               == .failure(
-                external: 5, journal: "/tmp/new.json", ending: ending, rehearsal: rehearsal))
+                external: 5, journal: "/tmp/new.json", ending: ending, rehearsal: rehearsal
+              )
+          )
         }
         #expect(
-          NativeExitAuthorization.expectedTermination(reason: .exit, status: 1, ending: ending))
+          NativeExitAuthorization.expectedTermination(reason: .exit, status: 1, ending: ending)
+        )
         #expect(
-          !NativeExitAuthorization.expectedTermination(reason: .exit, status: 0, ending: ending))
+          !NativeExitAuthorization.expectedTermination(reason: .exit, status: 0, ending: ending)
+        )
         #expect(
           !NativeExitAuthorization.expectedTermination(
-            reason: .uncaughtSignal, status: SIGKILL, ending: ending))
+            reason: .uncaughtSignal, status: SIGKILL, ending: ending
+          )
+        )
       }
     }
+
     @Test func backendValidationIsItsOwnExplicitCommand() throws {
       let options = ["--external", "5", "--journal", "/tmp/v.json", "--native-wired-attested"]
       #expect(
         try NativeLabCommand.parse(["--lab-validate-backend"] + options)
-          == .validateBackend(external: 5, journal: "/tmp/v.json"))
+          == .validateBackend(external: 5, journal: "/tmp/v.json")
+      )
       // It cannot be reached without attesting a visible native external.
       #expect(throws: (any Error).self) {
         try NativeLabCommand.parse(["--lab-validate-backend"] + options.dropLast())
@@ -59,19 +70,27 @@
 
     @Test func terminationClassificationDoesNotConfuseSignalsWithNormalExit() {
       #expect(
-        NativeExitAuthorization.expectedTermination(reason: .exit, status: 0, ending: .normal))
+        NativeExitAuthorization.expectedTermination(reason: .exit, status: 0, ending: .normal)
+      )
       #expect(
         !NativeExitAuthorization.expectedTermination(
-          reason: .uncaughtSignal, status: SIGKILL, ending: .normal))
+          reason: .uncaughtSignal, status: SIGKILL, ending: .normal
+        )
+      )
       for ending: NativeExitEnding in [.kill, .freeze] {
         #expect(
           NativeExitAuthorization.expectedTermination(
-            reason: .uncaughtSignal, status: SIGKILL, ending: ending))
+            reason: .uncaughtSignal, status: SIGKILL, ending: ending
+          )
+        )
         #expect(
-          !NativeExitAuthorization.expectedTermination(reason: .exit, status: 0, ending: ending))
+          !NativeExitAuthorization.expectedTermination(reason: .exit, status: 0, ending: ending)
+        )
         #expect(
           !NativeExitAuthorization.expectedTermination(
-            reason: .uncaughtSignal, status: SIGTERM, ending: ending))
+            reason: .uncaughtSignal, status: SIGTERM, ending: ending
+          )
+        )
       }
     }
 
@@ -79,14 +98,18 @@
       let options = ["--external", "5", "--journal", "/tmp/new.json", "--native-wired-attested"]
       #expect(
         try NativeLabCommand.parse(["--lab-exit-kill"] + options)
-          == .failure(external: 5, journal: "/tmp/new.json", ending: .kill, rehearsal: false))
+          == .failure(external: 5, journal: "/tmp/new.json", ending: .kill, rehearsal: false)
+      )
       #expect(
         try NativeLabCommand.parse(["--lab-exit-freeze"] + options)
-          == .failure(external: 5, journal: "/tmp/new.json", ending: .freeze, rehearsal: false))
+          == .failure(external: 5, journal: "/tmp/new.json", ending: .freeze, rehearsal: false)
+      )
       #expect(
         try NativeLabCommand.parse(["--lab-freeze-rehearsal"] + options)
-          == .failure(external: 5, journal: "/tmp/new.json", ending: .freeze, rehearsal: true))
+          == .failure(external: 5, journal: "/tmp/new.json", ending: .freeze, rehearsal: true)
+      )
     }
+
     @Test func protocolPreservesSplitAndCoalescedSignals() throws {
       var buffer = NativeExitBuffer()
       buffer.receive(Data([NativeExitSignal.ready.rawValue]))
@@ -131,7 +154,8 @@
       for childPID: Int32 in [0, 1, 778] {
         #expect(throws: (any Error).self) {
           try NativeExitAuthorization.validate(
-            journal: journal, witnessed: target, childPID: childPID)
+            journal: journal, witnessed: target, childPID: childPID
+          )
         }
       }
       var wrongScope = journal
@@ -140,7 +164,8 @@
         try NativeExitAuthorization.validate(journal: wrongScope, witnessed: target, childPID: 777)
       }
       let other = PanelTarget(
-        displayID: 1, displayUUID: "different-panel", bootID: "boot", loginID: 42)
+        displayID: 1, displayUUID: "different-panel", bootID: "boot", loginID: 42
+      )
       #expect(throws: (any Error).self) {
         try NativeExitAuthorization.validate(journal: journal, witnessed: other, childPID: 777)
       }
@@ -150,10 +175,12 @@
       let options = ["--external", "5", "--journal", "/tmp/new.json", "--native-wired-attested"]
       #expect(
         try NativeLabCommand.parse(["--lab-exit-rehearsal"] + options)
-          == .supervisedExit(external: 5, journal: "/tmp/new.json", rehearsal: true))
+          == .supervisedExit(external: 5, journal: "/tmp/new.json", rehearsal: true)
+      )
       #expect(
         try NativeLabCommand.parse(["--lab-exit-supervised"] + options)
-          == .supervisedExit(external: 5, journal: "/tmp/new.json", rehearsal: false))
+          == .supervisedExit(external: 5, journal: "/tmp/new.json", rehearsal: false)
+      )
       #expect(throws: (any Error).self) {
         try NativeLabCommand.parse(["--lab-exit-supervised"] + options.dropLast())
       }

@@ -1,7 +1,8 @@
 public enum Controller {
+  // Keep the exhaustive transition table centralized so state mutations stay auditable.
+  // swiftlint:disable:next cyclomatic_complexity function_body_length
   public static func reduce(_ previous: ControllerState, _ event: Event, at now: Instant)
-    -> Transition
-  {
+    -> Transition {
     // Receipt time is monotonic. Delayed observations carry their own sampling time.
     guard now >= previous.lastReceipt else { return .init(state: previous, effects: []) }
     var state = previous
@@ -9,10 +10,10 @@ public enum Controller {
     state.lastReceipt = now
 
     switch event {
-    case .observed(let sample):
+    case let .observed(sample):
       guard sample.sampledAt <= now,
-        sample.sequence > (state.observation?.sequence ?? 0),
-        sample.sampledAt >= (state.observation?.sampledAt ?? 0)
+            sample.sequence > (state.observation?.sequence ?? 0),
+            sample.sampledAt >= (state.observation?.sampledAt ?? 0)
       else {
         return .init(state: state, effects: [])
       }
@@ -24,8 +25,7 @@ public enum Controller {
       }
       if let old, old.hasSamePrerequisites(as: current) {
         if sample.sampledAt - (state.lastCountedSample ?? sample.sampledAt)
-          >= state.policy.sampleSeparation
-        {
+          >= state.policy.sampleSeparation {
           state.matchingSamples += 1
           state.lastCountedSample = sample.sampledAt
         }
@@ -36,16 +36,16 @@ public enum Controller {
       }
       state.observation = sample
       if let deferred = state.recoveryDeferredSequence, sample.sequence > deferred,
-        current.visibilityExpected, current.panel == state.ownership?.target
-      {
+         current.visibilityExpected, current.panel == state.ownership?.target {
         state.recoveryDeferredSequence = nil
       }
-      if !current.prerequisitesMet { state.manualRequest = false }
+      if !current.prerequisitesMet {
+        state.manualRequest = false
+      }
       // Coming back to a usable machine restarts the clock for whatever is outstanding. Time
       // spent asleep or closed gave the call no chance to return or to be observed.
       if old?.visibilityExpected != true, current.visibilityExpected,
-        state.operation?.phase == .verifying || state.operation?.phase == .submitted
-      {
+         state.operation?.phase == .verifying || state.operation?.phase == .submitted {
         state.operation?.deadline = now + state.policy.operationTimeout
       }
 
@@ -55,33 +55,35 @@ public enum Controller {
 
       // Only a post-return observation verifies a completed operation.
       if let op = state.operation, op.phase == .verifying,
-        sample.sequence > op.issuedSequence, current.panel == op.target
-      {
-        if op.kind == .disable && current.panelState == .disabled {
+         sample.sequence > op.issuedSequence, current.panel == op.target {
+        if op.kind == .disable, current.panelState == .disabled {
           state.operation = nil
-        } else if op.kind == .restore && current.panelState == .enabled,
-          current.restorationMatches == .yes
-        {
+        } else if op.kind == .restore, current.panelState == .enabled,
+                  current.restorationMatches == .yes {
           state.operation = nil
           releaseOwnership(&state, effects: &effects)
         }
       } else if state.operation == nil, state.ownership != nil, !state.pendingClear,
-        current.panel == state.ownership?.target, current.panelState == .enabled,
-        current.restorationMatches == .yes
-      {
-        // Someone else (including macOS) restored the panel. Do not fight that change.
+                current.panel == state.ownership?.target, current.panelState == .enabled,
+                current.restorationMatches == .yes {
+        // A lifecycle restore may be completed by macOS itself. That satisfies the required
+        // enabled state; only an unrelated restoration is treated as a competing controller.
+        let expectedLifecycleRestoration = state.restorationRequired
         releaseOwnership(&state, effects: &effects)
-        state.fault = .conflictingController
+        if !expectedLifecycleRestoration {
+          state.fault = .conflictingController
+        }
         state.manualRequest = false
       }
-
-    case .selectMode(let mode):
+    case let .selectMode(mode):
       state.preferencesPending = true
       state.mode = mode
       state.manualRequest = false
       effects.append(.savePreferences(mode))
     case .manualOff:
-      if state.mode == .manual { state.manualRequest = true }
+      if state.mode == .manual {
+        state.manualRequest = true
+      }
     case .keepOn:
       state.manualRequest = false
       if state.mode != .manual {
@@ -89,13 +91,17 @@ public enum Controller {
         state.preferencesPending = true
         effects.append(.savePreferences(.automaticPaused))
       }
-    case .preferencesSaved(let mode, let succeeded):
+    case let .preferencesSaved(mode, succeeded):
       if !succeeded {
         state.fault = .preferencesFailed
         state.manualRequest = false
-        if state.mode == .automatic { state.mode = .automaticPaused }
+        if state.mode == .automatic {
+          state.mode = .automaticPaused
+        }
       }
-      if mode == state.mode || !succeeded { state.preferencesPending = false }
+      if mode == state.mode || !succeeded {
+        state.preferencesPending = false
+      }
     case .retry:
       if state.operation == nil {
         state.fault = nil
@@ -105,10 +111,15 @@ public enum Controller {
         state.matchingSamples = 0
         effects.append(.observe)
         // An unresolved record is retried explicitly. Retry never forgets one.
-        if state.pendingClear { effects.append(.clearOwnership) }
+        if state.pendingClear {
+          effects.append(.clearOwnership)
+        }
       }
     case .willSleep, .waking:
       state.manualRequest = false
+      if event == .willSleep, state.ownership != nil {
+        state.restorationRequired = true
+      }
       state.stableSince = nil
       state.matchingSamples = 0
       if var sample = state.observation {
@@ -119,7 +130,7 @@ public enum Controller {
     case .quit:
       state.shuttingDown = true
       state.manualRequest = false
-    case .journalSaved(let id, let succeeded):
+    case let .journalSaved(id, succeeded):
       guard var op = state.operation, op.id == id, op.phase == .journaling else {
         return .init(state: state, effects: [])
       }
@@ -136,13 +147,15 @@ public enum Controller {
           state.operation = op
           effects.append(
             .armProtection(
-              operationID: op.id, ownership: .init(target: op.target, operationID: op.id)))
+              operationID: op.id, ownership: .init(target: op.target, operationID: op.id)
+            )
+          )
         } else {
           state.operation = nil
           releaseOwnership(&state, effects: &effects)
         }
       }
-    case .protectionArmed(let id, let succeeded):
+    case let .protectionArmed(id, succeeded):
       guard var op = state.operation, op.id == id, op.phase == .arming else {
         return .init(state: state, effects: [])
       }
@@ -163,18 +176,19 @@ public enum Controller {
         state.operation = nil
         releaseOwnership(&state, effects: &effects)
       }
-    case .protectionAvailable(let available):
+    case let .protectionAvailable(available):
       state.protectionAvailable = available
       // Losing the helper while a panel may be off means restore now and stop disabling.
       if !available, state.ownership != nil, !state.pendingClear {
         state.fault = .protectionLost
         state.manualRequest = false
       }
-    case .ownershipCleared(let succeeded):
+    case let .ownershipCleared(succeeded):
       guard state.pendingClear else { return .init(state: state, effects: []) }
       if succeeded {
         state.pendingClear = false
         state.ownership = nil
+        state.restorationRequired = false
         state.restoreAttempts = 0
         state.retryAt = nil
       } else {
@@ -182,7 +196,7 @@ public enum Controller {
         state.fault = .ownershipClearFailed
         state.manualRequest = false
       }
-    case .operationRefused(let id):
+    case let .operationRefused(id):
       guard let op = state.operation, op.id == id, op.phase == .submitted || op.phase == .stalled
       else {
         return .init(state: state, effects: [])
@@ -198,9 +212,9 @@ public enum Controller {
         scheduleRetry(&state, at: now, effects: &effects)
       }
       effects.append(.observe)
-    case .restoreDeferred(let id):
+    case let .restoreDeferred(id):
       guard let op = state.operation, op.id == id, op.kind == .restore,
-        op.phase == .submitted || op.phase == .stalled
+            op.phase == .submitted || op.phase == .stalled
       else {
         return .init(state: state, effects: [])
       }
@@ -209,9 +223,9 @@ public enum Controller {
       state.recoveryDeferredSequence = state.observation?.sequence ?? 0
       // Bound resampling, including adapters that complete synchronously. No immediate retry.
       state.retryAt = now + state.policy.sampleSeparation
-    case .operationReturned(let id, let succeeded):
+    case let .operationReturned(id, succeeded):
       guard var op = state.operation, op.id == id,
-        op.phase == .submitted || op.phase == .stalled
+            op.phase == .submitted || op.phase == .stalled
       else {
         return .init(state: state, effects: [])
       }
@@ -220,7 +234,9 @@ public enum Controller {
         state.operation = nil
         state.fault = .operationFailed
         state.manualRequest = false
-        if op.kind == .restore { scheduleRetry(&state, at: now, effects: &effects) }
+        if op.kind == .restore {
+          scheduleRetry(&state, at: now, effects: &effects)
+        }
       } else {
         op.phase = .verifying
         op.issuedSequence = state.observation?.sequence ?? 0
@@ -235,8 +251,7 @@ public enum Controller {
     // A returned disable call is no longer a writer. Restoration takes priority over
     // completing its verification when sleep, user intent, or external evidence changes.
     if let op = state.operation, op.kind == .disable, op.phase == .verifying,
-      !state.wantsOff || !mayRemainDisabled(state, at: now)
-    {
+       !state.wantsOff || !mayRemainDisabled(state, at: now) {
       state.operation = nil
     }
 
@@ -254,7 +269,7 @@ public enum Controller {
         releaseOwnership(&state, effects: &effects)
       case .submitted:
         // A machine that was asleep did not stall the call, so only count time it could run.
-        if state.observation?.environment.visibilityExpected == true && isFresh(state, at: now) {
+        if state.observation?.environment.visibilityExpected == true, isFresh(state, at: now) {
           state.operation?.phase = .stalled
           state.fault = .operationTimedOut
           state.manualRequest = false
@@ -262,11 +277,13 @@ public enum Controller {
         }
       case .verifying:
         // Sleeping/closed hardware cannot prove visibility. Resume verification when awake.
-        if state.observation?.environment.visibilityExpected == true && isFresh(state, at: now) {
+        if state.observation?.environment.visibilityExpected == true, isFresh(state, at: now) {
           state.operation = nil
           state.fault = .verificationFailed
           state.manualRequest = false
-          if op.kind == .restore { scheduleRetry(&state, at: now, effects: &effects) }
+          if op.kind == .restore {
+            scheduleRetry(&state, at: now, effects: &effects)
+          }
         }
       case .stalled:
         break
@@ -276,21 +293,20 @@ public enum Controller {
     if state.operation == nil, !state.pendingClear {
       if let ownership = state.ownership {
         let shouldRestore =
-          !state.wantsOff || !mayRemainDisabled(state, at: now)
-          || state.observation?.environment.panelState == .unknown
+          state.restorationRequired || !state.wantsOff || !mayRemainDisabled(state, at: now)
+            || state.observation?.environment.panelState == .unknown
         let identityMatches = state.observation?.environment.panel == ownership.target
         let environment = state.observation?.environment
-        // One best-effort release on impending sleep is allowed. Later attempts wait for
-        // awake evidence; the executor independently checks the platform before every call.
+        // Sleep and wake transitions are hard no-write states. Ownership and its journal remain
+        // until a wake signal followed by fresh awake evidence makes recovery safe to attempt.
         let canAttempt =
           environment?.lid == .open && environment?.foregroundSession == .yes
-          && (environment?.power == .awake || event == .willSleep)
-        if shouldRestore && identityMatches && state.fault != .identityChanged,
-          canAttempt,
-          state.recoveryDeferredSequence == nil,
-          state.restoreAttempts <= state.policy.restoreRetryDelays.count,
-          now >= (state.retryAt ?? 0)
-        {
+            && environment?.power == .awake
+        if shouldRestore, identityMatches, state.fault != .identityChanged,
+           canAttempt,
+           state.recoveryDeferredSequence == nil,
+           state.restoreAttempts <= state.policy.restoreRetryDelays.count,
+           now >= (state.retryAt ?? 0) {
           let op = newOperation(&state, kind: .restore, target: ownership.target, at: now)
           state.restoreAttempts += 1
           state.retryAt = nil
@@ -310,16 +326,16 @@ public enum Controller {
     }
     if let sample = state.observation, state.ownership != nil || state.wantsOff {
       let expiry = sample.sampledAt + state.policy.evidenceLifetime + 1
-      if expiry > now { effects.append(.wakeAt(expiry)) }
+      if expiry > now {
+        effects.append(.wakeAt(expiry))
+      }
     }
     if state.wantsOff, state.operation == nil, state.ownership == nil,
-      let since = state.stableSince, since + state.policy.stableFor > now
-    {
+       let since = state.stableSince, since + state.policy.stableFor > now {
       effects.append(.wakeAt(since + state.policy.stableFor))
     }
-    if state.shuttingDown && state.operation == nil && state.ownership == nil
-      && !state.pendingClear
-    {
+    if state.shuttingDown, state.operation == nil, state.ownership == nil,
+       !state.pendingClear {
       effects.append(.exitReady)
     }
     return .init(state: state, effects: effects)
@@ -327,9 +343,9 @@ public enum Controller {
 
   public static func mayDisable(_ state: ControllerState, at now: Instant) -> Bool {
     guard state.wantsOff, state.protectionAvailable, !state.pendingClear, !state.preferencesPending,
-      isFresh(state, at: now), let sample = state.observation,
-      sample.environment.prerequisitesMet, sample.environment.panelState == .enabled,
-      state.matchingSamples >= 2, let stableSince = state.stableSince
+          isFresh(state, at: now), let sample = state.observation,
+          sample.environment.prerequisitesMet, sample.environment.panelState == .enabled,
+          state.matchingSamples >= 2, let stableSince = state.stableSince
     else { return false }
     return now - stableSince >= state.policy.stableFor
   }
@@ -352,7 +368,8 @@ public enum Controller {
     return .init(
       id: id, kind: kind, target: target, phase: .submitted,
       issuedSequence: state.observation?.sequence ?? 0,
-      deadline: now + state.policy.operationTimeout)
+      deadline: now + state.policy.operationTimeout
+    )
   }
 
   /// Ownership survives until the durable record is actually gone. Only `.ownershipCleared`

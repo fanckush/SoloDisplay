@@ -6,6 +6,7 @@ public struct TraceRecorder {
     var event: RecordedEvent
     var bytes: Int
   }
+
   private var entries: [Entry] = []
   private var head = 0
   private var eventBytes = 0
@@ -15,7 +16,7 @@ public struct TraceRecorder {
   private let maxBytes: Int
 
   public init(
-    initial: ControllerState = .init(), maxEvents: Int = 10_000, maxBytes: Int = 5_000_000
+    initial: ControllerState = .init(), maxEvents: Int = 10000, maxBytes: Int = 5_000_000
   ) {
     precondition(maxEvents > 0 && maxBytes > 0)
     self.initial = initial
@@ -24,7 +25,10 @@ public struct TraceRecorder {
     self.maxBytes = maxBytes
   }
 
-  public var count: Int { entries.count - head }
+  public var count: Int {
+    entries.count - head
+  }
+
   public var trace: ReplayTrace {
     .init(initial: initial, events: entries[head...].map(\.event))
   }
@@ -36,15 +40,17 @@ public struct TraceRecorder {
     entries.append(.init(event: event, bytes: size))
     eventBytes += size
     current = transition.state
-    while count > 0 {
+    while !entries.isEmpty {
       let bytes = try estimatedBytes()
-      if count <= maxEvents && bytes <= maxBytes { break }
+      if count <= maxEvents, bytes <= maxBytes {
+        break
+      }
       let entry = entries[head]
       initial = Controller.reduce(initial, entry.event.event, at: entry.event.at).state
       eventBytes -= entry.bytes
       head += 1
     }
-    if head > 1_024 && head * 2 > entries.count {
+    if head > 1024, head * 2 > entries.count {
       entries.removeFirst(head)
       head = 0
     }
@@ -79,25 +85,34 @@ private struct TraceSanitizer {
     if displays[original.displayID] == nil {
       displays[original.displayID] = UInt32(displays.count + 1)
     }
-    if sessions[original.loginID] == nil { sessions[original.loginID] = UInt32(sessions.count + 1) }
+    if sessions[original.loginID] == nil {
+      sessions[original.loginID] = UInt32(sessions.count + 1)
+    }
     if uuids[original.displayUUID] == nil {
       uuids[original.displayUUID] = "panel-\(uuids.count + 1)"
     }
-    if boots[original.bootID] == nil { boots[original.bootID] = "boot-\(boots.count + 1)" }
+    if boots[original.bootID] == nil {
+      boots[original.bootID] = "boot-\(boots.count + 1)"
+    }
     return .init(
       displayID: displays[original.displayID]!, displayUUID: uuids[original.displayUUID]!,
-      bootID: boots[original.bootID]!, loginID: sessions[original.loginID]!)
+      bootID: boots[original.bootID]!, loginID: sessions[original.loginID]!
+    )
   }
 
   mutating func observation(_ original: Observation) -> Observation {
     var value = original
-    if let panel = value.environment.panel { value.environment.panel = target(panel) }
+    if let panel = value.environment.panel {
+      value.environment.panel = target(panel)
+    }
     return value
   }
 
   mutating func sanitize(_ original: ReplayTrace) -> ReplayTrace {
     var value = original
-    if let sample = value.initial.observation { value.initial.observation = observation(sample) }
+    if let sample = value.initial.observation {
+      value.initial.observation = observation(sample)
+    }
     if var op = value.initial.operation {
       op.target = target(op.target)
       value.initial.operation = op
@@ -107,7 +122,7 @@ private struct TraceSanitizer {
       value.initial.ownership = owned
     }
     value.events = original.events.map { event in
-      if case .observed(let sample) = event.event {
+      if case let .observed(sample) = event.event {
         return .init(at: event.at, event: .observed(observation(sample)))
       }
       return event

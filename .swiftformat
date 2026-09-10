@@ -4,4 +4,6 @@
 --maxwidth 100
 --self remove
 --importgrouping testable-bottom
+--trailing-commas never
+--disable wrapMultilineStatementBraces
 --exclude .build,DerivedData,build

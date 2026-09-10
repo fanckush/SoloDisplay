@@ -7,11 +7,13 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   public enum Category: String, Codable, CaseIterable, Sendable {
     case lifecycle, protection, recovery, diagnostics
   }
+
   public enum Role: String, Codable, Sendable { case bootstrap, controller, helper, probe }
   public enum Action: String, Codable, Sendable {
     case selectManual, selectAutomatic, turnInternalOff, turnInternalOn, keepInternalOn
     case resumeAutomatic, retryRecovery, toggleLaunchAtLogin, exportDiagnostics, quit
   }
+
   public enum Code: String, Codable, Sendable {
     case started, startupFailed, paired, action, exitRequested, childTerminationRequested
     case protectionEnded
@@ -27,16 +29,17 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
       switch self {
       case .paired, .protectionLost, .protectionReady, .protectionEnded: .protection
       case .operationQueued, .operationStarted, .operationReturned, .operationRefused,
-        .restoreDeferred, .operationVerified, .writerUnresponsive, .journalPreparing,
-        .journalPrepared, .journalClearing, .journalCleared, .recoveryRequested,
-        .recoveryWaiting, .recoveryBlocked, .recoveryVerified, .writerLockAcquired,
-        .writerLockUnavailable:
+           .restoreDeferred, .operationVerified, .writerUnresponsive, .journalPreparing,
+           .journalPrepared, .journalClearing, .journalCleared, .recoveryRequested,
+           .recoveryWaiting, .recoveryBlocked, .recoveryVerified, .writerLockAcquired,
+           .writerLockUnavailable:
         .recovery
       case .exportRequested, .exportCompleted, .exportFailed: .diagnostics
       default: .lifecycle
       }
     }
   }
+
   public enum Reason: String, Codable, Sendable {
     case userQuit, helperLost, nothingOwed, recoveryComplete, controllerLaunchFailed
     case missingExecutable, invalidLaunch, journalUnavailable, missingSession, alreadyRunning
@@ -99,7 +102,7 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   }
 
   public static func numericErrorCode(_ error: any Error) -> Int {
-    if let displayError = error as? DisplayAPIError, case .call(_, let code) = displayError {
+    if let displayError = error as? DisplayAPIError, case let .call(_, code) = displayError {
       return Int(code)
     }
     return (error as NSError).code
@@ -134,13 +137,12 @@ public struct UnifiedOperationalSink: OperationalEventSink {
   public static let subsystem = "dev.lidless.Lidless"
   public init() {}
   public func record(_ event: OperationalEvent) {
-    guard event.isValid, let bytes = try? JSONEncoder().encode(event), bytes.count <= 1_000,
-      let payload = String(data: bytes, encoding: .utf8)
+    guard event.isValid, let bytes = try? JSONEncoder().encode(event), bytes.count <= 1000,
+          let payload = String(data: bytes, encoding: .utf8)
     else { return }
     let logger = Logger(subsystem: Self.subsystem, category: event.code.category.rawValue)
     if event.succeeded == false || event.code == .protectionLost || event.code == .startupFailed
-      || event.code == .recoveryBlocked || event.code == .writerUnresponsive
-    {
+      || event.code == .recoveryBlocked || event.code == .writerUnresponsive {
       logger.error("\(payload, privacy: .public)")
     } else {
       logger.notice("\(payload, privacy: .public)")
@@ -160,6 +162,7 @@ public struct OperationalLogger: Sendable {
     self.sink = sink
     self.run = run
   }
+
   public func emit(
     _ code: OperationalEvent.Code, session: String? = nil,
     reason: OperationalEvent.Reason? = nil, operation: OperationProgress? = nil,
@@ -168,15 +171,19 @@ public struct OperationalLogger: Sendable {
   ) {
     var event = OperationalEvent(
       code: code, role: role, run: run,
-      uptimeMS: Int64(ProcessInfo.processInfo.systemUptime * 1_000))
+      uptimeMS: Int64(ProcessInfo.processInfo.systemUptime * 1000)
+    )
     event.session = session.flatMap { UUID(uuidString: $0)?.uuidString }
     event.reason = reason
     event.operation = operation
     event.succeeded = succeeded
     event.errorCode = errorCode
     details(&event)
-    if event.isValid { sink.record(event) }
+    if event.isValid {
+      sink.record(event)
+    }
   }
+
   public func started(bundle: Bundle = .main) {
     emit(.started) {
       let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String

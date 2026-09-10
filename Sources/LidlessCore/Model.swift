@@ -63,7 +63,9 @@ public struct Environment: Codable, Equatable, Sendable {
       && nativeExternalAvailable == .yes && supportedTopology == .yes && backendValidated == .yes
   }
 
-  var visibilityExpected: Bool { power == .awake && lid == .open && foregroundSession == .yes }
+  var visibilityExpected: Bool {
+    power == .awake && lid == .open && foregroundSession == .yes
+  }
 }
 
 public struct Observation: Codable, Equatable, Sendable {
@@ -112,11 +114,11 @@ public enum Fault: String, Codable, Sendable {
 }
 
 public struct Policy: Codable, Equatable, Sendable {
-  public var stableFor: Instant = 2_000
+  public var stableFor: Instant = 2000
   public var sampleSeparation: Instant = 500
-  public var evidenceLifetime: Instant = 5_000
-  public var operationTimeout: Instant = 3_000
-  public var restoreRetryDelays: [Instant] = [500, 2_000]
+  public var evidenceLifetime: Instant = 5000
+  public var operationTimeout: Instant = 3000
+  public var restoreRetryDelays: [Instant] = [500, 2000]
   public init() {}
 }
 
@@ -136,6 +138,9 @@ public struct ControllerState: Codable, Equatable, Sendable {
   public var retryAt: Instant?
   /// A pre-call deferral is not a failed display operation. Wait for a newer observation.
   public var recoveryDeferredSequence: UInt64?
+  /// A lifecycle interruption must complete one verified restore before automatic intent can
+  /// suppress the panel again. This survives the sleep interval without issuing a write in it.
+  public var restorationRequired = false
   public var shuttingDown = false
   /// A paired recovery helper exists. Per-operation protection is still leased separately.
   public var protectionAvailable = false
@@ -145,8 +150,8 @@ public struct ControllerState: Codable, Equatable, Sendable {
   public var pendingClear = false
   public var policy: Policy
 
-  public init(mode: Mode = .manual, recoveredOwnership: Ownership? = nil, policy: Policy = .init())
-  {
+  public init(mode: Mode = .manual, recoveredOwnership: Ownership? = nil,
+              policy: Policy = .init()) {
     self.mode = mode
     self.policy = policy
     ownership = recoveredOwnership
@@ -154,6 +159,43 @@ public struct ControllerState: Codable, Equatable, Sendable {
       fault = .priorRunUnresolved
       nextOperationID = recoveredOwnership.operationID + 1
     }
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case mode, manualRequest, observation, stableSince, matchingSamples, lastCountedSample
+    case lastReceipt, operation, ownership, fault, nextOperationID, restoreAttempts, retryAt
+    case recoveryDeferredSequence, restorationRequired, shuttingDown, protectionAvailable
+    case preferencesPending, pendingClear, policy
+  }
+
+  /// Replay exports are durable diagnostics. New state fields therefore decode with their
+  /// conservative defaults instead of making an older export unreadable.
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    mode = try values.decode(Mode.self, forKey: .mode)
+    manualRequest = try values.decodeIfPresent(Bool.self, forKey: .manualRequest) ?? false
+    observation = try values.decodeIfPresent(Observation.self, forKey: .observation)
+    stableSince = try values.decodeIfPresent(Instant.self, forKey: .stableSince)
+    matchingSamples = try values.decodeIfPresent(Int.self, forKey: .matchingSamples) ?? 0
+    lastCountedSample = try values.decodeIfPresent(Instant.self, forKey: .lastCountedSample)
+    lastReceipt = try values.decodeIfPresent(Instant.self, forKey: .lastReceipt) ?? 0
+    operation = try values.decodeIfPresent(Operation.self, forKey: .operation)
+    ownership = try values.decodeIfPresent(Ownership.self, forKey: .ownership)
+    fault = try values.decodeIfPresent(Fault.self, forKey: .fault)
+    nextOperationID = try values.decodeIfPresent(UInt64.self, forKey: .nextOperationID) ?? 1
+    restoreAttempts = try values.decodeIfPresent(Int.self, forKey: .restoreAttempts) ?? 0
+    retryAt = try values.decodeIfPresent(Instant.self, forKey: .retryAt)
+    recoveryDeferredSequence = try values.decodeIfPresent(
+      UInt64.self, forKey: .recoveryDeferredSequence
+    )
+    restorationRequired = try values
+      .decodeIfPresent(Bool.self, forKey: .restorationRequired) ?? false
+    shuttingDown = try values.decodeIfPresent(Bool.self, forKey: .shuttingDown) ?? false
+    protectionAvailable =
+      try values.decodeIfPresent(Bool.self, forKey: .protectionAvailable) ?? false
+    preferencesPending = try values.decodeIfPresent(Bool.self, forKey: .preferencesPending) ?? false
+    pendingClear = try values.decodeIfPresent(Bool.self, forKey: .pendingClear) ?? false
+    policy = try values.decodeIfPresent(Policy.self, forKey: .policy) ?? .init()
   }
 
   public var wantsOff: Bool {
@@ -238,45 +280,72 @@ public struct Presentation: Equatable, Sendable {
     self.unavailability = unavailability
   }
 
-  public var canDisableNow: Bool { unavailability == nil }
+  public var canDisableNow: Bool {
+    unavailability == nil
+  }
 }
 
-extension Controller {
+public extension Controller {
   /// The first blocking reason, in the order the controller itself checks them.
-  public static func unavailability(_ state: ControllerState, at now: Instant) -> Unavailability? {
-    if state.shuttingDown { return .shuttingDown }
-    if state.fault != nil { return .faulted }
-    if state.pendingClear { return .unresolvedOwnership }
+  static func unavailability(_ state: ControllerState, at now: Instant) -> Unavailability? {
+    if state.shuttingDown {
+      return .shuttingDown
+    }
+    if state.fault != nil {
+      return .faulted
+    }
+    if state.pendingClear {
+      return .unresolvedOwnership
+    }
     guard let sample = state.observation else { return .noObservation }
     if now < sample.sampledAt || now - sample.sampledAt > state.policy.evidenceLifetime {
       return .staleEvidence
     }
     let environment = sample.environment
-    if environment.panel == nil { return .noConfirmedPanel }
-    if environment.lid != .open { return .lidClosed }
-    if environment.power != .awake { return .notAwake }
-    if environment.foregroundSession != .yes { return .sessionNotForeground }
-    if environment.backendValidated != .yes { return .backendUnvalidated }
-    if environment.supportedTopology != .yes { return .unsupportedTopology }
-    if environment.nativeExternalAvailable != .yes { return .noNativeExternal }
-    if !state.protectionAvailable { return .noRecoveryHelper }
-    if state.ownership != nil { return nil }
+    if environment.panel == nil {
+      return .noConfirmedPanel
+    }
+    if environment.lid != .open {
+      return .lidClosed
+    }
+    if environment.power != .awake {
+      return .notAwake
+    }
+    if environment.foregroundSession != .yes {
+      return .sessionNotForeground
+    }
+    if environment.backendValidated != .yes {
+      return .backendUnvalidated
+    }
+    if environment.supportedTopology != .yes {
+      return .unsupportedTopology
+    }
+    if environment.nativeExternalAvailable != .yes {
+      return .noNativeExternal
+    }
+    if !state.protectionAvailable {
+      return .noRecoveryHelper
+    }
+    if state.ownership != nil {
+      return nil
+    }
     guard state.matchingSamples >= 2, let since = state.stableSince,
-      now - since >= state.policy.stableFor
+          now - since >= state.policy.stableFor
     else { return .settling }
     return nil
   }
 
-  public static func presentation(_ state: ControllerState, at now: Instant) -> Presentation {
+  static func presentation(_ state: ControllerState, at now: Instant) -> Presentation {
     var result = Presentation(
       mode: state.mode, manualRequestActive: state.manualRequest,
       panelOwned: state.ownership != nil, operationInFlight: state.operation != nil,
       pendingRecovery: state.ownership != nil || state.pendingClear, fault: state.fault,
-      unavailability: unavailability(state, at: now))
+      unavailability: unavailability(state, at: now)
+    )
     result.waitingForRecovery =
       state.ownership != nil && !state.pendingClear
-      && (state.recoveryDeferredSequence != nil
-        || state.observation?.environment.visibilityExpected != true)
+        && (state.recoveryDeferredSequence != nil
+          || state.observation?.environment.visibilityExpected != true)
     return result
   }
 }

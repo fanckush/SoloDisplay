@@ -1,12 +1,11 @@
 import Testing
-
 @testable import Lidless
 
 @MainActor
 struct LidlessTests {
   @Test func historyIsBoundedAndIDsAreNotReused() {
     var history = DiagnosticHistory(capacity: 2)
-    for value in 0..<5 {
+    for value in 0 ..< 5 {
       history.append(milliseconds: Int64(value), reason: "fixture", detail: "synthetic")
     }
     #expect(history.entries.map(\.id) == [4, 5])
@@ -22,18 +21,21 @@ struct LidlessTests {
   @Test func absentInventoryNeverClaimsThereAreNoDisplays() {
     #expect(
       DiagnosticPresentation.headline(inventoryAvailable: false, mirrored: false)
-        == "Display inventory unavailable")
+        == "Display inventory unavailable"
+    )
   }
 
   @Test func mirroredTopologyIsExplicit() {
     #expect(
       DiagnosticPresentation.headline(inventoryAvailable: true, mirrored: true)
-        == "Mirroring detected")
+        == "Mirroring detected"
+    )
   }
 
   @Test func inactivePanelIsNotPresentedAsVerifiedOff() {
     #expect(
       DiagnosticPresentation.activity(active: false, asleep: false)
-        == "Not active (not proof of off)")
+        == "Not active (not proof of off)"
+    )
   }
 }
