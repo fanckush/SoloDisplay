@@ -275,12 +275,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func performPanelAction(_ action: MenuAction) {
-    // A display change is about to happen and this window may be sitting on the screen it
-    // affects. Selecting an arrangement dismisses, the way picking from a menu does.
+    // Commands dismiss, the way picking from a menu does. Choosing an arrangement does not.
+    // It is a setting, and closing over it hides the tile and the line underneath that are the
+    // only confirmation the choice landed. The screen-parameters observer still closes the
+    // panel when the displays actually change, which is the moment a window sitting on a
+    // vanishing screen would matter, and it arrives after the person has seen the change.
     switch action {
-    case .selectAllMonitors, .selectExternalOnly, .quit, .openDisplayMonitor, .exportDiagnostics:
+    case .quit, .openDisplayMonitor, .exportDiagnostics:
       popover?.performClose(nil)
-    default:
+    case .selectAllMonitors, .selectExternalOnly, .toggleLaunchAtLogin, .retryRecovery:
       break
     }
     controller?.perform(action)
