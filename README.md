@@ -12,8 +12,9 @@
   <img alt="Platform" src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple">
 </p>
 
-<!-- TODO: drop a menu-bar screenshot / GIF at docs/assets/demo.gif -->
-<p align="center"><img src="docs/assets/demo.gif" alt="SoloDisplay in the menu bar" width="520"></p>
+<p align="center">
+  <img src="docs/assets/app-screenshot.webp" alt="The SoloDisplay menu bar panel, with All Monitors and External Only" width="420">
+</p>
 
 ## Why
 
@@ -32,21 +33,13 @@ other features. SoloDisplay does just this one thing, for free and in the open.
 brew install --cask fanckush/solodisplay/solodisplay
 ```
 
-Builds are signed with a Developer ID and notarized by Apple, so Gatekeeper opens
-them without warnings.
-
 ## Usage
 
-Launch SoloDisplay and look for the laptop icon in the menu bar. The menu adapts to
-your setup:
+There are two choices:
 
-- Manual mode: **Turn Internal Display Off** and **Turn Internal Display On**.
-- Automatic mode: SoloDisplay turns the internal panel off on its own when a supported
-  external display is present, and back on when it is not. **Keep Internal Display
-  On** pauses that.
-- If a requirement is missing, the menu names it (for example a closed lid, no
-  native external display, or a Mac that is asleep) instead of acting.
-- **Launch at Login** and **Export Diagnostics…** are in the menu too.
+- **All Monitors** keeps your laptop screen on.
+- **External Only** turns it off whenever a monitor is connected, and back on when
+  you unplug.
 
 ## How it works
 
@@ -66,33 +59,6 @@ the supervisor takes over the menu-bar interface instead of remaining invisible.
 The potentially blocking recovery call runs only in a bounded one-shot worker. See
 [docs/architecture.md](docs/architecture.md) for the design and
 [docs/status.md](docs/status.md) for what has been tested.
-
-## Supported configurations
-
-Turning the internal display off requires all of these, and the menu names
-whichever one is missing:
-
-- A positively identified internal panel, an open lid, an awake Mac, and the
-  foreground login session.
-- At least one external display classified as native from IOKit provenance.
-  DisplayLink, wireless, virtual, and anything uncorrelated stay unavailable.
-- A supported arrangement: unmirrored, or the internal panel following one present
-  external mirror source. An internal panel acting as the mirror source is not
-  supported.
-- A recorded backend validation for this Mac and this macOS build. An OS update
-  invalidates it until it is recorded again.
-
-Verified on a Mac17,9 running macOS 26.6.2 (build 25G83) with one Dell U3223QE on
-direct USB-C, in both mirrored and extended arrangements. Not verified: multiple
-external displays, docks, DisplayLink, wireless and virtual displays, fast user
-switching, logout, and other Macs or macOS builds. See
-[docs/status.md](docs/status.md) for the scenario-by-scenario record.
-
-Known limits: an unresponsive OS or display driver can still prevent physical
-restoration, and simultaneous loss of the controller and supervisor can discard
-live recovery authority. A stuck recovery call cannot consume the supervisor or
-its recovery interface. Suppression is application scoped, so other processes
-still report the panel as present.
 
 ## Build from source
 
@@ -116,10 +82,6 @@ xcodebuild -project SoloDisplay.xcodeproj -scheme SoloDisplay -configuration Deb
   test -only-testing:SoloDisplayTests
 ```
 
-No display-changing experiment runs as part of `swift test`. The guided hardware
-procedure ([docs/hardware-tests.md](docs/hardware-tests.md)) must be invoked
-explicitly.
-
 ### Development checks
 
 Enable the repository's Git hooks once per clone:
@@ -128,16 +90,6 @@ Enable the repository's Git hooks once per clone:
 brew install swiftformat swiftlint
 scripts/setup-hooks.sh
 ```
-
-The pre-commit hook checks staged Swift files with SwiftFormat and SwiftLint. The
-commit-message hook accepts `feat:`, `fix:`, `docs:`, `chore:`, and `perf:`
-subjects, including optional scopes and `!`. The pre-push hook runs the Swift
-package tests and unsigned app unit tests. Run the same checks manually with
-`scripts/lint.sh` and `scripts/test.sh`.
-
-The coverage badge is rebuilt from both unit-test suites on every successful
-`main` CI run. It measures production Swift sources only; guided hardware
-validation remains tracked separately in [docs/status.md](docs/status.md).
 
 ## Design and docs
 
