@@ -58,9 +58,15 @@ public struct Environment: Codable, Equatable, Sendable {
   }
 
   /// Public because the executor must repeat this check immediately before it writes.
+  ///
+  /// `backendValidated` is deliberately not a condition here. It records that a verified off and
+  /// on round trip has happened on this Mac and this macOS build, which is worth knowing and is
+  /// still written, but requiring it first meant a fresh install could never make the round trip
+  /// that would produce it. Choosing External Only is an explicit, attended request; the journal,
+  /// the protection lease and the recovery worker are what stand behind an attempt that fails.
   public var prerequisitesMet: Bool {
     panel != nil && power == .awake && lid == .open && foregroundSession == .yes
-      && nativeExternalAvailable == .yes && supportedTopology == .yes && backendValidated == .yes
+      && nativeExternalAvailable == .yes && supportedTopology == .yes
   }
 
   var visibilityExpected: Bool {
@@ -106,7 +112,7 @@ public struct Ownership: Codable, Equatable, Sendable {
   }
 }
 
-public enum Fault: String, Codable, Sendable {
+public enum Fault: String, Codable, CaseIterable, Sendable {
   case journalFailed, operationFailed, operationTimedOut, verificationFailed
   case conflictingController, identityChanged, recoveryExhausted, priorRunUnresolved
   case protectionUnavailable, protectionLost, ownershipClearFailed, operationRefused
@@ -250,9 +256,11 @@ public struct Transition: Codable, Equatable, Sendable {
 
 /// Why turning the internal display off is not currently possible. The interface must show a
 /// specific reason rather than a bare unavailable state, so every blocker has a case here.
-public enum Unavailability: String, Codable, Equatable, Sendable {
+public enum Unavailability: String, Codable, CaseIterable, Equatable, Sendable {
   case noObservation, noConfirmedPanel, staleEvidence, lidClosed, notAwake
-  case sessionNotForeground, noNativeExternal, unsupportedTopology, backendUnvalidated
+  /// No longer produced. Kept because replay exports are durable and older ones still decode.
+  case backendUnvalidated
+  case sessionNotForeground, noNativeExternal, unsupportedTopology
   case noRecoveryHelper, settling, unresolvedOwnership, faulted, shuttingDown
 }
 
@@ -266,6 +274,9 @@ public struct Presentation: Equatable, Sendable {
   public var fault: Fault?
   public var unavailability: Unavailability?
   public var waitingForRecovery = false
+  /// What the person asked for, which is not the same as what is on screen right now.
+  /// External Only stays chosen while the monitor is unplugged and the panel is lit.
+  public var wantsInternalOff = false
 
   public init(
     mode: Mode, manualRequestActive: Bool, panelOwned: Bool, operationInFlight: Bool,
@@ -314,9 +325,6 @@ public extension Controller {
     if environment.foregroundSession != .yes {
       return .sessionNotForeground
     }
-    if environment.backendValidated != .yes {
-      return .backendUnvalidated
-    }
     if environment.supportedTopology != .yes {
       return .unsupportedTopology
     }
@@ -346,6 +354,7 @@ public extension Controller {
       state.ownership != nil && !state.pendingClear
         && (state.recoveryDeferredSequence != nil
           || state.observation?.environment.visibilityExpected != true)
+    result.wantsInternalOff = state.wantsOff
     return result
   }
 }

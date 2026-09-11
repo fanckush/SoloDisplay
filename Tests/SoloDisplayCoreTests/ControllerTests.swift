@@ -190,7 +190,7 @@ func uncertainExternalNeverAuthorizesDisabling(_ fact: Fact) {
   #expect(rig.state.operation == nil)
 }
 
-@Test func missingPanelAndUnvalidatedBackendRemainUntouched() {
+@Test func aMissingPanelRemainsUntouched() {
   var rig = Rig()
   var empty = environment()
   empty.panel = nil
@@ -198,9 +198,17 @@ func uncertainExternalNeverAuthorizesDisabling(_ fact: Fact) {
   rig.observe(empty, at: 0)
   rig.observe(empty, at: 3000)
   #expect(rig.state.operation == nil)
+}
+
+@Test func anUnrecordedBackendNoLongerWithholdsAnAttendedRequest() {
+  // A backend validation used to be a precondition, which meant a fresh install could never
+  // make the round trip that would produce one. It is now written from a completed round trip
+  // rather than required before the first, so an unrecorded backend proceeds. What stands
+  // behind the attempt is the journal, the protection lease and verified restoration.
+  var rig = Rig()
   rig.observe(environment(backend: .unknown), at: 4000)
   rig.observe(environment(backend: .unknown), at: 7000)
-  #expect(rig.state.operation == nil)
+  #expect(rig.state.operation?.kind == .disable)
 }
 
 @Test func unvalidatedMirroredTopologyIsExplicitlyInhibited() {

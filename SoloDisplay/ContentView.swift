@@ -4,6 +4,9 @@ import SwiftUI
 
 struct ContentView: View {
   let model: DiagnosticsModel
+  /// Saving a report is a thing you do while looking at the diagnostics, so it lives here
+  /// rather than taking a second near-identically named row in the menu bar panel.
+  var onExport: (() -> Void)?
 
   var body: some View {
     ScrollView {
@@ -21,6 +24,9 @@ struct ContentView: View {
           Label(model.headline, systemImage: "display")
           Spacer()
           Button("Refresh", action: model.refresh).accessibilityIdentifier("refreshDiagnostics")
+          if let onExport {
+            Button("Save Report…", action: onExport).accessibilityIdentifier("exportDiagnostics")
+          }
         }
         if let reading = model.reading {
           Text(

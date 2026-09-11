@@ -9,9 +9,14 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   }
 
   public enum Role: String, Codable, Sendable { case bootstrap, controller, helper, probe }
+  /// Mirrors MenuAction by raw value. The bridge that converts one to the other returns an
+  /// optional and drops a mismatch silently, so a case removed here would quietly empty the
+  /// action field of an exported record. Retired interface actions therefore stay, because
+  /// this type is persisted and older journals still decode through it.
   public enum Action: String, Codable, Sendable {
     case selectManual, selectAutomatic, turnInternalOff, turnInternalOn, keepInternalOn
     case resumeAutomatic, retryRecovery, toggleLaunchAtLogin, exportDiagnostics, quit
+    case openDisplayMonitor, selectAllMonitors, selectExternalOnly
   }
 
   public enum Code: String, Codable, Sendable {

@@ -5,14 +5,15 @@ import SoloDisplayPlatform
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate {
   private let diagnostics = DiagnosticsModel()
   private var statusItem: NSStatusItem?
   private var diagnosticsWindow: NSWindow?
   private var helper: HelperRuntime?
   private var controller: ControllerRuntime?
-  private var menuIsOpen = false
-  private var rebuildPending = false
+  private var lastGlyph: MenuGlyph?
+  private var popover: NSPopover?
+  private let panelStore = MenuPanelStore()
   private let operationalDiagnostics = OperationalLogger(role: .bootstrap)
 
   func applicationDidFinishLaunching(_: Notification) {
@@ -86,9 +87,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     )
     controller = runtime
     installStatusItem()
-    runtime.onMenuChanged = { [weak self] in self?.rebuildMenu() }
+    attachPanel()
+    panelStore.perform = { [weak self] action in self?.performPanelAction(action) }
+    runtime.onMenuChanged = { [weak self] in self?.refreshInterface() }
+    runtime.onOpenDiagnostics = { [weak self] in self?.showDiagnostics() }
+    // A display that vanishes can take the panel's own window with it, so close rather than
+    // ride out a reconfiguration that this app may itself have caused.
+    NotificationCenter.default.addObserver(
+      forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.popover?.performClose(nil) }
+    }
     runtime.start()
-    rebuildMenu()
+    refreshInterface()
     if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
       showDiagnostics()
     }
@@ -139,6 +150,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     statusItem = item
   }
 
+  /// The whole point of living in the menu bar is being readable without being opened, so the
+  /// icon carries the state and the description carries the same words the menu would use.
+  private func applyGlyph(_ glyph: MenuGlyph, description: String) {
+    guard let button = statusItem?.button else { return }
+    if glyph != lastGlyph {
+      lastGlyph = glyph
+      button.image = NSImage(
+        systemSymbolName: glyph.symbolName, accessibilityDescription: description
+      )
+    }
+    button.image?.accessibilityDescription = description
+    button.toolTip = description
+    button.appearsDisabled = glyph.dimmed
+  }
+
   private func updateHelperInterface(_ state: HelperInterfaceState) {
     switch state {
     case .hidden:
@@ -180,64 +206,92 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     helper?.retryRecovery()
   }
 
-  func menuWillOpen(_: NSMenu) {
-    menuIsOpen = true
+  /// The controller drives this whenever what the interface would say has changed. It is the
+  /// only place the icon and the panel are updated, so the two cannot disagree.
+  private func refreshInterface() {
+    guard let controller else { return }
+    let panel = controller.panel
+    applyGlyph(panel.glyph, description: panel.statusDescription)
+    panelStore.update(panel)
   }
 
-  func menuDidClose(_: NSMenu) {
-    menuIsOpen = false
-    guard rebuildPending else { return }
-    rebuildPending = false
-    rebuildMenu()
+  private func attachPanel() {
+    guard let button = statusItem?.button else { return }
+    button.target = self
+    button.action = #selector(statusItemClicked)
+    button.sendAction(on: [.leftMouseUp, .rightMouseUp])
   }
 
-  private func rebuildMenu() {
-    guard let controller, let statusItem else { return }
-    // Never swap the menu while someone is clicking in it.
-    guard !menuIsOpen else {
-      rebuildPending = true
+  @objc private func statusItemClicked() {
+    if NSApp.currentEvent?.type == .rightMouseUp {
+      showFallbackMenu()
       return
     }
-    let menu = NSMenu()
-    for item in controller.items {
-      if item.separator {
-        menu.addItem(.separator())
-        continue
-      }
-      guard let action = item.action else {
-        let entry = menu.addItem(withTitle: item.title, action: nil, keyEquivalent: "")
-        entry.isEnabled = false
-        continue
-      }
-      let entry = menu.addItem(
-        withTitle: item.title, action: #selector(performMenuAction(_:)),
-        keyEquivalent: action == .quit ? "q" : ""
-      )
-      entry.target = self
-      entry.isEnabled = item.enabled
-      entry.state = item.checked ? .on : .off
-      entry.representedObject = action.rawValue
+    togglePanel()
+  }
+
+  private func togglePanel() {
+    guard let button = statusItem?.button else { return }
+    if let popover, popover.isShown {
+      popover.performClose(nil)
+      return
     }
-    menu.addItem(.separator())
+    let popover = popover ?? makePopover()
+    self.popover = popover
+    // Without activating, the panel cannot take key focus, and neither the keyboard nor
+    // VoiceOver can reach anything inside it.
+    NSApp.activate(ignoringOtherApps: true)
+    popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    popover.contentViewController?.view.window?.makeKey()
+  }
+
+  private func makePopover() -> NSPopover {
+    let popover = NSPopover()
+    popover.behavior = .transient
+    // A screen may be in the middle of disappearing. Do not animate into it.
+    popover.animates = false
+    let hosting = NSHostingController(rootView: MenuPanelView(store: panelStore))
+    hosting.sizingOptions = [.preferredContentSize]
+    popover.contentViewController = hosting
+    return popover
+  }
+
+  /// A way to reach Quit and diagnostics that needs no SwiftUI and no window placement, for the
+  /// moments when the screen situation is exactly what has gone wrong.
+  private func showFallbackMenu() {
+    guard let statusItem else { return }
+    let menu = NSMenu()
     addDiagnosticsWindowItem(to: menu)
-    // The menu is rebuilt from state, so items never disagree with what the controller believes.
+    menu.addItem(.separator())
+    let quit = menu.addItem(
+      withTitle: "Quit SoloDisplay", action: #selector(quit), keyEquivalent: "q"
+    )
+    quit.target = self
     menu.autoenablesItems = false
-    menu.delegate = self
     statusItem.menu = menu
+    statusItem.button?.performClick(nil)
+    // Leaving the menu attached would suppress the button action the panel is opened by.
+    statusItem.menu = nil
+  }
+
+  private func performPanelAction(_ action: MenuAction) {
+    // A display change is about to happen and this window may be sitting on the screen it
+    // affects. Selecting an arrangement dismisses, the way picking from a menu does.
+    switch action {
+    case .selectAllMonitors, .selectExternalOnly, .quit, .openDisplayMonitor, .exportDiagnostics:
+      popover?.performClose(nil)
+    default:
+      break
+    }
+    controller?.perform(action)
   }
 
   private func addDiagnosticsWindowItem(to menu: NSMenu) {
     let show = menu.addItem(
-      withTitle: "Display Diagnostics…", action: #selector(showDiagnostics), keyEquivalent: ""
+      withTitle: "Diagnostics…", action: #selector(showDiagnostics), keyEquivalent: ""
     )
     show.target = self
     show.isEnabled = true
-  }
-
-  @objc private func performMenuAction(_ sender: NSMenuItem) {
-    guard let raw = sender.representedObject as? String, let action = MenuAction(rawValue: raw)
-    else { return }
-    controller?.perform(action)
   }
 
   private func runLabCommand(_ arguments: [String]) {
@@ -270,7 +324,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         backing: .buffered, defer: false
       )
       window.title = "SoloDisplay Display Diagnostics"
-      window.contentViewController = NSHostingController(rootView: ContentView(model: diagnostics))
+      window.contentViewController = NSHostingController(
+        rootView: ContentView(model: diagnostics) { [weak self] in
+          self?.controller?.perform(.exportDiagnostics)
+        }
+      )
       window.isReleasedWhenClosed = false
       window.center()
       diagnosticsWindow = window
