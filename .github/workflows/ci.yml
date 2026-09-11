@@ -43,17 +43,25 @@ jobs:
         run: swift build
       - name: Test
         run: swift test --enable-code-coverage
-      - name: Locate coverage report
+      # Codecov cannot parse SwiftPM's llvm.coverage.json.export: it accepts the upload, then
+      # reports the commit as errored with zero files. lcov is read correctly.
+      - name: Export coverage as lcov
         if: github.event_name == 'push'
-        id: coverage
-        run: echo "path=$(swift test --show-codecov-path)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          bin=$(swift build --show-bin-path)
+          bundle=$(ls -d "$bin"/*.xctest | head -1)
+          xcrun llvm-cov export -format=lcov \
+            "$bundle/Contents/MacOS/$(basename "$bundle" .xctest)" \
+            -instr-profile "$bin/codecov/default.profdata" > package.lcov
+          grep -c '^SF:' package.lcov
       - name: Upload package coverage
         if: github.event_name == 'push'
         uses: codecov/codecov-action@v5
         with:
           disable_search: true
           fail_ci_if_error: true
-          files: ${{ steps.coverage.outputs.path }}
+          files: package.lcov
           flags: package-tests
           name: package-tests
           use_oidc: true
@@ -72,7 +80,6 @@ jobs:
         run: brew install xcbeautify
       # Account-independent build: ad-hoc signing, no team, unit tests only.
       # The UI test target is intentionally skipped (needs interactive automation).
-      # Keep Xcode's default DerivedData location so Codecov can find its profdata.
       - name: Build & test app
         run: |
           set -o pipefail
@@ -81,18 +88,35 @@ jobs:
             -scheme SoloDisplay \
             -configuration Debug \
             -destination 'platform=macOS,arch=arm64' \
+            -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
             -enableCodeCoverage YES \
             test -only-testing:SoloDisplayTests | xcbeautify
         shell: bash
+      # Xcode puts the app's own code in SoloDisplay.debug.dylib and leaves
+      # Contents/MacOS/SoloDisplay as a launcher stub with no coverage mapping. Codecov's Swift
+      # processor looks at the stub, finds nothing, and reports zero.
+      - name: Export coverage as lcov
+        if: github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          products=DerivedData/Build/Products/Debug
+          profdata=$(find DerivedData/Build/ProfileData -name '*.profdata' | head -1)
+          binary="$products/SoloDisplay.app/Contents/MacOS/SoloDisplay.debug.dylib"
+          [ -f "$binary" ] || binary="$products/SoloDisplay.app/Contents/MacOS/SoloDisplay"
+          xcrun llvm-cov export -format=lcov "$binary" \
+            -object "$products/SoloDisplay.app/Contents/PlugIns/SoloDisplayTests.xctest/Contents/MacOS/SoloDisplayTests" \
+            -instr-profile "$profdata" > app.lcov
+          grep -c '^SF:' app.lcov
       - name: Upload app coverage
         if: github.event_name == 'push'
         uses: codecov/codecov-action@v5
         with:
+          disable_search: true
           fail_ci_if_error: true
+          files: app.lcov
           flags: app-tests
           name: app-tests
-          swift_project: SoloDisplay
           use_oidc: true
 
   lint:
