@@ -1,6 +1,6 @@
 # Implementation and validation status
 
-Updated 2026-09-10. `validation.md` is the chronological hardware evidence record. Historical statements describe the state at the time of each experiment, not verification of subsequent code changes.
+Updated 2026-09-11. `validation.md` is the chronological hardware evidence record. Historical statements describe the state at the time of each experiment, not verification of subsequent code changes.
 
 ## Sleep-transition incident correction
 
@@ -80,7 +80,7 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 - Production coordinator around the pure reducer. Decisions happen one event at a time; every synchronous platform call runs on one serial lane, so a stalled display call cannot block the event loop and no callback ever configures a display. The executor repeats the full eligibility check immediately before writing, and a refusal before the call is distinguished from a call that failed.
 - Native transport classification from IOKit provenance. A display counts as native only when it correlates to a display service hanging off the SoC display pipeline. Names, active flags, and operator attestation are not inputs.
 - Mirror topology classification. An internal follower of one present external source is supported; an internal mirror source or an unresolvable set is not. An inactive follower is read as presence, never as suppression.
-- Menu-bar controls driven by the coordinator: status with a specific reason for every refusal, manual and automatic selection, turn off and on, keep on and resume, retry recovery, launch at login, sanitized diagnostics export, and quit that requests restoration first. Automatic mode stays locked until a manual off and verified restoration has actually worked on this Mac.
+- Menu-bar panel driven by the coordinator. Two stored arrangements, All Monitors and External Only, each a persisted intent rather than a reading of the hardware: External Only stays chosen with no monitor attached and means off whenever one is present. A single line under them reports what is actually true, and carries a specific reason for every refusal. Only a Mac with no built-in panel makes an arrangement unpickable; everything else is a matter of when, and the panel says what it is waiting for. Retry, launch at login, sanitized diagnostics export, and quit that requests restoration first. The menu-bar icon reports the live arrangement without the panel being opened, and a right-click reaches diagnostics and quit without SwiftUI.
 - Bounded replay diagnostics fed by production events, capped at 10,000 events and 5 MB, exported with export-local pseudonyms and never uploaded. No raw lab log is offered as a user-facing export.
 - A controller that loses its supervising helper finishes anything it owes and then exits, so an unsupervised process cannot hold the writer lock and block a fresh pair.
 - Read-only native menu-bar app with callbacks, lifecycle notifications, and periodic observations, now hosted in the controller process.
@@ -89,8 +89,8 @@ Statuses are not interchangeable. **Implemented** means the code exists. **Autom
 
 ## Earlier pre-hardware checklist (subsequently exercised below)
 
-- A recorded backend validation. `backendValidated` is the last remaining gate on this Mac, and nothing writes that record yet, so the menu correctly reports that turning the display off is unavailable. Writing one requires a guided round trip, which is Milestone D work.
-- Milestone D: repeating the recovery matrix through the actual menu controls with user-confirmed visibility.
+- A recorded backend validation. Resolved, but not as originally planned. The record is now written after a verified off and on round trip completes during ordinary use, and it is evidence for diagnostics rather than a precondition for acting. Requiring it first was circular: a fresh install could never make the round trip that would produce one, so every Release build refused to act. What stands behind an attempt is the journal, the protection lease, and verified restoration, not a prior recording.
+- Milestone D: repeating the recovery matrix through the actual panel controls with user-confirmed visibility.
 - Distribution signing, notarization, and Homebrew packaging.
 
 ## Historical hardware matrix
