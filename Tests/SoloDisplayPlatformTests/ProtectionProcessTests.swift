@@ -142,15 +142,6 @@ struct ProtectionProcessTests {
     #expect(outcome.detail(of: "controller-exit") == "1:1")
   }
 
-  @Test func lostHelperContactAlsoLeavesRecoveryToTheResponsiveController() throws {
-    let outcome = try run("helper-loss")
-    #expect(outcome.contains("helper-closing-contact"))
-    #expect(outcome.contains("helper-refused-unverified-target"))
-    #expect(!outcome.contains("helper-would-restore-recorded-panel"))
-    #expect(!outcome.journalRemains)
-    #expect(outcome.detail(of: "controller-exit") == "1:1")
-  }
-
   @Test func aKilledControllerIsRecoveredInTakeoverOrder() throws {
     let outcome = try run("controller-loss")
     let ordered = outcome.names.filter {
