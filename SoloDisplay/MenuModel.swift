@@ -2,111 +2,127 @@ import SoloDisplayCore
 import SoloDisplayPlatform
 
 /// Everything a menu item can ask for. A production action never reaches a lab command.
-nonisolated enum MenuAction: String, Equatable, Sendable {
-  case selectManual, selectAutomatic
-  case turnInternalOff, turnInternalOn
-  case keepInternalOn, resumeAutomatic
+nonisolated enum MenuAction: String, CaseIterable, Equatable, Sendable {
+  case selectAllMonitors, selectExternalOnly
   case retryRecovery
   case toggleLaunchAtLogin
+  case openDisplayMonitor
   case exportDiagnostics
   case quit
 }
 
-nonisolated struct MenuItem: Equatable, Sendable {
-  var title: String
-  var action: MenuAction?
-  var enabled = true
-  var checked = false
-  var separator = false
-
-  static let separator = MenuItem(title: "", action: nil, separator: true)
-}
-
-/// Turns controller state into the menu, and nothing else. Keeping this pure means the wording
+/// Turns controller state into the panel, and nothing else. Keeping this pure means the wording
 /// of every refusal can be tested without launching an app or touching a display.
 nonisolated enum MenuModel {
-  static func items(
-    _ presentation: Presentation, launchAtLogin: Bool, automaticAvailable: Bool
-  ) -> [MenuItem] {
-    var items: [MenuItem] = [
-      .init(title: status(presentation), action: nil, enabled: false)
-    ]
-    if let detail = detail(presentation) {
-      items.append(.init(title: detail, action: nil, enabled: false))
+  /// The panel, as a pure function of controller state. Every word a person can be shown here,
+  /// including every refusal, is decided in this file and can be read back in a test without
+  /// launching an app or touching a display.
+  static func panel(_ presentation: Presentation, launchAtLogin: Bool) -> MenuPanel {
+    let chosenOff = presentation.wantsInternalOff
+    let busy = presentation.operationInFlight
+    // Only two things make an arrangement genuinely unpickable: a Mac with no built-in display
+    // to turn off, and an app on its way out. Everything else, an unplugged monitor included,
+    // is a matter of when rather than whether, so the choice stands and the tile says it is
+    // waiting. A greyed tile would claim the setting cannot even be held, which is false.
+    let impossible = presentation.unavailability == .noConfirmedPanel
+      || presentation.unavailability == .shuttingDown
+    return MenuPanel(
+      allMonitors: .init(
+        title: "All Monitors", action: .selectAllMonitors, isSelected: !chosenOff,
+        isActive: !presentation.panelOwned, isEnabled: !busy,
+        isPending: !chosenOff && busy, internalLit: true, externalLit: true
+      ),
+      externalOnly: .init(
+        title: "External Only", action: .selectExternalOnly, isSelected: chosenOff,
+        isActive: presentation.panelOwned, isEnabled: !busy && !impossible,
+        isPending: chosenOff && busy, internalLit: false, externalLit: true
+      ),
+      reality: reality(presentation),
+      alert: alert(presentation),
+      launchAtLogin: .init(
+        title: "Launch at Login", action: .toggleLaunchAtLogin, isOn: launchAtLogin
+      ),
+      commands: [
+        .init(title: "Diagnostics…", action: .openDisplayMonitor),
+        .init(title: "Quit SoloDisplay", action: .quit)
+      ],
+      glyph: glyph(presentation),
+      statusDescription: status(presentation)
+    )
+  }
+
+  /// What is true right now, as opposed to what was chosen. This is also where a blocked choice
+  /// explains itself, so the explanation sits with the thing it blocks instead of becoming a
+  /// heading the person has to read before they have asked for anything.
+  static func reality(_ presentation: Presentation) -> String {
+    if presentation.panelOwned {
+      return "Your laptop screen is off."
     }
-    items.append(.separator)
-
-    items.append(
-      .init(
-        title: "Manual", action: .selectManual, enabled: presentation.mode != .manual,
-        checked: presentation.mode == .manual
-      )
-    )
-    items.append(
-      .init(
-        title: automaticAvailable ? "Automatic" : "Automatic (after a manual test)",
-        action: .selectAutomatic, enabled: automaticAvailable && presentation.mode == .manual,
-        checked: presentation.mode != .manual
-      )
-    )
-    items.append(.separator)
-
-    switch presentation.mode {
-    case .manual:
-      if presentation.panelOwned || presentation.manualRequestActive {
-        items.append(
-          .init(
-            title: "Turn Internal Display On", action: .turnInternalOn,
-            enabled: !presentation.operationInFlight
-          )
-        )
-      } else {
-        items.append(
-          .init(
-            title: "Turn Internal Display Off", action: .turnInternalOff,
-            enabled: presentation.canDisableNow
-          )
-        )
+    if presentation.unavailability == .noConfirmedPanel {
+      return reason(Unavailability.noConfirmedPanel)
+    }
+    if !presentation.wantsInternalOff {
+      return "Your laptop screen stays on."
+    }
+    // External Only is chosen but not in effect. Say what it is waiting for, and say it as a
+    // matter of timing, because the setting is being held and applies on its own.
+    if let unavailability = presentation.unavailability, unavailability != .settling {
+      if unavailability == .noNativeExternal {
+        return "Waiting for a monitor. Your laptop screen turns off when you connect one."
       }
-    case .automatic:
-      items.append(.init(title: "Keep Internal Display On", action: .keepInternalOn))
-    case .automaticPaused:
-      items.append(.init(title: "Resume Automatic", action: .resumeAutomatic))
+      return reason(unavailability)
     }
+    return "Turning your laptop screen off."
+  }
 
-    if presentation.fault != nil || presentation.pendingRecovery {
-      items.append(
-        .init(
-          title: "Retry Recovery", action: .retryRecovery,
-          enabled: !presentation.operationInFlight
-        )
+  /// A fault outranks work in progress, because it is the one a person can act on.
+  static func alert(_ presentation: Presentation) -> MenuPanel.Alert? {
+    let retry = presentation.operationInFlight ? nil : MenuAction.retryRecovery
+    if let fault = presentation.fault {
+      return .init(
+        severity: .attention, title: status(presentation), detail: reason(fault), retry: retry
       )
     }
-    items.append(.separator)
-    items.append(
-      .init(title: "Launch at Login", action: .toggleLaunchAtLogin, checked: launchAtLogin)
+    guard presentation.waitingForRecovery || presentation.pendingRecovery else { return nil }
+    return .init(
+      severity: .working, title: status(presentation),
+      detail: detail(presentation) ?? "", retry: retry
     )
-    items.append(.init(title: "Export Diagnostics…", action: .exportDiagnostics))
-    items.append(.separator)
-    items.append(.init(title: "Quit SoloDisplay", action: .quit))
-    return items
+  }
+
+  /// The menu bar icon. Deliberately mirrors the order `status` reads its state in, so the
+  /// icon and the words can never disagree about what the app is doing.
+  static func glyph(_ presentation: Presentation) -> MenuGlyph {
+    if presentation.fault != nil {
+      return .attention
+    }
+    if presentation.waitingForRecovery {
+      return .working
+    }
+    if presentation.panelOwned {
+      return .externalOnly
+    }
+    if presentation.pendingRecovery || presentation.operationInFlight {
+      return .working
+    }
+    return .allMonitors
   }
 
   static func status(_ presentation: Presentation) -> String {
     if presentation.waitingForRecovery {
-      return "Waiting to restore the internal display"
+      return "Waiting to turn your laptop screen back on"
     }
     if presentation.panelOwned {
-      return "Internal display is off"
+      return "Your laptop screen is off"
     }
     if presentation.pendingRecovery {
-      return "Finishing recovery"
+      return "Finishing up"
     }
     if presentation.operationInFlight {
       return "Working…"
     }
     return presentation.canDisableNow
-      ? "Ready to turn the internal display off" : "Turning the internal display off is unavailable"
+      ? "Ready to switch to External Only" : "External Only is not available right now"
   }
 
   /// The specific reason, never a bare unavailable state. A fault outranks anything else,
@@ -125,20 +141,19 @@ nonisolated enum MenuModel {
 
   static func reason(_ unavailability: Unavailability) -> String {
     switch unavailability {
-    case .noObservation: "SoloDisplay has not observed the displays yet."
-    case .noConfirmedPanel: "SoloDisplay cannot positively identify this Mac's internal display."
-    case .staleEvidence: "Waiting for current display information."
-    case .lidClosed: "The lid is closed, so macOS is in charge of the internal display."
-    case .notAwake: "Waiting until this Mac is fully awake."
-    case .sessionNotForeground: "Another login session is in front."
-    case .noNativeExternal: "No directly connected external display was recognized."
-    case .unsupportedTopology: "This display arrangement is not one SoloDisplay has tested."
-    case .backendUnvalidated:
-      "Display control has not been validated on this Mac and this macOS version yet."
-    case .noRecoveryHelper: "The recovery helper is not available, so nothing will be turned off."
-    case .settling: "Waiting for the display arrangement to stay steady."
-    case .unresolvedOwnership: "SoloDisplay is still resolving an earlier run's record."
-    case .faulted: "SoloDisplay stopped after a problem. Use Retry Recovery."
+    case .noObservation: "Checking your displays."
+    case .noConfirmedPanel: "This Mac has no built-in display to turn off."
+    case .staleEvidence: "Reading your current display setup."
+    case .lidClosed: "Open the lid. macOS controls your laptop screen while it is closed."
+    case .notAwake: "Waiting for your Mac to wake up fully."
+    case .sessionNotForeground: "Another user is logged in and in front."
+    case .noNativeExternal: "Connect a monitor directly to this Mac."
+    case .unsupportedTopology: "SoloDisplay has not been tested with this display arrangement."
+    case .backendUnvalidated: "SoloDisplay has not checked this Mac yet."
+    case .noRecoveryHelper: "SoloDisplay is not fully running. Quit it and open it again."
+    case .settling: "Just a moment."
+    case .unresolvedOwnership: "Finishing up from the last time SoloDisplay ran."
+    case .faulted: "SoloDisplay stopped after a problem. Try again."
     case .shuttingDown: "SoloDisplay is quitting."
     }
   }
@@ -146,29 +161,29 @@ nonisolated enum MenuModel {
   static func reason(_ fault: Fault) -> String {
     switch fault {
     case .preferencesFailed:
-      "Could not save your preference. Keep Internal On is effective now but may not survive restart. Resolve storage access before restarting."
+      "Could not save your choice. It is active now but may not survive a restart. Fix storage access before restarting."
     case .configurationChanged:
-      "The display arrangement did not match the recorded configuration. Recovery remains unverified; SoloDisplay will not rewrite your external settings."
+      "Your displays changed while SoloDisplay was working, so it stopped rather than rewrite your setup."
     case .journalFailed:
-      "SoloDisplay could not record ownership durably, so it did not turn anything off."
+      "Could not save a safety record, so nothing was changed."
     case .operationFailed:
-      "A display request failed. SoloDisplay put the internal display back."
-    case .operationTimedOut: "A display request did not respond in time."
-    case .verificationFailed: "SoloDisplay could not confirm the display actually changed."
+      "That did not work, so SoloDisplay turned your laptop screen back on."
+    case .operationTimedOut: "Your Mac did not respond in time."
+    case .verificationFailed: "SoloDisplay could not confirm your screen actually changed."
     case .conflictingController:
-      "Something else changed the internal display, so SoloDisplay stopped rather than fighting it."
-    case .identityChanged: "The internal display is not the one SoloDisplay was tracking."
+      "Something else changed your laptop screen, so SoloDisplay stopped rather than fight it."
+    case .identityChanged: "Your laptop screen is not the one SoloDisplay was tracking."
     case .recoveryExhausted:
-      "SoloDisplay could not confirm the internal display came back on. Its record is kept."
-    case .priorRunUnresolved: "SoloDisplay is resolving ownership left by an earlier run."
+      "SoloDisplay could not confirm your laptop screen came back on."
+    case .priorRunUnresolved: "Finishing up from the last time SoloDisplay ran."
     case .protectionUnavailable:
-      "The recovery helper did not confirm protection, so nothing was turned off."
+      "SoloDisplay's safety net did not respond, so nothing was turned off."
     case .protectionLost:
-      "SoloDisplay lost contact with its recovery helper and put the internal display back."
+      "SoloDisplay lost its safety net and turned your laptop screen back on."
     case .ownershipClearFailed:
-      "The internal display is back on, but SoloDisplay could not clear its record."
+      "Your laptop screen is back on, but SoloDisplay could not clear its record."
     case .operationRefused:
-      "Conditions changed before the request was sent, so no display was changed."
+      "Things changed before the request went out, so nothing was touched."
     }
   }
 }

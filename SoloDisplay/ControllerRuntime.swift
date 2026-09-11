@@ -34,8 +34,9 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   private var exportAlert: NSAlert?
   private var activityResumeCount: UInt64 = 0
 
-  private(set) var items: [MenuItem] = []
+  private(set) var panel: MenuPanel = .placeholder
   var onMenuChanged: (() -> Void)?
+  var onOpenDiagnostics: (() -> Void)?
 
   init(
     link: ProtectionLink,
@@ -76,7 +77,10 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
       "login=\(reading.loginID.map(String.init) ?? "nil") lock=\(writerLock != nil) validation=\(validation != nil)"
     )
 
-    var state = ControllerState(mode: preferences.mode)
+    // Manual stopped being an arrangement anyone can pick. A preferences file from an older
+    // build decodes into the paused arrangement, which is what manual behaved like at rest.
+    let stored = preferences.mode == .manual ? .automaticPaused : preferences.mode
+    var state = ControllerState(mode: stored)
     // Automatic mode resumes from preferences, but a paused choice stays paused across restarts.
     if let store = preferencesStore, let journal = try? ProductionJournalStore() {
       recorder = .init(initial: state)
@@ -277,12 +281,12 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   // MARK: - Coordinator delegate
 
   func coordinator(_: ProductionCoordinator, didUpdate presentation: Presentation) {
-    // Automatic mode unlocks only after this installation has actually turned the panel off in
-    // manual mode and seen it verified back on. Offering it earlier would be asking for trust
-    // in a path nothing has exercised here.
+    // A full off and on round trip has just completed on this Mac and this macOS build. That is
+    // exactly what a backend validation records, and it is the only thing that may write one:
+    // a resolved symbol proves nothing, and neither does a suppression that was never undone.
     if previous?.panelOwned == true, !presentation.panelOwned, !presentation.pendingRecovery,
-       presentation.fault == nil, presentation.mode == .manual, !preferences.manualPathValidated {
-      mutatePreferences { $0.manualPathValidated = true }
+       presentation.fault == nil {
+      recordBackendValidation()
     }
     if previous != presentation {
       diagnostics.emit(.stateChanged, session: protection.session) {
@@ -324,8 +328,21 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
 
   // MARK: - Menu
 
-  private var automaticAvailable: Bool {
-    preferences.manualPathValidated
+  /// Evidence, not a gate. Nothing refuses to run because this is missing; it is written so a
+  /// diagnostics report can say the round trip was made here, and so an OS update shows up as a
+  /// record that no longer covers this system.
+  private func recordBackendValidation() {
+    let api = PrivateDisplayAPI()
+    guard let symbol = api.symbolName, let store = try? BackendValidationStore() else { return }
+    let osVersion = ProcessInfo.processInfo.operatingSystemVersionString
+    let model = BackendValidation.hardwareModel()
+    guard store.current(symbolName: symbol)?
+      .covers(osVersion: osVersion, hardwareModel: model, symbolName: symbol) != true
+    else { return }
+    try? store.save(.init(
+      osVersion: osVersion, hardwareModel: model, symbolName: symbol,
+      evidence: "Turned the internal panel off and saw it verified back on during normal use."
+    ))
   }
 
   var presentation: Presentation {
@@ -342,12 +359,10 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     if lockUnavailable, current.unavailability == nil {
       current.unavailability = .noRecoveryHelper
     }
-    let next = MenuModel.items(
-      current, launchAtLogin: preferences.launchAtLogin, automaticAvailable: automaticAvailable
-    )
-    // Rebuilding an identical menu would replace the one the user is currently clicking in.
-    guard next != items else { return }
-    items = next
+    let next = MenuModel.panel(current, launchAtLogin: preferences.launchAtLogin)
+    // Redrawing an identical panel would move things under the pointer for no reason.
+    guard next != panel else { return }
+    panel = next
     onMenuChanged?()
   }
 
@@ -359,15 +374,13 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     note("action \(action.rawValue)")
     defer { note("after \(action.rawValue): \(presentation)") }
     switch action {
-    case .selectManual: coordinator?.send(.selectMode(.manual))
-    case .selectAutomatic:
-      guard automaticAvailable else { return }
-      coordinator?.send(.selectMode(.automatic))
-    case .turnInternalOff: coordinator?.send(.manualOff)
-    case .turnInternalOn, .keepInternalOn: coordinator?.send(.keepOn)
-    case .resumeAutomatic: coordinator?.send(.selectMode(.automatic))
+    // The two tiles are stored intents, and both transitions already existed. All Monitors is
+    // the paused arrangement, External Only is off whenever a monitor is there to be off for.
+    case .selectAllMonitors: coordinator?.send(.keepOn)
+    case .selectExternalOnly: coordinator?.send(.selectMode(.automatic))
     case .retryRecovery: coordinator?.send(.retry)
     case .toggleLaunchAtLogin: toggleLaunchAtLogin()
+    case .openDisplayMonitor: onOpenDiagnostics?()
     case .exportDiagnostics: exportDiagnostics()
     case .quit: NSApp.terminate(nil)
     }

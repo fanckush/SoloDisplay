@@ -488,11 +488,15 @@ struct ProductionCoordinatorTests {
     #expect(harness.coordinator.presentation.unavailability == .noNativeExternal)
   }
 
-  @Test func anUnvalidatedBackendNeverReachesTheDisplay() {
+  @Test func anUnrecordedBackendStillReachesTheDisplay() {
+    // The executor repeats the prerequisite check immediately before it writes, and a missing
+    // validation record is no longer one of those prerequisites. Every other gate still stands:
+    // the neighbouring tests cover an unclassified transport, a storage failure and a refused
+    // lease, none of which reach the display.
     let harness = Harness(reading: reading(validated: false))
     harness.reachSuppression()
-    #expect(harness.writer.calls.isEmpty)
-    #expect(harness.coordinator.presentation.unavailability == .backendUnvalidated)
+    #expect(harness.writer.calls == [.init(enabled: false, displayID: 1, scope: .application)])
+    #expect(harness.coordinator.presentation.unavailability == nil)
   }
 
   @Test func aStorageFailureFaultsInsteadOfWriting() {
