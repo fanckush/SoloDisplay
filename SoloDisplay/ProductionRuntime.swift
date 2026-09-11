@@ -8,6 +8,15 @@ enum HelperInterfaceState: Equatable {
   case hidden
   case recovering(String)
   case blocked(String)
+
+  /// Retry is only offered on a blocked state. A recovery that cannot progress therefore has to
+  /// stop reporting progress, or it leaves a person with nothing to act on and no way out.
+  static let waitingForEvidence = Self.blocked(
+    "SoloDisplay cannot identify the internal display yet, so it is holding its record and "
+      + "changing nothing. Try again, or restart this Mac if the screen stays off."
+  )
+
+  static let restoringPanel = Self.recovering("Restoring the internal display…")
 }
 
 /// Why display control is unavailable, in the words the menu shows. Availability is proven,
@@ -50,6 +59,9 @@ final class HelperRuntime {
   private var loggedPairing = false
   private var loggedLoss: HelperProtection.Reason?
   private var recoveryOwnership: Ownership?
+  /// Scoped to one recovery attempt, and reset by each. Tracked apart from the diagnostics
+  /// one-shot because the interface has to be able to go back to reporting progress.
+  private var surfacedRecoveryWait = false
 
   var onInterfaceStateChanged: ((HelperInterfaceState) -> Void)?
 
@@ -461,6 +473,7 @@ final class HelperRuntime {
     }
     var continuation = RecoveryContinuation()
     var reportedWaiting = false
+    surfacedRecoveryWait = false
     let observer = recoveryObserver
     let writer: any DisplayWriting =
       recoveryWriter
@@ -476,11 +489,9 @@ final class HelperRuntime {
           reading, target: record.target,
           liveOwnership: liveOwnership
         )
-      if readiness == .waiting, !reportedWaiting {
-        diagnostics.emit(.recoveryWaiting, session: record.session, reason: .evidenceUnavailable)
-        report("Waiting for recovery evidence. Ownership and the writer lock are retained.")
-        reportedWaiting = true
-      }
+      noteRecoveryWait(
+        readiness == .waiting, session: record.session, reported: &reportedWaiting
+      )
       switch continuation.observe(
         readiness: readiness,
         restored: RestorationVerification.matches(record, reading: reading), at: recoveryClock.now()
@@ -573,6 +584,19 @@ final class HelperRuntime {
       try? await Task.sleep(for: .milliseconds(50))
     }
     return !child.isRunning
+  }
+
+  /// The diagnostic fires once per attempt. The interface state toggles, because a wait that
+  /// ends has to take its message with it or every later recovery reads as stuck.
+  private func noteRecoveryWait(_ waiting: Bool, session: String, reported: inout Bool) {
+    if waiting, !reported {
+      diagnostics.emit(.recoveryWaiting, session: session, reason: .evidenceUnavailable)
+      report("Waiting for recovery evidence. Ownership and the writer lock are retained.")
+      reported = true
+    }
+    guard waiting != surfacedRecoveryWait else { return }
+    surfacedRecoveryWait = waiting
+    onInterfaceStateChanged?(waiting ? .waitingForEvidence : .restoringPanel)
   }
 
   private func report(_ message: String) {

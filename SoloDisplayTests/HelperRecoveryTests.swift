@@ -126,6 +126,61 @@ private actor RecoveryGate {
     released.release()
   }
 
+  @Test func aRecoveryWaitSaysSoInsteadOfClaimingProgress() async throws {
+    // The menu offers Retry only on a blocked state. While recovery sat in a wait it reported
+    // itself as in progress, so a wait it could never leave looked like a working recovery with
+    // nothing to act on and no way out but Activity Monitor.
+    let baseline = try fixture()
+    let target = try #require(baseline.internalTarget)
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let store = try ProductionJournalStore(directory: folder)
+    let record = ProductionRecord(
+      session: "test", operationID: 1, target: target, scope: "app",
+      controllerPID: 123, helperPID: 456, topology: baseline.displays
+    )
+    try store.prepare(record)
+    var absent = baseline
+    absent.displays.removeFirst()
+    absent.lid = .closed
+    let observer = RecoveryObserver(absent)
+    let gate = RecoveryGate()
+    let helper = HelperRuntime(
+      executable: folder.appendingPathComponent("never-launched"),
+      store: store, recoveryObserver: observer, recoveryWriter: RecoveryWriter(),
+      recoveryLockDirectory: folder, diagnostics: .init(role: .helper, sink: RecoveryLog()),
+      recoveryPause: { await gate.pause() }
+    )
+    var states: [HelperInterfaceState] = []
+    helper.onInterfaceStateChanged = { states.append($0) }
+    let recovery = Task {
+      await helper.restore(
+        record, reason: "test", liveOwnership: .init(target: target, operationID: 1)
+      )
+    }
+
+    await gate.untilPaused()
+    guard case let .blocked(detail) = try #require(states.first) else {
+      Issue.record("A wait surfaced as \(String(describing: states.first)), not as blocked.")
+      return
+    }
+    #expect(detail.lowercased().contains("try again"))
+    #expect(!detail.lowercased().contains("in progress"))
+
+    // Leaving the wait has to take the message back with it, or every later recovery reads as
+    // stuck no matter what it is actually doing.
+    absent.lid = .open
+    observer.set(absent)
+    await gate.advance()
+    await gate.untilPaused()
+    if case .recovering = states.last {} else {
+      Issue.record("Resuming surfaced as \(String(describing: states.last)), not as recovering.")
+    }
+
+    observer.set(baseline)
+    await gate.advance()
+    _ = await recovery.value
+  }
+
   @Test func failedRecoveryLogsRetainedOwnershipWithoutClaimingSuccess() async throws {
     let baseline = try fixture()
     let target = try #require(baseline.internalTarget)
