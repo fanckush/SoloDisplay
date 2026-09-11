@@ -83,10 +83,15 @@ nonisolated enum MenuModel {
         severity: .attention, title: status(presentation), detail: reason(fault), retry: retry
       )
     }
-    guard presentation.waitingForRecovery || presentation.pendingRecovery else { return nil }
+    // Not simply "the panel is off". Ownership is held for the whole time the screen is
+    // legitimately off, so raising an alert on pendingRecovery turned the resting state into a
+    // spinner with nothing to say and an offer to retry a recovery that was never happening.
+    // Only two things qualify: waiting to restore, and restored but not yet cleared.
+    let clearing = presentation.pendingRecovery && !presentation.panelOwned
+    guard presentation.waitingForRecovery || clearing else { return nil }
     return .init(
       severity: .working, title: status(presentation),
-      detail: detail(presentation) ?? "", retry: retry
+      detail: detail(presentation) ?? reality(presentation), retry: retry
     )
   }
 

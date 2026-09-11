@@ -3,7 +3,12 @@ import SwiftUI
 /// The menu bar panel. Two arrangements, one line saying what is actually true, and the few
 /// commands that are not a choice about displays.
 struct MenuPanelView: View {
+  /// The two arrangements are the reason the panel exists, so opening it puts the keyboard on
+  /// them. Without this the first focusable control took it, which was Launch at Login.
+  private enum Tile: Hashable { case allMonitors, externalOnly }
+
   let store: MenuPanelStore
+  @FocusState private var focus: Tile?
 
   private var panel: MenuPanel {
     store.panel
@@ -21,13 +26,22 @@ struct MenuPanelView: View {
     }
     .frame(width: 300)
     .fixedSize(horizontal: false, vertical: true)
+    .onAppear { focus = panel.externalOnly.isSelected ? .externalOnly : .allMonitors }
   }
 
   private var choices: some View {
     VStack(alignment: .leading, spacing: 9) {
       HStack(spacing: 10) {
-        DisplayTile(choice: panel.allMonitors, action: store.perform)
-        DisplayTile(choice: panel.externalOnly, action: store.perform)
+        DisplayTile(
+          choice: panel.allMonitors, action: store.perform, isFocused: focus == .allMonitors
+        )
+        .focusable(panel.allMonitors.isEnabled)
+        .focused($focus, equals: .allMonitors)
+        DisplayTile(
+          choice: panel.externalOnly, action: store.perform, isFocused: focus == .externalOnly
+        )
+        .focusable(panel.externalOnly.isEnabled)
+        .focused($focus, equals: .externalOnly)
       }
       .accessibilityElement(children: .contain)
       .accessibilityLabel("Display arrangement")
@@ -53,10 +67,12 @@ struct MenuPanelView: View {
       .frame(width: 16)
       VStack(alignment: .leading, spacing: 2) {
         Text(alert.title).font(.system(size: 12, weight: .semibold))
-        Text(alert.detail)
-          .font(.system(size: 11))
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
+        if !alert.detail.isEmpty {
+          Text(alert.detail)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
         if let retry = alert.retry {
           Button("Try Again") { store.perform(retry) }
             .buttonStyle(.link)

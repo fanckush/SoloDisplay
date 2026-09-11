@@ -6,7 +6,8 @@ import Testing
 private func presentation(
   mode: Mode = .manual, manualRequestActive: Bool = false, panelOwned: Bool = false,
   operationInFlight: Bool = false, pendingRecovery: Bool = false, fault: Fault? = nil,
-  unavailability: Unavailability? = nil, wantsInternalOff: Bool = false
+  unavailability: Unavailability? = nil, wantsInternalOff: Bool = false,
+  waitingForRecovery: Bool = false
 ) -> Presentation {
   var value = Presentation(
     mode: mode, manualRequestActive: manualRequestActive, panelOwned: panelOwned,
@@ -15,6 +16,7 @@ private func presentation(
   )
   // The reducer sets this from wantsOff. Hand-built presentations have to say it themselves.
   value.wantsInternalOff = wantsInternalOff
+  value.waitingForRecovery = waitingForRecovery
   return value
 }
 
@@ -191,10 +193,44 @@ struct MenuModelTests {
     #expect(shown.glyph == .attention)
     // Work in progress is a different severity, and it is not offered a retry mid-flight.
     let working = menuPanel(presentation(
-      panelOwned: true, operationInFlight: true, pendingRecovery: true, wantsInternalOff: true
+      panelOwned: true, operationInFlight: true, pendingRecovery: true, wantsInternalOff: true,
+      waitingForRecovery: true
     ))
     #expect(working.alert?.severity == .working)
     #expect(working.alert?.retry == nil)
+  }
+
+  @Test func aScreenThatIsSimplyOffIsNotAnAlert() {
+    // Ownership is retained for the whole time the panel is legitimately off, so pendingRecovery
+    // is true throughout the resting state. Treating that as recovery put a spinner, a blank
+    // line and a Try Again on the one state where nothing whatsoever is wrong.
+    let resting = menuPanel(presentation(
+      panelOwned: true, pendingRecovery: true, wantsInternalOff: true
+    ))
+    #expect(resting.alert == nil)
+    #expect(resting.reality == "Your laptop screen is off.")
+
+    // A genuine wait still raises one, and it always has something to say.
+    let waiting = menuPanel(presentation(
+      panelOwned: true, pendingRecovery: true, wantsInternalOff: true, waitingForRecovery: true
+    ))
+    #expect(waiting.alert?.severity == .working)
+    #expect(waiting.alert?.retry == .retryRecovery)
+    #expect(!(waiting.alert?.detail.isEmpty ?? true))
+  }
+
+  @Test func noAlertEverShowsAnEmptyExplanation() {
+    for value in [
+      presentation(panelOwned: true, pendingRecovery: true, wantsInternalOff: true,
+                   waitingForRecovery: true),
+      presentation(pendingRecovery: true, unavailability: .unresolvedOwnership),
+      presentation(fault: .ownershipClearFailed, unavailability: .faulted),
+      presentation(fault: .preferencesFailed)
+    ] {
+      guard let alert = menuPanel(value).alert else { continue }
+      #expect(!alert.title.isEmpty)
+      #expect(!alert.detail.isEmpty)
+    }
   }
 
   @Test func everyStringThePanelCanShowIsPlainAndFinished() {
