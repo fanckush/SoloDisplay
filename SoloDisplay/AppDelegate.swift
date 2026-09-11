@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Darwin
 import Foundation
 import SoloDisplayPlatform
@@ -14,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var lastGlyph: MenuGlyph?
   private var popover: NSPopover?
   private let panelStore = MenuPanelStore()
+  private var knownScreens: Set<CGDirectDisplayID> = []
   private let operationalDiagnostics = OperationalLogger(role: .bootstrap)
 
   func applicationDidFinishLaunching(_: Notification) {
@@ -91,12 +93,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     panelStore.perform = { [weak self] action in self?.performPanelAction(action) }
     runtime.onMenuChanged = { [weak self] in self?.refreshInterface() }
     runtime.onOpenDiagnostics = { [weak self] in self?.showDiagnostics() }
-    // A display that vanishes can take the panel's own window with it, so close rather than
-    // ride out a reconfiguration that this app may itself have caused.
+    // A display that vanishes can take the panel's own window with it, so close rather than ride
+    // out a reconfiguration this app may itself have caused. Only an actual change to the set of
+    // displays counts: this notification also fires for every visibleFrame change, which includes
+    // the menu bar revealing itself over a full-screen app, and closing on that dismissed the
+    // panel the moment someone moved the pointer up to reach it.
+    knownScreens = Self.screenIDs()
     NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
-      MainActor.assumeIsolated { self?.popover?.performClose(nil) }
+      MainActor.assumeIsolated {
+        guard let self else { return }
+        let current = Self.screenIDs()
+        guard current != self.knownScreens else { return }
+        self.knownScreens = current
+        self.popover?.performClose(nil)
+      }
     }
     runtime.start()
     refreshInterface()
@@ -213,6 +225,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = controller.panel
     applyGlyph(panel.glyph, description: panel.statusDescription)
     panelStore.update(panel)
+  }
+
+  private static func screenIDs() -> Set<CGDirectDisplayID> {
+    Set(NSScreen.screens.compactMap {
+      $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    })
   }
 
   private func attachPanel() {
