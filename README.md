@@ -13,15 +13,13 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/app-screenshot.webp" alt="The SoloDisplay menu bar panel, with All Monitors and External Only" width="420">
+  <img src="docs/assets/app-screenshot.webp" alt="The SoloDisplay menu bar panel, with All Monitors and External Only" width="600">
 </p>
 
 
-Windows has External Display only mode, macOS does not have this, this little app adds that functionality.
+Windows has External Display only mode, macOS does not have this, this little app adds that functionality. SoloDisplay actually turns the internal panel off when an external monitor is connected. Simple as that.
 
-SoloDisplay actually turns the internal panel off when an external monitor is connected. Simple as that.
-
-## Install
+## Installation
 
 <p align="center">
   <a href="https://github.com/fanckush/SoloDisplay/releases/latest/download/SoloDisplay.dmg">
@@ -32,10 +30,7 @@ SoloDisplay actually turns the internal panel off when an external monitor is co
   </a>
 </p>
 
-
-Open the DMG and drag SoloDisplay to your Applications folder.
-
-Or install with [Homebrew](https://brew.sh), which also keeps it up to date:
+or 
 
 ```sh
 brew install --cask fanckush/solodisplay/solodisplay
