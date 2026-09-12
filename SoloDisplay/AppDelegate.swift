@@ -13,7 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var helper: HelperRuntime?
   private var controller: ControllerRuntime?
   private var lastGlyph: MenuGlyph?
-  private var popover: NSPopover?
+  private var panelMenu: NSMenu?
+  private var panelHosting: NSHostingView<MenuPanelView>?
   private let panelStore = MenuPanelStore()
   private var knownScreens: Set<CGDirectDisplayID> = []
   private let operationalDiagnostics = OperationalLogger(role: .bootstrap)
@@ -107,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let current = Self.screenIDs()
         guard current != self.knownScreens else { return }
         self.knownScreens = current
-        self.popover?.performClose(nil)
+        self.panelMenu?.cancelTracking()
       }
     }
     runtime.start()
@@ -248,34 +249,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     togglePanel()
   }
 
+  /// The panel is a view inside a real `NSMenu` rather than an `NSPopover`.
+  ///
+  /// Only a menu counts as attached to the menu bar as far as the system is concerned. While one
+  /// tracks, macOS holds an auto-hidden menu bar down, which is what makes the native extras feel
+  /// the way they do over a full-screen app. A popover is only a window anchored near the status
+  /// item, so the bar slid back up and dismissed the panel with it, and keeping it alive meant
+  /// hand-rolling the dismissal that a menu already performs correctly on its own.
   private func togglePanel() {
-    guard let button = statusItem?.button else { return }
-    if let popover, popover.isShown {
-      popover.performClose(nil)
+    guard let statusItem, let button = statusItem.button else { return }
+    if panelMenu != nil {
+      panelMenu?.cancelTracking()
       return
     }
-    let popover = popover ?? makePopover()
-    self.popover = popover
-    // Without activating, the panel cannot take key focus, and neither the keyboard nor
-    // VoiceOver can reach anything inside it.
-    NSApp.activate(ignoringOtherApps: true)
-    popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-    popover.contentViewController?.view.window?.makeKey()
+    let hosting = NSHostingView(rootView: MenuPanelView(store: panelStore))
+    // Sized from the content rather than measured once here. The reality line runs to one, two or
+    // three lines depending on what it has to say, and a menu item pinned to the height it had
+    // when it opened keeps that height and lets SwiftUI centre the content inside it, which reads
+    // as the panel's padding drifting every time the arrangement changes.
+    hosting.sizingOptions = [.intrinsicContentSize]
+    hosting.translatesAutoresizingMaskIntoConstraints = false
+    // The panel is a fixed width by design; only its height is in question.
+    hosting.widthAnchor.constraint(equalToConstant: 300).isActive = true
+    panelHosting = hosting
+
+    let item = NSMenuItem()
+    item.view = hosting
+    let menu = NSMenu()
+    menu.addItem(item)
+    menu.delegate = self
+    panelMenu = menu
+
+    // Attaching the menu makes this click open it. Leaving it attached afterwards would suppress
+    // the button action that the panel is opened by in the first place.
+    statusItem.menu = menu
+    button.performClick(nil)
+    statusItem.menu = nil
   }
 
-  private func makePopover() -> NSPopover {
-    let popover = NSPopover()
-    popover.behavior = .transient
-    // A screen may be in the middle of disappearing. Do not animate into it.
-    popover.animates = false
-    let hosting = NSHostingController(rootView: MenuPanelView(store: panelStore))
-    hosting.sizingOptions = [.preferredContentSize]
-    popover.contentViewController = hosting
-    return popover
-  }
-
-  /// A way to reach Quit and diagnostics that needs no SwiftUI and no window placement, for the
-  /// moments when the screen situation is exactly what has gone wrong.
   private func showFallbackMenu() {
     guard let statusItem else { return }
     let menu = NSMenu()
@@ -300,7 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // vanishing screen would matter, and it arrives after the person has seen the change.
     switch action {
     case .quit, .openDisplayMonitor, .exportDiagnostics:
-      popover?.performClose(nil)
+      panelMenu?.cancelTracking()
     case .selectAllMonitors, .selectExternalOnly, .toggleLaunchAtLogin, .retryRecovery:
       break
     }
@@ -385,5 +396,14 @@ private extension HelperInterfaceState {
       return true
     }
     return false
+  }
+}
+
+extension AppDelegate: NSMenuDelegate {
+  /// Tracking ends however the menu was dismissed, so this is the single place the panel is let
+  /// go of, rather than each of the routes that can close it.
+  func menuDidClose(_: NSMenu) {
+    panelMenu = nil
+    panelHosting = nil
   }
 }

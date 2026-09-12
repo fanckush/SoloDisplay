@@ -156,8 +156,7 @@ struct MenuModelTests {
     // pickable: an unplugged monitor is a question of when, not of whether.
     #expect(!shown.externalOnly.isActive)
     #expect(shown.externalOnly.isEnabled)
-    #expect(shown
-      .reality == "Waiting for a monitor. Your laptop screen turns off when you connect one.")
+    #expect(shown.reality == "Waiting for a monitor.")
     #expect(shown.glyph == .allMonitors)
   }
 
