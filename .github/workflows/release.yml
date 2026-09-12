@@ -99,6 +99,8 @@ jobs:
               "SoloDisplay-$VERSION.zip.sha256"
               "SoloDisplay-$VERSION.dmg"
               "SoloDisplay-$VERSION.dmg.sha256"
+              "SoloDisplay.dmg"
+              "SoloDisplay.dmg.sha256"
             )
             RELEASE_EXISTS=false
             if ASSETS=$(gh release view "$CURRENT_TAG" --json assets --jq '.assets[].name' 2>/dev/null); then
@@ -243,6 +245,8 @@ jobs:
             build/dist/SoloDisplay-*.zip.sha256
             build/dist/SoloDisplay-*.dmg
             build/dist/SoloDisplay-*.dmg.sha256
+            build/dist/SoloDisplay.dmg
+            build/dist/SoloDisplay.dmg.sha256
 
       - name: Bump Homebrew cask
         env:

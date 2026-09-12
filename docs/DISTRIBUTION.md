@@ -68,7 +68,10 @@ Releases are intentional and automated after the maintainer chooses to publish:
    no version input.
 3. The workflow calculates the next stable version from commits since the latest
    `vMAJOR.MINOR.PATCH` tag, runs package and app tests, builds, signs, notarizes,
-   staples, and uploads the `.zip` and `.dmg` with their checksums.
+   staples, and uploads the `.zip` and `.dmg` with their checksums, plus an
+   unversioned `SoloDisplay.dmg` copy. That copy is what the README's download
+   button points at: GitHub's `/releases/latest/download/` redirect resolves an
+   exact asset name, so a version-stamped one cannot be linked to directly.
 4. It creates the tag and GitHub Release only after the artifacts are ready, then
    dispatches the Homebrew tap bump.
 

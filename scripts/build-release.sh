@@ -44,6 +44,10 @@ EXPORT_DIR="$BUILD_DIR/export"
 DIST_DIR="$BUILD_DIR/dist"
 ZIP="$DIST_DIR/SoloDisplay-$VERSION.zip"
 DMG="$DIST_DIR/SoloDisplay-$VERSION.dmg"
+# A copy under a name that never changes, so the README can link straight at the newest build.
+# GitHub's /releases/latest/download/ redirect resolves an exact asset name, which rules out
+# every version-stamped one.
+DMG_LATEST="$DIST_DIR/SoloDisplay.dmg"
 
 echo ">> Cleaning $BUILD_DIR"
 rm -rf "$BUILD_DIR"
@@ -132,9 +136,14 @@ else
     -ov -format UDZO "$DMG" >/dev/null
 fi
 
+echo ">> Publishing $DMG_LATEST"
+cp "$DMG" "$DMG_LATEST"
+
+# Recorded against the bare filename rather than the path it happened to be built at, so the
+# sidecar is usable as `shasum -c SoloDisplay.dmg.sha256` next to a downloaded file.
 echo ">> Checksums"
-for f in "$ZIP" "$DMG"; do
-  shasum -a 256 "$f" | tee "$f.sha256"
+for f in "$ZIP" "$DMG" "$DMG_LATEST"; do
+  (cd "$DIST_DIR" && shasum -a 256 "$(basename "$f")" | tee "$(basename "$f").sha256")
 done
 
 echo ">> Done. Artifacts in $DIST_DIR"
