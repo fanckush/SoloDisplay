@@ -258,9 +258,10 @@ public enum Controller {
     if let op = state.operation, now >= op.deadline {
       switch op.phase {
       case .journaling:
-        // The storage write can still complete. Keep the operation until its acknowledgement.
-        state.fault = .journalFailed
-        state.manualRequest = false
+        // A slow save is not a failed one: the lane can be stalled behind display calls while
+        // macOS reconfigures. Nothing is written before the acknowledgement, so waiting is safe,
+        // and the acknowledgement itself decides the outcome. The menu reports the wait.
+        break
       case .arming:
         // The helper never answered, and nothing was written. Clear the record and fault.
         state.operation = nil
@@ -368,7 +369,7 @@ public enum Controller {
     return .init(
       id: id, kind: kind, target: target, phase: .submitted,
       issuedSequence: state.observation?.sequence ?? 0,
-      deadline: now + state.policy.operationTimeout
+      deadline: now + state.policy.operationTimeout, startedAt: now
     )
   }
 

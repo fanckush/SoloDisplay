@@ -86,6 +86,22 @@ nonisolated enum MenuModel {
         severity: .attention, title: status(presentation), detail: reason(fault), retry: retry
       )
     }
+    // Still in flight, so no retry: the save's own result decides what happens next.
+    switch presentation.journalWait {
+    case .slow:
+      return .init(
+        severity: .working, title: "Saving a safety record",
+        detail: "Your Mac is busy updating its displays. SoloDisplay continues as soon as this finishes.",
+        retry: nil
+      )
+    case .stalled:
+      return .init(
+        severity: .attention, title: "Still saving a safety record",
+        detail: "This is taking much longer than usual. Nothing was changed, and SoloDisplay keeps waiting for it.",
+        retry: nil
+      )
+    case nil: break
+    }
     // Not simply "the panel is off". Ownership is held for the whole time the screen is
     // legitimately off, so raising an alert on pendingRecovery turned the resting state into a
     // spinner with nothing to say and an offer to retry a recovery that was never happening.
@@ -101,7 +117,7 @@ nonisolated enum MenuModel {
   /// The menu bar icon. Deliberately mirrors the order `status` reads its state in, so the
   /// icon and the words can never disagree about what the app is doing.
   static func glyph(_ presentation: Presentation) -> MenuGlyph {
-    if presentation.fault != nil {
+    if presentation.fault != nil || presentation.journalWait == .stalled {
       return .attention
     }
     if presentation.waitingForRecovery {
@@ -110,7 +126,8 @@ nonisolated enum MenuModel {
     if presentation.panelOwned {
       return .externalOnly
     }
-    if presentation.pendingRecovery || presentation.operationInFlight {
+    if presentation.pendingRecovery || presentation.operationInFlight
+      || (presentation.wantsInternalOff && presentation.unavailability == .settling) {
       return .working
     }
     return .allMonitors

@@ -302,6 +302,38 @@ func wakeWaitsForExternalEvidenceThenItsOwnStabilityInterval(_ externalDelay: In
   #expect(rig.state.fault == .journalFailed)
 }
 
+@Test func aSlowJournalIsReportedAsAWaitAndResumesWhenItLands() throws {
+  var rig = Rig()
+  rig.prepare()
+  let id = try #require(rig.state.operation?.id)
+  #expect(Controller.presentation(rig.state, at: 4999).journalWait == nil)
+  rig.send(.tick, at: 5001)
+  #expect(rig.state.fault == nil)
+  #expect(rig.state.operation?.phase == .journaling)
+  #expect(rig.state.wantsOff)
+  #expect(Controller.presentation(rig.state, at: 5001).journalWait == .slow)
+  #expect(Controller.presentation(rig.state, at: 17000).journalWait == .stalled)
+  // No retry is needed: fresh evidence and the late acknowledgement carry the attempt on.
+  rig.observe(at: 17100)
+  rig.observe(at: 17600)
+  rig.send(.journalSaved(operationID: id, succeeded: true), at: 17601)
+  #expect(rig.state.fault == nil)
+  #expect(rig.state.operation?.phase == .arming)
+  #expect(Controller.presentation(rig.state, at: 17601).journalWait == nil)
+}
+
+@Test func aLateJournalFailureIsStillAFailure() throws {
+  var rig = Rig()
+  rig.prepare()
+  let id = try #require(rig.state.operation?.id)
+  rig.send(.tick, at: 20000)
+  let effects = rig.send(.journalSaved(operationID: id, succeeded: false), at: 20001)
+  #expect(writes(effects, enabled: false).isEmpty)
+  #expect(rig.state.fault == .journalFailed)
+  #expect(rig.state.operation == nil)
+  #expect(Controller.presentation(rig.state, at: 20001).journalWait == nil)
+}
+
 @Test func staleJournalAcknowledgementCannotDisable() throws {
   var rig = Rig()
   rig.prepare()

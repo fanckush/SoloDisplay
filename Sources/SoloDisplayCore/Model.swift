@@ -100,6 +100,8 @@ public struct Operation: Codable, Equatable, Sendable {
   public var phase: OperationPhase
   public var issuedSequence: UInt64
   public var deadline: Instant
+  /// Optional so replay exports from before it existed still decode.
+  public var startedAt: Instant?
 }
 
 public struct Ownership: Codable, Equatable, Sendable {
@@ -124,8 +126,28 @@ public struct Policy: Codable, Equatable, Sendable {
   public var sampleSeparation: Instant = 500
   public var evidenceLifetime: Instant = 5000
   public var operationTimeout: Instant = 3000
+  /// Saving the record shares the platform lane with display calls, which can stall for seconds
+  /// while macOS reconfigures after a hotplug. A slow save is still in progress, not a failure,
+  /// so past `operationTimeout` it is reported as slow, and past this as stalled.
+  public var journalTimeout: Instant = 15000
   public var restoreRetryDelays: [Instant] = [500, 2000]
   public init() {}
+
+  private enum CodingKeys: String, CodingKey {
+    case stableFor, sampleSeparation, evidenceLifetime, operationTimeout, journalTimeout
+    case restoreRetryDelays
+  }
+
+  /// Older replay exports predate `journalTimeout`, so it decodes with its default.
+  public init(from decoder: any Decoder) throws {
+    let values = try decoder.container(keyedBy: CodingKeys.self)
+    stableFor = try values.decode(Instant.self, forKey: .stableFor)
+    sampleSeparation = try values.decode(Instant.self, forKey: .sampleSeparation)
+    evidenceLifetime = try values.decode(Instant.self, forKey: .evidenceLifetime)
+    operationTimeout = try values.decode(Instant.self, forKey: .operationTimeout)
+    journalTimeout = try values.decodeIfPresent(Instant.self, forKey: .journalTimeout) ?? 15000
+    restoreRetryDelays = try values.decode([Instant].self, forKey: .restoreRetryDelays)
+  }
 }
 
 public struct ControllerState: Codable, Equatable, Sendable {
@@ -264,6 +286,11 @@ public enum Unavailability: String, Codable, CaseIterable, Equatable, Sendable {
   case noRecoveryHelper, settling, unresolvedOwnership, faulted, shuttingDown
 }
 
+/// How long the safety record has been saving, once that is longer than it should take.
+public enum JournalWait: Equatable, Sendable {
+  case slow, stalled
+}
+
 /// A read-only projection for the menu. It derives from state and carries no new authority.
 public struct Presentation: Equatable, Sendable {
   public var mode: Mode
@@ -277,6 +304,7 @@ public struct Presentation: Equatable, Sendable {
   /// What the person asked for, which is not the same as what is on screen right now.
   /// External Only stays chosen while the monitor is unplugged and the panel is lit.
   public var wantsInternalOff = false
+  public var journalWait: JournalWait?
 
   public init(
     mode: Mode, manualRequestActive: Bool, panelOwned: Bool, operationInFlight: Bool,
@@ -355,6 +383,14 @@ public extension Controller {
         && (state.recoveryDeferredSequence != nil
           || state.observation?.environment.visibilityExpected != true)
     result.wantsInternalOff = state.wantsOff
+    if let op = state.operation, op.phase == .journaling, let started = op.startedAt {
+      let elapsed = now - started
+      if elapsed >= state.policy.journalTimeout {
+        result.journalWait = .stalled
+      } else if elapsed >= state.policy.operationTimeout {
+        result.journalWait = .slow
+      }
+    }
     return result
   }
 }
