@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+# Cancel superseded runs on the same pull request.
+concurrency:
+  group: pr-title-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
