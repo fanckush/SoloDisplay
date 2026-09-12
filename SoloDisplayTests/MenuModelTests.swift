@@ -88,6 +88,11 @@ struct MenuModelTests {
     #expect(MenuModel.glyph(presentation(panelOwned: true)) == .externalOnly)
     #expect(MenuModel.glyph(presentation(fault: .protectionLost)) == .attention)
     #expect(MenuModel.glyph(presentation(operationInFlight: true)) == .working)
+    // A monitor just arrived and External Only is waiting for it to settle: already working.
+    #expect(
+      MenuModel.glyph(presentation(unavailability: .settling, wantsInternalOff: true)) == .working
+    )
+    #expect(MenuModel.glyph(presentation(unavailability: .settling)) == .allMonitors)
     // A panel that is off reads as off, not as busy, even though owning it also counts as
     // recovery being outstanding. This is the same precedence the status line uses.
     #expect(MenuModel.glyph(presentation(panelOwned: true, pendingRecovery: true)) == .externalOnly)
@@ -182,6 +187,23 @@ struct MenuModelTests {
     // A gate never explains itself inside a label.
     #expect(!mini.externalOnly.title.contains("("))
     #expect(!mini.allMonitors.title.contains("("))
+  }
+
+  @Test func aSlowSafetyRecordIsShownAsProgressWithoutARetry() {
+    var slow = presentation(mode: .automatic, operationInFlight: true, wantsInternalOff: true)
+    slow.journalWait = .slow
+    let shown = menuPanel(slow)
+    #expect(shown.alert?.severity == .working)
+    #expect(shown.alert?.retry == nil)
+    #expect(shown.externalOnly.isSelected && shown.externalOnly.isPending)
+    #expect(shown.glyph == .working)
+
+    slow.journalWait = .stalled
+    let stalled = menuPanel(slow)
+    #expect(stalled.alert?.severity == .attention)
+    #expect(stalled.alert?.retry == nil)
+    #expect(stalled.externalOnly.isSelected)
+    #expect(stalled.glyph == .attention)
   }
 
   @Test func aFaultBecomesAnAlertThatOutranksTheRealityLine() {
