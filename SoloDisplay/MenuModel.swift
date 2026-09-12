@@ -65,10 +65,13 @@ nonisolated enum MenuModel {
       return "Your laptop screen stays on."
     }
     // External Only is chosen but not in effect. Say what it is waiting for, and say it as a
-    // matter of timing, because the setting is being held and applies on its own.
+    // matter of timing, because the setting is being held and applies on its own. What happens on
+    // connecting a monitor is left to the tile art and the arrangement's own label: spelling it
+    // out here ran to a second line, and a panel whose two arrangements sit at different heights
+    // reads as drifting padding rather than as different text.
     if let unavailability = presentation.unavailability, unavailability != .settling {
       if unavailability == .noNativeExternal {
-        return "Waiting for a monitor. Your laptop screen turns off when you connect one."
+        return "Waiting for a monitor."
       }
       return reason(unavailability)
     }
