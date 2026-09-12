@@ -244,6 +244,9 @@ public enum Controller {
         state.operation = op
       }
       effects.append(.observe)
+    case let .displayReconfigured(inProgress):
+      state.lastDisplayChange = now
+      state.displayConfiguring = inProgress
     case .tick:
       break
     }
@@ -331,9 +334,12 @@ public enum Controller {
         effects.append(.wakeAt(expiry))
       }
     }
+    // Read at the moment settling could complete. Waiting for the periodic refresh instead let
+    // the decision slip by up to its interval.
     if state.wantsOff, state.operation == nil, state.ownership == nil,
-       let since = state.stableSince, since + state.policy.stableFor > now {
-      effects.append(.wakeAt(since + state.policy.stableFor))
+       let check = nextSettleCheck(state), let sample = state.observation,
+       check > sample.sampledAt {
+      effects.append(.observeAt(check))
     }
     if state.shuttingDown, state.operation == nil, state.ownership == nil,
        !state.pendingClear {
@@ -345,10 +351,43 @@ public enum Controller {
   public static func mayDisable(_ state: ControllerState, at now: Instant) -> Bool {
     guard state.wantsOff, state.protectionAvailable, !state.pendingClear, !state.preferencesPending,
           isFresh(state, at: now), let sample = state.observation,
-          sample.environment.prerequisitesMet, sample.environment.panelState == .enabled,
-          state.matchingSamples >= 2, let stableSince = state.stableSince
+          sample.environment.prerequisitesMet, sample.environment.panelState == .enabled
     else { return false }
-    return now - stableSince >= state.policy.stableFor
+    return isSettled(state, at: now)
+  }
+
+  /// Two separated readings agree, and the arrangement has stopped changing. When macOS reported
+  /// a reconfiguration that explains this arrangement, stopping means a reading taken after
+  /// `quietFor` without another report, or `settleCap` if the reports never go quiet. Anything
+  /// else, such as a lid or session change, still needs the full `stableFor`.
+  static func isSettled(_ state: ControllerState, at now: Instant) -> Bool {
+    guard state.matchingSamples >= 2, let since = state.stableSince,
+          let sample = state.observation
+    else { return false }
+    let policy = state.policy
+    guard let change = state.lastDisplayChange, change >= since - policy.quietFor else {
+      return now - since >= policy.stableFor
+    }
+    if !state.displayConfiguring, sample.sampledAt >= change + policy.quietFor {
+      return true
+    }
+    return now - since >= policy.settleCap
+  }
+
+  /// The first instant a new reading could show the arrangement as settled.
+  static func nextSettleCheck(_ state: ControllerState) -> Instant? {
+    guard let since = state.stableSince, state.observation != nil else { return nil }
+    let policy = state.policy
+    let ready: Instant = if let change = state.lastDisplayChange,
+                            change >= since - policy.quietFor {
+      state.displayConfiguring
+        ? since + policy.settleCap
+        : min(change + policy.quietFor, since + policy.settleCap)
+    } else {
+      since + policy.stableFor
+    }
+    guard state.matchingSamples < 2 else { return ready }
+    return max(ready, (state.lastCountedSample ?? since) + policy.sampleSeparation)
   }
 
   private static func mayRemainDisabled(_ state: ControllerState, at now: Instant) -> Bool {

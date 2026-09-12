@@ -469,6 +469,17 @@ struct ProductionCoordinatorTests {
     #expect(harness.state.fault == .configurationChanged)
   }
 
+  @Test func aReportedReconfigurationStartsDisablingWithoutTheFullInterval() {
+    let harness = Harness()
+    harness.coordinator.send(.displayReconfigured(inProgress: false))
+    harness.step(to: 0)
+    // One timer for the settling reading, however many reductions asked for it.
+    #expect(harness.scheduler.wakes.filter { $0 == 0.5 }.count == 1)
+    harness.step(to: 600)
+    #expect(harness.protection.armed.count == 1)
+    #expect(harness.ownership.record?.target == panelTarget)
+  }
+
   @Test func aFullDisableWalksJournalThenLeaseThenWrite() {
     let harness = Harness()
     harness.reachSuppression()

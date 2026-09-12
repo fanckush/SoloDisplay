@@ -130,15 +130,20 @@ public struct Policy: Codable, Equatable, Sendable {
   /// while macOS reconfigures after a hotplug. A slow save is still in progress, not a failure,
   /// so past `operationTimeout` it is reported as slow, and past this as stalled.
   public var journalTimeout: Instant = 15000
+  /// After macOS reports a display reconfiguration, this long without another one means it is
+  /// done. It replaces `stableFor` only when such a report explains the current arrangement.
+  public var quietFor: Instant = 500
+  /// Reconfiguration reports that never go quiet stop holding the decision back after this.
+  public var settleCap: Instant = 5000
   public var restoreRetryDelays: [Instant] = [500, 2000]
   public init() {}
 
   private enum CodingKeys: String, CodingKey {
     case stableFor, sampleSeparation, evidenceLifetime, operationTimeout, journalTimeout
-    case restoreRetryDelays
+    case quietFor, settleCap, restoreRetryDelays
   }
 
-  /// Older replay exports predate `journalTimeout`, so it decodes with its default.
+  /// Older replay exports predate the later fields, so they decode with their defaults.
   public init(from decoder: any Decoder) throws {
     let values = try decoder.container(keyedBy: CodingKeys.self)
     stableFor = try values.decode(Instant.self, forKey: .stableFor)
@@ -146,6 +151,8 @@ public struct Policy: Codable, Equatable, Sendable {
     evidenceLifetime = try values.decode(Instant.self, forKey: .evidenceLifetime)
     operationTimeout = try values.decode(Instant.self, forKey: .operationTimeout)
     journalTimeout = try values.decodeIfPresent(Instant.self, forKey: .journalTimeout) ?? 15000
+    quietFor = try values.decodeIfPresent(Instant.self, forKey: .quietFor) ?? 500
+    settleCap = try values.decodeIfPresent(Instant.self, forKey: .settleCap) ?? 5000
     restoreRetryDelays = try values.decode([Instant].self, forKey: .restoreRetryDelays)
   }
 }
@@ -176,6 +183,10 @@ public struct ControllerState: Codable, Equatable, Sendable {
   /// Restoration is verified but the durable record has not been cleared yet. Ownership is
   /// only released by a successful clear, never by a hopeful assumption that one happened.
   public var pendingClear = false
+  /// When macOS last reported a display reconfiguration, and whether that report opened one
+  /// that has not finished yet. Evidence for settling only, never for writing.
+  public var lastDisplayChange: Instant?
+  public var displayConfiguring = false
   public var policy: Policy
 
   public init(mode: Mode = .manual, recoveredOwnership: Ownership? = nil,
@@ -193,7 +204,7 @@ public struct ControllerState: Codable, Equatable, Sendable {
     case mode, manualRequest, observation, stableSince, matchingSamples, lastCountedSample
     case lastReceipt, operation, ownership, fault, nextOperationID, restoreAttempts, retryAt
     case recoveryDeferredSequence, restorationRequired, shuttingDown, protectionAvailable
-    case preferencesPending, pendingClear, policy
+    case preferencesPending, pendingClear, lastDisplayChange, displayConfiguring, policy
   }
 
   /// Replay exports are durable diagnostics. New state fields therefore decode with their
@@ -223,6 +234,8 @@ public struct ControllerState: Codable, Equatable, Sendable {
       try values.decodeIfPresent(Bool.self, forKey: .protectionAvailable) ?? false
     preferencesPending = try values.decodeIfPresent(Bool.self, forKey: .preferencesPending) ?? false
     pendingClear = try values.decodeIfPresent(Bool.self, forKey: .pendingClear) ?? false
+    lastDisplayChange = try values.decodeIfPresent(Instant.self, forKey: .lastDisplayChange)
+    displayConfiguring = try values.decodeIfPresent(Bool.self, forKey: .displayConfiguring) ?? false
     policy = try values.decodeIfPresent(Policy.self, forKey: .policy) ?? .init()
   }
 
@@ -253,6 +266,8 @@ public enum Event: Codable, Equatable, Sendable {
   /// The executor established, before issuing anything, that the request was no longer valid.
   /// Unlike a failed call this positively establishes that no display was touched.
   case operationRefused(operationID: UInt64)
+  /// macOS reported a display reconfiguration. `inProgress` means the last report opened one.
+  case displayReconfigured(inProgress: Bool)
 }
 
 public enum Effect: Codable, Equatable, Sendable {
@@ -268,6 +283,8 @@ public enum Effect: Codable, Equatable, Sendable {
   /// A timeout is not cancellation. The supervisor must stop the writer before taking over.
   case writerUnresponsive(operationID: UInt64)
   case wakeAt(Instant)
+  /// Take a reading at this instant, because it is when settling could first complete.
+  case observeAt(Instant)
   case exitReady
 }
 
@@ -365,9 +382,7 @@ public extension Controller {
     if state.ownership != nil {
       return nil
     }
-    guard state.matchingSamples >= 2, let since = state.stableSince,
-          now - since >= state.policy.stableFor
-    else { return .settling }
+    guard isSettled(state, at: now) else { return .settling }
     return nil
   }
 

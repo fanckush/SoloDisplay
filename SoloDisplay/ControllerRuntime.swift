@@ -98,6 +98,11 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     }
     apply(protection.receive(.start, at: MonotonicClock().now()))
     startObservingPlatform()
+    // An arm reply is waited on by a disable in progress, so read it as soon as it arrives. The
+    // timer below still polls, which keeps heartbeats and a missed notification covered.
+    link.setReceiveHandler { [weak self] in
+      Task { @MainActor in self?.receiveProtectionMessages() }
+    }
     // Common mode matters: menu tracking runs a modal loop that stops default-mode timers,
     // and a controller that stops heartbeating while its menu is open looks dead to the helper.
     let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
@@ -141,6 +146,10 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   private func startObservingPlatform() {
     let monitor = DisplayEventMonitor()
     self.monitor = monitor
+    // Settling is timed from these reports, so they are delivered now rather than at the next poll.
+    monitor.setChangeHandler { [weak self] in
+      Task { @MainActor in self?.drainDisplayEvents() }
+    }
     subscribe(.default, NSApplication.didChangeScreenParametersNotification)
     let workspace = NSWorkspace.shared.notificationCenter
     for name in [
@@ -192,6 +201,12 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
   }
 
   private func pumpProtection() {
+    receiveProtectionMessages()
+    apply(protection.receive(.tick, at: MonotonicClock().now()))
+    drainDisplayEvents()
+  }
+
+  private func receiveProtectionMessages() {
     let now = MonotonicClock().now()
     do {
       while let message = try link.poll() {
@@ -200,10 +215,14 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
     } catch {
       apply(protection.receive(.peerFailed(.disconnected), at: now))
     }
-    apply(protection.receive(.tick, at: now))
-    if let batch = monitor?.drain(), !batch.events.isEmpty || batch.dropped > 0 {
-      coordinator?.platformDidChange()
-    }
+  }
+
+  private func drainDisplayEvents() {
+    guard let batch = monitor?.drain(), !batch.events.isEmpty || batch.dropped > 0 else { return }
+    // A lost report could have been the one that finished a reconfiguration, so assume it did not.
+    let inProgress = batch.dropped > 0 || batch.events.last?.beginsConfiguration == true
+    coordinator?.send(.displayReconfigured(inProgress: inProgress))
+    coordinator?.platformDidChange()
   }
 
   // MARK: - Protection
@@ -314,7 +333,7 @@ final class ControllerRuntime: ProtectionRequesting, CoordinatorDelegate {
 
   func coordinator(_: ProductionCoordinator, didRecord event: RecordedEvent) {
     switch event.event {
-    case .observed, .tick: break
+    case .observed, .tick, .displayReconfigured: break
     default: note("event \(event.event)")
     }
     _ = try? recorder.append(event)

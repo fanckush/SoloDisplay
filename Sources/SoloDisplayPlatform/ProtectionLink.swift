@@ -72,6 +72,7 @@ public final class ProtectionLink: Sendable {
   private let buffer = Mutex(ProtectionFrameBuffer())
   private let input: FileHandle
   private let output: FileHandle
+  private let receiveHandler = Mutex<(@Sendable () -> Void)?>(nil)
 
   public init(input: FileHandle, output: FileHandle) {
     self.input = input
@@ -82,7 +83,14 @@ public final class ProtectionLink: Sendable {
       if data.isEmpty {
         handle.readabilityHandler = nil
       }
+      self?.receiveHandler.withLock { $0 }?()
     }
+  }
+
+  /// Called whenever data or end of stream arrives, so the owner can poll now rather than on its
+  /// next timer. The handler must only schedule the poll: it runs on the reading queue.
+  public func setReceiveHandler(_ handler: (@Sendable () -> Void)?) {
+    receiveHandler.withLock { $0 = handler }
   }
 
   public func poll() throws -> ProtectionMessage? {
