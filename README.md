@@ -9,7 +9,7 @@
   <a href="https://codecov.io/gh/fanckush/SoloDisplay"><img alt="Test coverage" src="https://codecov.io/gh/fanckush/SoloDisplay/branch/main/graph/badge.svg"></a>
   <a href="https://github.com/fanckush/SoloDisplay/releases"><img alt="Release" src="https://img.shields.io/github/v/release/fanckush/SoloDisplay?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/License-GPLv3-blue.svg"></a>
-  <img alt="Platform" src="https://img.shields.io/badge/macOS-Apple%20Silicon-black?logo=apple">
+  <img alt="Platform" src="https://img.shields.io/badge/macOS%2026%2B-Universal-black?logo=apple">
 </p>
 
 <p align="center">
@@ -22,6 +22,20 @@ Windows has External Display only mode, macOS does not have this, this little ap
 SoloDisplay actually turns the internal panel off when an external monitor is connected. Simple as that.
 
 ## Install
+
+<p align="center">
+  <a href="https://github.com/fanckush/SoloDisplay/releases/latest/download/SoloDisplay.dmg">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/download-mac-dark.svg">
+      <img alt="Download the macOS app" src="docs/assets/download-mac-light.svg" width="200">
+    </picture>
+  </a>
+</p>
+
+
+Open the DMG and drag SoloDisplay to your Applications folder.
+
+Or install with [Homebrew](https://brew.sh), which also keeps it up to date:
 
 ```sh
 brew install --cask fanckush/solodisplay/solodisplay
