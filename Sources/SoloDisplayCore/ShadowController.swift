@@ -23,7 +23,7 @@ public struct ShadowController: Sendable {
     for effect in transition.effects {
       switch effect {
       case let .wakeAt(instant): nextWake = instant
-      case .observe, .exitReady: break
+      case .observe, .observeAt, .exitReady: break
       default:
         if rejectedEffectCount < .max {
           rejectedEffectCount += 1

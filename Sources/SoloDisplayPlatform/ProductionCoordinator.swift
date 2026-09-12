@@ -147,6 +147,10 @@ public final class ProductionCoordinator {
   private let scheduler: any CoordinatorScheduler
   private var observationSequence: UInt64 = 0
   private var observationInFlight = false
+  /// Something asked for a reading while one was under way. That reading was sampled too early
+  /// to answer it, so another follows.
+  private var observeAgain = false
+  private var scheduledObservations: Set<Instant> = []
   /// A disable request for the owned target actually returned. Absence means suppression only
   /// with this, never with ownership alone.
   private var ownedDisableReturned = false
@@ -336,6 +340,8 @@ public final class ProductionCoordinator {
     // The helper learns this from the operation deadline it already receives each second.
     case let .wakeAt(instant):
       scheduleWake(at: instant, from: now)
+    case let .observeAt(instant):
+      scheduleObservation(at: instant, from: now)
     case .exitReady:
       delegate?.coordinatorIsReadyToExit(self)
     }
@@ -436,7 +442,10 @@ public final class ProductionCoordinator {
   // MARK: - Observation
 
   private func observe() {
-    guard !observationInFlight else { return }
+    guard !observationInFlight else {
+      observeAgain = true
+      return
+    }
     observationInFlight = true
     observationSequence += 1
     let sequence = observationSequence
@@ -468,6 +477,10 @@ public final class ProductionCoordinator {
           )
         )
       )
+      if observeAgain {
+        observeAgain = false
+        observe()
+      }
     }
   }
 
@@ -490,6 +503,19 @@ public final class ProductionCoordinator {
 
   private func currentReading() -> PlatformReading {
     observer.read()
+  }
+
+  /// Repeated requests for the same instant share one timer.
+  private func scheduleObservation(at instant: Instant, from now: Instant) {
+    guard instant > now else {
+      observe()
+      return
+    }
+    guard scheduledObservations.insert(instant).inserted else { return }
+    scheduler.after(Double(instant - now) / 1000) { [weak self] in
+      self?.scheduledObservations.remove(instant)
+      self?.observe()
+    }
   }
 
   private func scheduleWake(at instant: Instant, from now: Instant) {

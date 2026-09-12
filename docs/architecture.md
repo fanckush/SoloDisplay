@@ -26,7 +26,7 @@ One operation can be outstanding. A submitted call that exceeds its deadline bec
 
 An accepted operation enters verification. Only a newer observation can establish the outcome. Restoration takes precedence over verifying an obsolete disable request. The disappearance of the panel during a verified suppression must be interpreted by the validated platform adapter, not guessed by the core.
 
-The initial timing policy is two seconds of stability, 500 ms between counted observations, five seconds of evidence freshness, three seconds for an operation or awake verification, and at most three restoration attempts with 500 ms and two-second retry delays. These deadlines bound controller decisions, not hardware response.
+The initial timing policy is two seconds of stability, shortened when macOS reports a display reconfiguration: then the arrangement counts as settled once 500 ms pass without another report and a reading taken after that agrees, or after five seconds if the reports never go quiet. It also uses 500 ms between counted observations, five seconds of evidence freshness, three seconds for an operation or awake verification, and at most three restoration attempts with 500 ms and two-second retry delays. These deadlines bound controller decisions, not hardware response.
 
 ## Platform boundary
 

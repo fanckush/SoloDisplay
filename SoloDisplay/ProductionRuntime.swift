@@ -232,10 +232,15 @@ final class HelperRuntime {
     try? commands.fileHandleForReading.close()
     try? replies.fileHandleForWriting.close()
     controller = child
+    // The controller waits on arm replies, so answer as soon as a request arrives. The pump timer
+    // still polls, which keeps witnessing and a missed notification covered.
+    link?.setReceiveHandler { [weak self] in
+      Task { @MainActor in self?.receiveMessages(at: Self.now()) }
+    }
   }
 
   private func pump() {
-    guard let link else { return }
+    guard link != nil else { return }
     let now = Self.now()
     // The helper's own view of the panel, taken independently of anything the controller says.
     if now - witnessedAt >= 1000 {
@@ -243,23 +248,7 @@ final class HelperRuntime {
       let reading = DisplayObserver.read()
       apply(protection.receive(.witness(reading.internalTarget), at: now))
     }
-    do {
-      while let message = try link.poll() {
-        if message.kind == .arm {
-          guard let record = try store.load(), let claimed = message.ownership,
-                record.session == message.session, record.operationID == claimed.operationID,
-                record.target == claimed.target,
-                (try? record.validate()) != nil
-          else {
-            apply(protection.receive(.peerFailed(.malformed), at: now))
-            break
-          }
-        }
-        apply(protection.receive(.received(message), at: now))
-      }
-    } catch {
-      apply(protection.receive(.peerFailed(.disconnected), at: now))
-    }
+    receiveMessages(at: now)
     if controller?.isRunning == false, !recovering {
       if let controller {
         childExit.recordIfTerminated(controller, using: diagnostics, session: protection.session)
@@ -601,5 +590,30 @@ final class HelperRuntime {
 
   private func report(_ message: String) {
     FileHandle.standardError.write(Data("SoloDisplay helper: \(message)\n".utf8))
+  }
+}
+
+extension HelperRuntime {
+  /// Shared by the pump timer and the link's receive notification, so an arm request is answered
+  /// as soon as it arrives. An arm is only honoured against the durable record it names.
+  private func receiveMessages(at now: Instant) {
+    guard let link else { return }
+    do {
+      while let message = try link.poll() {
+        if message.kind == .arm {
+          guard let record = try store.load(), let claimed = message.ownership,
+                record.session == message.session, record.operationID == claimed.operationID,
+                record.target == claimed.target,
+                (try? record.validate()) != nil
+          else {
+            apply(protection.receive(.peerFailed(.malformed), at: now))
+            break
+          }
+        }
+        apply(protection.receive(.received(message), at: now))
+      }
+    } catch {
+      apply(protection.receive(.peerFailed(.disconnected), at: now))
+    }
   }
 }
