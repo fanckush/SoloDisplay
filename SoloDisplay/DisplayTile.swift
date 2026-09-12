@@ -40,7 +40,6 @@ struct DisplayTileArt: View {
 struct DisplayTile: View {
   let choice: MenuPanel.Choice
   let action: (MenuAction) -> Void
-  var isFocused = false
 
   /// Chosen, but not what is on screen yet. External Only sits here whenever no monitor is
   /// plugged in: the setting is held and will apply on its own, so it is drawn as an outline
@@ -80,7 +79,8 @@ struct DisplayTile: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    // The keyboard focus ring draws a hard rectangle over the tile's own rounded selection.
+    // The tile is focusable from MenuPanelView, not here, so the ring belongs to that level. This
+    // only stops the button drawing a second one inside it.
     .focusEffectDisabled()
     .background(
       RoundedRectangle(cornerRadius: 10)
@@ -91,14 +91,6 @@ struct DisplayTile: View {
         )
     )
     .foregroundStyle(foreground)
-    // Drawn rather than inherited: the system ring follows the button's rectangular bounds and
-    // cuts the corners off the tile. Sitting outside the shape keeps it clear of the accent
-    // border that a chosen-but-waiting arrangement already carries.
-    .overlay {
-      RoundedRectangle(cornerRadius: 13)
-        .strokeBorder(Color.accentColor, lineWidth: isFocused ? 3 : 0)
-        .padding(-3)
-    }
     .overlay {
       if choice.isPending {
         ProgressView().controlSize(.small)

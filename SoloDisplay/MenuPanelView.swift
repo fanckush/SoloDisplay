@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The menu bar panel. Two arrangements, one line saying what is actually true, and the few
@@ -9,6 +10,7 @@ struct MenuPanelView: View {
 
   let store: MenuPanelStore
   @FocusState private var focus: Tile?
+  @State private var keyboard = KeyboardNavigation()
 
   private var panel: MenuPanel {
     store.panel
@@ -26,23 +28,26 @@ struct MenuPanelView: View {
     }
     .frame(width: 300)
     .fixedSize(horizontal: false, vertical: true)
-    .onAppear { focus = panel.externalOnly.isSelected ? .externalOnly : .allMonitors }
+    .onAppear {
+      focus = panel.externalOnly.isSelected ? .externalOnly : .allMonitors
+      keyboard.start()
+    }
+    .onDisappear { keyboard.stop() }
   }
 
   private var choices: some View {
     VStack(alignment: .leading, spacing: 9) {
       HStack(spacing: 10) {
-        DisplayTile(
-          choice: panel.allMonitors, action: store.perform, isFocused: focus == .allMonitors
-        )
-        .focusable(panel.allMonitors.isEnabled)
-        .focused($focus, equals: .allMonitors)
-        DisplayTile(
-          choice: panel.externalOnly, action: store.perform, isFocused: focus == .externalOnly
-        )
-        .focusable(panel.externalOnly.isEnabled)
-        .focused($focus, equals: .externalOnly)
+        DisplayTile(choice: panel.allMonitors, action: store.perform)
+          .focusable(panel.allMonitors.isEnabled)
+          .focused($focus, equals: .allMonitors)
+        DisplayTile(choice: panel.externalOnly, action: store.perform)
+          .focusable(panel.externalOnly.isEnabled)
+          .focused($focus, equals: .externalOnly)
       }
+      // The ring is the system's, and it follows focus. Focus is placed as soon as the panel opens
+      // so the first Tab lands on a tile, which would otherwise light a ring at every mouse click.
+      .focusEffectDisabled(!keyboard.isActive)
       .accessibilityElement(children: .contain)
       .accessibilityLabel("Display arrangement")
       // Reality, as opposed to the choice above it. Also where a blocked choice says why.
@@ -134,5 +139,52 @@ private struct CommandRow: View {
     )
     .onHover { hovering = $0 }
     .padding(.horizontal, 6)
+  }
+}
+
+/// Whether the person is navigating by keyboard, which is what a focus ring is meant to answer.
+///
+/// The panel puts focus on an arrangement as soon as it opens, so that the first Tab or arrow
+/// lands there rather than on Launch at Login. That is logical focus only. Drawing a ring for it
+/// would greet every mouse click with what looks like a stuck highlight, and the ring would then
+/// sit there for the life of the panel because clicking elsewhere does not move a SwiftUI
+/// `@FocusState`. AppKit draws its own rings on this distinction; SwiftUI does not expose it, so
+/// the panel tracks it here. The keyboard raises the flag and the next click lowers it.
+@Observable @MainActor
+private final class KeyboardNavigation {
+  private(set) var isActive = false
+  @ObservationIgnored private var monitor: Any?
+
+  /// Tab, Shift-Tab and the arrows are what move focus between the tiles. Any other key is
+  /// someone typing rather than navigating and leaves the ring where it is.
+  private static let navigationKeys: Set<UInt16> = [48, 123, 124, 125, 126]
+
+  /// Local, so this sees only events already bound for this app, and only while the panel is up.
+  func start() {
+    guard monitor == nil else { return }
+    monitor = NSEvent.addLocalMonitorForEvents(
+      matching: [.keyDown, .leftMouseDown, .rightMouseDown]
+    ) { [weak self] event in
+      guard let self else { return event }
+      if event.type == .keyDown {
+        if Self.navigationKeys.contains(event.keyCode) {
+          isActive = true
+        }
+      } else {
+        isActive = false
+      }
+      return event
+    }
+  }
+
+  /// The hosting controller outlives any one showing, so the monitor has to come down with the
+  /// panel rather than with the view. Left running it would watch every keystroke in the app while
+  /// the panel is closed, and the ring would come back up already lit on the next open.
+  func stop() {
+    if let monitor {
+      NSEvent.removeMonitor(monitor)
+    }
+    monitor = nil
+    isActive = false
   }
 }
