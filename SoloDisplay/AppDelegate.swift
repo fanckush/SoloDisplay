@@ -13,8 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var controller: ControllerRuntime?
   private var guardian: GuardianRuntime?
   private var lastGlyph: MenuGlyph?
-  private var panelMenu: NSMenu?
-  private var panelHosting: NSHostingView<MenuPanelView>?
+  private var statusMenu: StatusMenu?
   private let panelStore = MenuPanelStore()
   private var knownScreens: Set<CGDirectDisplayID> = []
   private let operationalDiagnostics = OperationalLogger(role: .bootstrap)
@@ -58,11 +57,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     controller = runtime
     installStatusItem()
-    attachPanel()
-    panelStore.perform = { [weak self] action in self?.performPanelAction(action) }
+    panelStore.perform = { [weak self] action in self?.controller?.perform(action) }
+    let statusMenu = StatusMenu(store: panelStore) { [weak self] action in
+      self?.controller?.perform(action)
+    }
+    self.statusMenu = statusMenu
+    statusItem?.menu = statusMenu.menu
     runtime.onMenuChanged = { [weak self] in self?.refreshInterface() }
     runtime.onOpenDiagnostics = { [weak self] in self?.showDiagnostics() }
-    // A display that vanishes can take the panel's own window with it, so close rather than ride
+    // A display that vanishes can take the menu's own window with it, so close rather than ride
     // out a reconfiguration this app may itself have caused. Only an actual change to the set of
     // displays counts: this notification also fires for every visibleFrame change.
     knownScreens = Self.screenIDs()
@@ -74,7 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let current = Self.screenIDs()
         guard current != self.knownScreens else { return }
         self.knownScreens = current
-        self.panelMenu?.cancelTracking()
+        self.statusMenu?.menu.cancelTracking()
       }
     }
     refreshInterface()
@@ -161,84 +164,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let panel = controller.panel
     applyGlyph(panel.glyph, description: panel.statusDescription)
     panelStore.update(panel)
+    statusMenu?.update(panel)
   }
 
   private static func screenIDs() -> Set<CGDirectDisplayID> {
     Set(NSScreen.screens.compactMap {
       $0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
     })
-  }
-
-  private func attachPanel() {
-    guard let button = statusItem?.button else { return }
-    button.target = self
-    button.action = #selector(statusItemClicked)
-    button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-  }
-
-  @objc private func statusItemClicked() {
-    if NSApp.currentEvent?.type == .rightMouseUp {
-      showFallbackMenu()
-      return
-    }
-    togglePanel()
-  }
-
-  /// The panel is a view inside a real `NSMenu` rather than an `NSPopover`. Only a menu counts as
-  /// attached to the menu bar, which keeps an auto-hidden menu bar down while the panel is open.
-  private func togglePanel() {
-    guard let statusItem, let button = statusItem.button else { return }
-    if panelMenu != nil {
-      panelMenu?.cancelTracking()
-      return
-    }
-    let hosting = NSHostingView(rootView: MenuPanelView(store: panelStore))
-    // Sized from the content, so the panel's padding does not drift as the text changes.
-    hosting.sizingOptions = [.intrinsicContentSize]
-    hosting.translatesAutoresizingMaskIntoConstraints = false
-    hosting.widthAnchor.constraint(equalToConstant: 300).isActive = true
-    panelHosting = hosting
-
-    let item = NSMenuItem()
-    item.view = hosting
-    let menu = NSMenu()
-    menu.addItem(item)
-    menu.delegate = self
-    panelMenu = menu
-
-    // Attaching the menu makes this click open it. Leaving it attached afterwards would suppress
-    // the button action that the panel is opened by in the first place.
-    statusItem.menu = menu
-    button.performClick(nil)
-    statusItem.menu = nil
-  }
-
-  private func showFallbackMenu() {
-    guard let statusItem else { return }
-    let menu = NSMenu()
-    addDiagnosticsWindowItem(to: menu)
-    menu.addItem(.separator())
-    let quit = menu.addItem(
-      withTitle: "Quit SoloDisplay", action: #selector(quit), keyEquivalent: "q"
-    )
-    quit.target = self
-    menu.autoenablesItems = false
-    statusItem.menu = menu
-    statusItem.button?.performClick(nil)
-    // Leaving the menu attached would suppress the button action the panel is opened by.
-    statusItem.menu = nil
-  }
-
-  private func performPanelAction(_ action: MenuAction) {
-    // Commands dismiss, the way picking from a menu does. Choosing an arrangement does not: the
-    // tile and the line underneath are the only confirmation the choice landed.
-    switch action {
-    case .quit, .openDisplayMonitor, .exportDiagnostics:
-      panelMenu?.cancelTracking()
-    case .selectAllMonitors, .selectExternalOnly, .toggleLaunchAtLogin, .retryRecovery:
-      break
-    }
-    controller?.perform(action)
   }
 
   private func addDiagnosticsWindowItem(to menu: NSMenu) {
@@ -288,14 +220,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if let statusItem {
       NSStatusBar.system.removeStatusItem(statusItem)
     }
-  }
-}
-
-extension AppDelegate: NSMenuDelegate {
-  /// Tracking ends however the menu was dismissed, so this is the single place the panel is let
-  /// go of, rather than each of the routes that can close it.
-  func menuDidClose(_: NSMenu) {
-    panelMenu = nil
-    panelHosting = nil
   }
 }

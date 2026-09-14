@@ -79,9 +79,8 @@ struct DisplayTile: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    // The tile is focusable from MenuPanelView, not here, so the ring belongs to that level. This
-    // only stops the button drawing a second one inside it.
-    .focusEffectDisabled()
+    // The button is the tile's only keyboard stop, so its ring is the tile's ring. MenuPanelView
+    // decides when rings are drawn at all.
     .background(
       RoundedRectangle(cornerRadius: 10)
         .fill(fill)
