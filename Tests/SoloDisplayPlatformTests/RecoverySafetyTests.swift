@@ -13,30 +13,40 @@ private func recoveryReading() -> PlatformReading {
         bootID: "boot", loginID: 7, foregroundSession: .yes, privateSymbol: nil, limitations: [])
 }
 
-@Test func absentTargetNeedsLiveOwnershipAndSuccessfulEnumeration() throws {
+@Test func absentTargetNeedsTheOwningProcessAndSuccessfulEnumeration() throws {
   var reading = recoveryReading()
-  let owned = Ownership(target: recoveryPanel, operationID: 1)
   #expect(throws: (any Error).self) {
     try RecoveryIdentity.authorizeRestore(reading, target: recoveryPanel)
   }
-  try RecoveryIdentity.authorizeRestore(reading, target: recoveryPanel, liveOwnership: owned)
+  try RecoveryIdentity.authorizeRestore(reading, target: recoveryPanel, ownedTarget: recoveryPanel)
   reading.enumerationError = 1
   #expect(throws: (any Error).self) {
-    try RecoveryIdentity.authorizeRestore(reading, target: recoveryPanel, liveOwnership: owned)
+    try RecoveryIdentity.authorizeRestore(
+      reading,
+      target: recoveryPanel,
+      ownedTarget: recoveryPanel
+    )
   }
 }
 
 @Test func closedLidAndForeignSessionCannotAuthorizeARecoveryWrite() {
   var reading = recoveryReading()
-  let owned = Ownership(target: recoveryPanel, operationID: 1)
   reading.lid = .closed
   #expect(throws: (any Error).self) {
-    try RecoveryIdentity.authorizeRestore(reading, target: recoveryPanel, liveOwnership: owned)
+    try RecoveryIdentity.authorizeRestore(
+      reading,
+      target: recoveryPanel,
+      ownedTarget: recoveryPanel
+    )
   }
   reading.lid = .open
   reading.loginID = 8
   #expect(throws: (any Error).self) {
-    try RecoveryIdentity.authorizeRestore(reading, target: recoveryPanel, liveOwnership: owned)
+    try RecoveryIdentity.authorizeRestore(
+      reading,
+      target: recoveryPanel,
+      ownedTarget: recoveryPanel
+    )
   }
 }
 

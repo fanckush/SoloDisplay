@@ -23,9 +23,9 @@ nonisolated enum MenuGlyph: String, CaseIterable, Equatable, Sendable {
 
 /// Everything the menu bar panel draws, and nothing else.
 ///
-/// Equatable is load bearing rather than incidental. The protection timer can drive a refresh
-/// five times a second, and this comparison is the only thing standing between that and a panel
-/// that redraws under the pointer.
+/// Equatable is load bearing rather than incidental. Readings can drive a refresh several times a
+/// second, and this comparison is the only thing standing between that and a panel that redraws
+/// under the pointer.
 nonisolated struct MenuPanel: Equatable, Sendable {
   /// The two arrangements. Exactly one is chosen, always, and the choice is a stored intent
   /// rather than a reading of the hardware.
@@ -91,10 +91,6 @@ extension MenuPanel {
   /// What the panel holds before the first observation arrives. Nothing is known yet, so it
   /// says so rather than claiming an arrangement it has not looked at.
   static let placeholder = MenuModel.panel(
-    .init(
-      mode: .automaticPaused, manualRequestActive: false, panelOwned: false,
-      operationInFlight: false, pendingRecovery: false, fault: nil, unavailability: .noObservation
-    ),
-    launchAtLogin: false
+    .init(unavailability: .noObservation), launchAtLogin: false
   )
 }

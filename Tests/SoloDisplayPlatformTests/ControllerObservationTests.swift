@@ -26,16 +26,6 @@ private func external(
   )
 }
 
-@Test func aFoundPrivateSymbolIsNotAValidatedBackend() {
-  let reading = snapshot()
-  #expect(reading.privateSymbol != nil)
-  // The symbol resolves, but nothing has established that the call does what it claims.
-  #expect(ControllerObservation.environment(reading, power: .awake).backendValidated == .unknown)
-  var validated = reading
-  validated.backendValidated = true
-  #expect(ControllerObservation.environment(validated, power: .awake).backendValidated == .yes)
-}
-
 @Test func onlyPositivelyClassifiedNativeExternalsCount() {
   var reading = snapshot()
   // No external at all is a definite no, not an unknown.
@@ -136,20 +126,6 @@ private func external(
   #expect(environment.panel == nil)
   #expect(environment.panelState == .unknown)
   #expect(environment.power == .waking)
-}
-
-@Test func liveNormalizationKeepsAutomaticControllerInhibited() {
-  var shadow = ShadowController()
-  shadow.receive(.selectMode(.automatic), at: 0)
-  for instant in stride(from: Int64(0), through: 10000, by: 500) {
-    shadow.observe(ControllerObservation.environment(snapshot(), power: .awake), at: instant)
-    shadow.tick(at: instant)
-  }
-  #expect(shadow.state.operation == nil)
-  #expect(shadow.state.ownership == nil)
-  #expect(shadow.observationCount == 21)
-  // The preferences request is deliberately rejected too: shadow mode has no storage executor.
-  #expect(shadow.rejectedEffectCount == 1)
 }
 
 @Test func displaySleepDoesNotWithdrawAnOtherwiseEligibleExternal() {

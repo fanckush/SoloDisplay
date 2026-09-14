@@ -60,14 +60,6 @@ struct ContentView: View {
           }
         }
         Divider()
-        Text("Controller safety gate").font(.headline)
-        Text(
-          "Shadow mode: live observations reach the state machine, but no display effects execute."
-        )
-        Text(
-          "Observations: \(model.controller.observationCount) · Rejected effects: \(model.controller.rejectedEffectCount)"
-        )
-        .font(.caption).foregroundStyle(.secondary)
         Text(
           "This window is a read-only observer. The menu bar controls are what change displays."
         )

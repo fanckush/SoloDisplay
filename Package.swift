@@ -7,8 +7,7 @@ let package = Package(
   products: [
     .library(name: "SoloDisplayCore", targets: ["SoloDisplayCore"]),
     .library(name: "SoloDisplayPlatform", targets: ["SoloDisplayPlatform"]),
-    .executable(name: "solodisplay-lab", targets: ["SoloDisplayLab"]),
-    .executable(name: "solodisplay-probe", targets: ["SoloDisplayProbe"])
+    .executable(name: "solodisplay-lab", targets: ["SoloDisplayLab"])
   ],
   targets: [
     .target(name: "SoloDisplayCore"),
@@ -17,15 +16,8 @@ let package = Package(
       name: "SoloDisplayLab",
       dependencies: ["SoloDisplayCore", "SoloDisplayPlatform"]
     ),
-    .executableTarget(
-      name: "SoloDisplayProbe",
-      dependencies: ["SoloDisplayCore", "SoloDisplayPlatform"]
-    ),
     .testTarget(name: "SoloDisplayCoreTests", dependencies: ["SoloDisplayCore"]),
-    .testTarget(
-      name: "SoloDisplayPlatformTests",
-      dependencies: ["SoloDisplayPlatform", "SoloDisplayProbe"]
-    )
+    .testTarget(name: "SoloDisplayPlatformTests", dependencies: ["SoloDisplayPlatform"])
   ],
   swiftLanguageModes: [.v6]
 )

@@ -95,13 +95,11 @@ struct MenuPanelView: View {
       HStack(spacing: 0) {
         Text(panel.launchAtLogin.title).font(.system(size: 12))
         Spacer(minLength: 8)
-        Toggle("", isOn: Binding(
-          get: { panel.launchAtLogin.isOn },
-          set: { _ in store.perform(panel.launchAtLogin.action) }
-        ))
-        .labelsHidden()
-        .toggleStyle(.switch)
-        .controlSize(.mini)
+        NativeSwitch(
+          isOn: panel.launchAtLogin.isOn, label: panel.launchAtLogin.title,
+          toggle: { store.perform(panel.launchAtLogin.action) }
+        )
+        .fixedSize()
       }
       .padding(.horizontal, 14)
       .padding(.vertical, 7)
@@ -113,6 +111,46 @@ struct MenuPanelView: View {
       }
     }
     .padding(.bottom, 6)
+  }
+}
+
+/// AppKit's own switch. SwiftUI's switch took its inactive look from the menu window, because this
+/// app is never frontmost, so on and off both drew gray, and neither a tint nor an overridden
+/// active state changed that.
+private struct NativeSwitch: NSViewRepresentable {
+  let isOn: Bool
+  let label: String
+  let toggle: () -> Void
+
+  func makeNSView(context: Context) -> NSSwitch {
+    let control = NSSwitch()
+    control.controlSize = .mini
+    control.target = context.coordinator
+    control.action = #selector(Coordinator.changed)
+    return control
+  }
+
+  func updateNSView(_ control: NSSwitch, context: Context) {
+    context.coordinator.toggle = toggle
+    control.state = isOn ? .on : .off
+    control.setAccessibilityLabel(label)
+  }
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(toggle: toggle)
+  }
+
+  @MainActor
+  final class Coordinator: NSObject {
+    var toggle: () -> Void
+
+    init(toggle: @escaping () -> Void) {
+      self.toggle = toggle
+    }
+
+    @objc func changed() {
+      toggle()
+    }
   }
 }
 

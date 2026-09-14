@@ -1,9 +1,5 @@
 import AppKit
 import Observation
-import enum SoloDisplayCore.Fact
-import enum SoloDisplayCore.Lid
-import enum SoloDisplayCore.Power
-import struct SoloDisplayCore.ShadowController
 import SoloDisplayPlatform
 
 struct DiagnosticEntry: Identifiable {
@@ -60,8 +56,6 @@ final class DiagnosticsModel {
   private(set) var history = DiagnosticHistory()
   private(set) var callbackRegistrationError: Int32?
   private(set) var droppedCallbacks = 0
-  private(set) var controller = ShadowController()
-  private(set) var powerEvidence: Power = .unknown
   /// Counted rather than inferred from the newest entry, which a periodic sample can replace.
   private(set) var manualRefreshes = 0
   @ObservationIgnored private var monitor: DisplayEventMonitor?
@@ -124,21 +118,6 @@ final class DiagnosticsModel {
       // Queue evidence handling after the notification, never reenter a callback.
       Task { @MainActor [weak self] in
         guard let self, monitor != nil else { return }
-        let now = Int64(ProcessInfo.processInfo.systemUptime * 1000)
-        switch name {
-        case NSWorkspace.willSleepNotification:
-          powerEvidence = .sleeping
-          controller.receive(.willSleep, at: now)
-        case NSWorkspace.didWakeNotification:
-          powerEvidence = .waking
-          controller.receive(.waking, at: now)
-        case NSWorkspace.screensDidSleepNotification:
-          powerEvidence = .unknown
-          controller.receive(.keepOn, at: now)
-        case NSWorkspace.sessionDidResignActiveNotification:
-          controller.receive(.keepOn, at: now)
-        default: break
-        }
         sample(reason: reason)
       }
     }
@@ -148,7 +127,6 @@ final class DiagnosticsModel {
   private func poll() {
     guard monitor != nil else { return }
     let now = Int64(ProcessInfo.processInfo.systemUptime * 1000)
-    controller.tick(at: now)
     let receivedCallbacks = drainCallbacks()
     if receivedCallbacks || now - lastPoll >= 2000 {
       sample(reason: receivedCallbacks ? "After display callback" : "Periodic observation")
@@ -179,9 +157,6 @@ final class DiagnosticsModel {
           || $0.enumerationError != next.enumerationError
       } ?? true
     reading = next
-    controller.observe(
-      ControllerObservation.environment(next, power: powerEvidence), at: next.monotonicMilliseconds
-    )
     lastPoll = next.monotonicMilliseconds
     if changed || reason != "Periodic observation" {
       let inventory = next.displays.map { "\($0.id): active=\($0.active), mirror=\($0.mirrored)" }

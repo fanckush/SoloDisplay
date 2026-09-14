@@ -25,14 +25,20 @@ private func record(
 }
 
 struct ProductionJournalTests {
-  @Test func ownershipIsWrittenPrivatelyAndCannotBeSilentlyOverwritten() throws {
+  @Test func aRecordIsWrittenPrivatelyAndNeverSilentlyReplacedByAnotherPanel() throws {
     let store = try ProductionJournalStore(directory: workspace())
     try store.prepare(record())
     #expect(try store.load()?.operationID == 1)
 
-    // A second preparation means unresolved ownership, not a new experiment.
-    #expect(throws: JournalError.self) { try store.prepare(record(operationID: 2)) }
+    // Recording the same panel again is not a conflict, and keeps the original record.
+    #expect(throws: Never.self) { try store.prepare(record(operationID: 2)) }
     #expect(try store.load()?.operationID == 1)
+
+    // A different panel in this same session is unresolved, not something to overwrite.
+    var other = target
+    other.displayUUID = "a-different-panel"
+    #expect(throws: JournalError.self) { try store.prepare(record(target: other)) }
+    #expect(try store.load()?.target == target)
 
     let attributes = try FileManager.default.attributesOfItem(atPath: store.url.path)
     #expect(attributes[.posixPermissions] as? NSNumber == 0o600)
@@ -144,6 +150,16 @@ struct ProductionJournalTests {
     #expect(throws: Never.self) { try store.clear() }
     // Ownership can be established again once nothing is unresolved.
     #expect(throws: Never.self) { try store.prepare(record(operationID: 2)) }
+  }
+
+  @Test func aRecordFromAnotherBootIsReplacedBecauseItNamesNothingHere() throws {
+    let store = try ProductionJournalStore(directory: workspace())
+    var earlier = target
+    earlier.bootID = "boot-before-restart"
+    try store.prepare(record(target: earlier))
+    try store.prepare(record(operationID: 2))
+    #expect(try store.load()?.target == target)
+    #expect(try store.load()?.operationID == 2)
   }
 
   @Test func invalidRecordsAreRefusedBeforeAnythingIsWritten() throws {

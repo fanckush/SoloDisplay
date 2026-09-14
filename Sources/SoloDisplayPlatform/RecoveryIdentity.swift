@@ -1,10 +1,13 @@
 import SoloDisplayCore
 
-/// Evidence about a target now, distinct from ownership established before suppression.
+/// Whether a restore may be addressed to a target right now, must wait, or must never be.
+public enum RecoveryReadiness: Equatable, Sendable { case ready, waiting, blocked }
+
+/// Evidence about a target now, distinct from a record written before suppression.
 public enum RecoveryIdentity {
   public static func readiness(
     _ reading: PlatformReading, target: PanelTarget,
-    liveOwnership: Ownership? = nil
+    ownedTarget: PanelTarget? = nil
   ) -> RecoveryReadiness {
     // A positively different identity is not a temporary lifecycle condition.
     if let boot = reading.bootID, boot != target.bootID {
@@ -29,16 +32,16 @@ public enum RecoveryIdentity {
       }
       return current.uuidResolvedID == target.displayID ? .ready : .waiting
     }
-    return liveOwnership?.target == target ? .ready : .waiting
+    return ownedTarget == target ? .ready : .waiting
   }
 
-  /// Absence is usable only for an operation witnessed by this live process pairing. A cold
-  /// journal is an obligation to reconcile, not authority to address an unresolvable ID.
+  /// An absent panel is usable only when a live process that turned it off asks. A cold record
+  /// is an obligation to reconcile, not authority to address an unresolvable ID.
   public static func authorizeRestore(
     _ reading: PlatformReading, target: PanelTarget,
-    liveOwnership: Ownership? = nil
+    ownedTarget: PanelTarget? = nil
   ) throws {
-    switch readiness(reading, target: target, liveOwnership: liveOwnership) {
+    switch readiness(reading, target: target, ownedTarget: ownedTarget) {
     case .ready: return
     case .waiting: throw IdentityError.insufficientEvidence
     case .blocked: throw IdentityError.contradictoryTarget
@@ -58,31 +61,16 @@ public enum RecoveryIdentity {
       throw IdentityError.contradictoryTarget
     }
   }
-
-  /// Only the actual child of a live owner may use the experimental cooperative handoff.
-  /// An absent target is expected here; this is not permission to guess a target after a crash.
-  public static func authorizeHandoff(
-    journal: RecoveryJournal, bootID: String?, loginID: UInt32?,
-    parentPID: Int32, displays: [DisplayReading]
-  ) throws {
-    try journal.validate(bootID: bootID, loginID: loginID)
-    guard parentPID > 1, parentPID == journal.ownerPID else {
-      throw IdentityError.unrelatedParent
-    }
-    try checkCurrentDisplays(displays, target: journal.target)
-  }
 }
 
 public enum IdentityError: Error, CustomStringConvertible {
-  case contradictoryTarget, unrelatedParent, insufficientEvidence
+  case contradictoryTarget, insufficientEvidence
   public var description: String {
     switch self {
     case .insufficientEvidence:
-      "SoloDisplay cannot establish fresh authority for this internal panel. The recovery record was retained."
+      "SoloDisplay cannot establish fresh authority for this internal panel. The record was retained."
     case .contradictoryTarget:
-      "Live evidence contradicts the journaled built-in target. No change made."
-    case .unrelatedParent:
-      "Cooperative recovery requires the actual live writer as parent. No change made."
+      "Live evidence contradicts the recorded built-in target. No change made."
     }
   }
 }

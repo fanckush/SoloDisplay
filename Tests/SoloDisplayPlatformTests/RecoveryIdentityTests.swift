@@ -4,26 +4,7 @@ import Testing
 
 private let owned = PanelTarget(displayID: 1, displayUUID: "panel", bootID: "boot", loginID: 42)
 
-@Test func handoffAllowsAnAbsentOwnedPanelOnlyForActualParentAndMatchingSession() throws {
-  let journal = RecoveryJournal(target: owned, scope: "app", ownerPID: 555)
-  #expect(throws: Never.self) {
-    try RecoveryIdentity.authorizeHandoff(
-      journal: journal, bootID: "boot", loginID: 42, parentPID: 555, displays: []
-    )
-  }
-  #expect(throws: (any Error).self) {
-    try RecoveryIdentity.authorizeHandoff(
-      journal: journal, bootID: "boot", loginID: 42, parentPID: 556, displays: []
-    )
-  }
-  #expect(throws: (any Error).self) {
-    try RecoveryIdentity.authorizeHandoff(
-      journal: journal, bootID: "other", loginID: 42, parentPID: 555, displays: []
-    )
-  }
-}
-
-@Test func aReusedDisplayIDCannotAuthorizeHandoff() {
+@Test func aReusedDisplayIDCannotStandInForThePanel() {
   let impostor = DisplayReading(
     id: 1, uuid: "external", uuidResolvedID: 1, builtIn: false, active: true,
     online: true, asleep: false, mirrored: false, mirrorSourceID: nil,

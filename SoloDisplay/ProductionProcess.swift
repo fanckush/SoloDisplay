@@ -1,30 +1,29 @@
 import Darwin
 import Foundation
 
-/// Production process roles. These are separate from the Debug-only `--lab-` commands and are
-/// the only entry points a normal launch can reach.
+/// Production process roles. These are the only entry points a launch can reach.
 nonisolated enum ProductionRole: Equatable {
-  /// The supervising process a normal launch becomes. It never disables and owns recovery UI.
-  case helper
-  /// The menu-bar process the helper launches, paired to it by inherited private pipes.
-  case controller
-  /// A paired, one-shot process that can only enable the journaled panel for recovery.
-  case recoveryWorker
+  /// The menu-bar app a normal launch becomes. It decides, and starts guardians and workers.
+  case app
+  /// A child of the app that exists only while the laptop screen may be off.
+  case guardian
+  /// A one-shot process that makes exactly one display change for its parent, then exits.
+  case worker
   /// Explicitly unprotected: the read-only interface with display control unavailable.
   case unprotected
 }
 
 nonisolated enum ProductionLaunchError: Error, CustomStringConvertible {
-  case unpairedController
-  case unpairedRecoveryWorker
+  case unpairedGuardian
+  case unpairedWorker
   case conflictingRoles
   case unknownArgument(String)
   var description: String {
     switch self {
-    case .unpairedController:
-      "The controller role requires the private pipes inherited from its recovery helper."
-    case .unpairedRecoveryWorker:
-      "The recovery-worker role requires the private pipes inherited from its recovery helper."
+    case .unpairedGuardian:
+      "The guardian role requires the private pipes inherited from its app."
+    case .unpairedWorker:
+      "The display worker role requires the private pipes inherited from its parent."
     case .conflictingRoles: "Only one production process role may be selected."
     case let .unknownArgument(argument): "Unrecognized argument: \(argument)."
     }
@@ -32,32 +31,30 @@ nonisolated enum ProductionLaunchError: Error, CustomStringConvertible {
 }
 
 nonisolated enum ProductionLaunch {
-  static let controllerArgument = "--solodisplay-controller"
-  static let recoveryWorkerArgument = "--solodisplay-recovery-worker"
+  static let guardianArgument = "--solodisplay-guardian"
+  static let workerArgument = "--solodisplay-worker"
   static let unprotectedArgument = "--solodisplay-unprotected"
 
   /// A command-line claim is never the pairing evidence. Only actual inherited pipes on the
-  /// standard descriptors let a process act as the paired controller.
+  /// standard descriptors let a process act as a child role.
   static func role(arguments: [String], pipedStandardStreams: Bool) throws -> ProductionRole {
+    let roles = [guardianArgument, workerArgument, unprotectedArgument]
     for argument in arguments
-      where argument.hasPrefix("--") && argument != controllerArgument
-      && argument != recoveryWorkerArgument
-      && argument != unprotectedArgument && argument != "--diagnostics" {
+      where argument.hasPrefix("--") && !roles.contains(argument) && argument != "--diagnostics" {
       throw ProductionLaunchError.unknownArgument(argument)
     }
-    let selectedRoles = arguments.filter {
-      $0 == controllerArgument || $0 == recoveryWorkerArgument || $0 == unprotectedArgument
+    guard arguments.filter(roles.contains).count <= 1 else {
+      throw ProductionLaunchError.conflictingRoles
     }
-    guard selectedRoles.count <= 1 else { throw ProductionLaunchError.conflictingRoles }
-    if arguments.contains(controllerArgument) {
-      guard pipedStandardStreams else { throw ProductionLaunchError.unpairedController }
-      return .controller
+    if arguments.contains(guardianArgument) {
+      guard pipedStandardStreams else { throw ProductionLaunchError.unpairedGuardian }
+      return .guardian
     }
-    if arguments.contains(recoveryWorkerArgument) {
-      guard pipedStandardStreams else { throw ProductionLaunchError.unpairedRecoveryWorker }
-      return .recoveryWorker
+    if arguments.contains(workerArgument) {
+      guard pipedStandardStreams else { throw ProductionLaunchError.unpairedWorker }
+      return .worker
     }
-    return arguments.contains(unprotectedArgument) ? .unprotected : .helper
+    return arguments.contains(unprotectedArgument) ? .unprotected : .app
   }
 
   static func standardStreamsArePipes() -> Bool {

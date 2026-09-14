@@ -41,8 +41,7 @@ public enum ControllerObservation {
       supportedTopology: topology(
         reading, reliable: reliable, internalPresent: internalDisplay != nil,
         panelOwnedAndAbsent: state == .disabled
-      ),
-      backendValidated: reading.backendValidated ? .yes : .unknown
+      )
     )
   }
 

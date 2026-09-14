@@ -40,7 +40,6 @@ public struct PlatformReading: Codable, Sendable {
   public var loginID: UInt32?
   public var foregroundSession: Fact
   public var privateSymbol: String?
-  public var backendValidated = false
   /// Kept verbatim so a transport decision can be inspected rather than taken on trust.
   public var transportEvidence: [TransportEvidence] = []
   public var limitations: [String]
@@ -59,9 +58,7 @@ public struct PlatformReading: Codable, Sendable {
 }
 
 public enum DisplayObserver {
-  /// `validation` is supplied by the coordinator after loading a recorded round trip. Callers
-  /// that omit it get an explicitly unvalidated backend, which inhibits disabling.
-  public static func read(validation: BackendValidation? = nil) -> PlatformReading {
+  public static func read() -> PlatformReading {
     let start = Int64(ProcessInfo.processInfo.systemUptime * 1000)
     var count: UInt32 = 0
     let countResult = CGGetOnlineDisplayList(0, nil, &count)
@@ -151,10 +148,6 @@ public enum DisplayObserver {
       displays: displays, lid: lid, bootID: bootID,
       loginID: sessionResult == errSecSuccess ? loginID : nil,
       foregroundSession: foreground, privateSymbol: api.symbolName,
-      backendValidated: validation?.covers(
-        osVersion: ProcessInfo.processInfo.operatingSystemVersionString,
-        hardwareModel: BackendValidation.hardwareModel(), symbolName: api.symbolName
-      ) ?? false,
       transportEvidence: evidence, limitations: limitations
     )
   }

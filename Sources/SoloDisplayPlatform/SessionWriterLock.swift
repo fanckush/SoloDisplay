@@ -6,17 +6,15 @@ public final class SessionWriterLock {
   private var descriptor: Int32
   private let url: URL
 
-  /// One derivation for both the holder and the worker that verifies an inherited descriptor.
-  /// Two independent copies of this name is a silent way to lose exclusion.
   static func lockURL(in directory: URL, name: String, loginID: UInt32) -> URL {
     directory.appendingPathComponent("solodisplay-\(name)-\(getuid())-\(loginID).lock")
   }
 
-  /// `directory` exists so automated real-process tests can hold their own lock without
-  /// competing with a live GUI session's writer. Production always uses the default.
-  /// `name` separates unrelated exclusions; only "writer" gates display configuration.
+  /// `directory` exists so automated tests can hold their own lock without competing with a live
+  /// GUI session. Production always uses the default. `name` separates unrelated exclusions:
+  /// "instance" is one app per login, "guardian" is one guardian per login.
   public init(
-    loginID: UInt32, name: String = "writer",
+    loginID: UInt32, name: String,
     directory: URL = FileManager.default.temporaryDirectory
   ) throws {
     url = Self.lockURL(in: directory, name: name, loginID: loginID)
@@ -36,32 +34,6 @@ public final class SessionWriterLock {
     }
   }
 
-  /// A recovery worker inherits a duplicate of the exact locked file description. The helper
-  /// keeps its own descriptor too, so either process dying cannot create a concurrent-writer gap.
-  public func fileHandleForInheritance() throws -> FileHandle {
-    guard descriptor >= 0 else { throw WriterLockError.unavailable }
-    let inherited = dup(descriptor)
-    guard inherited >= 0 else { throw WriterLockError.unavailable }
-    return FileHandle(fileDescriptor: inherited, closeOnDealloc: true)
-  }
-
-  /// The worker independently proves that its inherited descriptor names the expected lock file
-  /// and participates in that lock before it enters the private display API.
-  public static func inheritedDescriptorHoldsLock(
-    _ inherited: Int32, loginID: UInt32,
-    directory: URL = FileManager.default.temporaryDirectory
-  ) -> Bool {
-    let expectedURL = lockURL(in: directory, name: "writer", loginID: loginID)
-    var inheritedStatus = stat()
-    var expectedStatus = stat()
-    guard fstat(inherited, &inheritedStatus) == 0,
-          stat(expectedURL.path, &expectedStatus) == 0,
-          inheritedStatus.st_dev == expectedStatus.st_dev,
-          inheritedStatus.st_ino == expectedStatus.st_ino
-    else { return false }
-    return flock(inherited, LOCK_EX | LOCK_NB) == 0
-  }
-
   deinit { release() }
 }
 
@@ -69,8 +41,8 @@ public enum WriterLockError: Error, CustomStringConvertible {
   case unavailable, alreadyHeld
   public var description: String {
     switch self {
-    case .unavailable: "Cannot establish exclusive display-writer ownership. No change made."
-    case .alreadyHeld: "Another SoloDisplay lab writer is running in this GUI session. No change made."
+    case .unavailable: "Cannot open the SoloDisplay session lock. No change made."
+    case .alreadyHeld: "Another SoloDisplay process holds this lock in this GUI session."
     }
   }
 }

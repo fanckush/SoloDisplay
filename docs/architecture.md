@@ -1,95 +1,134 @@
 # Architecture
 
-## Product decisions
+## What SoloDisplay does
 
-SoloDisplay controls one positively identified internal laptop panel. It does not modify external display settings, brightness, mirroring, or system sleep preferences.
+SoloDisplay turns off one positively identified built-in laptop panel while a native external
+monitor is connected, and turns it back on when that stops being true. It does not change
+external displays, brightness, mirroring, or sleep settings.
 
-Manual mode is the default. A manual off request is temporary and clears on interruption. Automatic mode is explicit opt-in. Its Keep Internal On action remains paused across wake, reconnect, and relaunch until the user resumes it. Launch at Login defaults to off.
+There are two stored choices. **All Monitors** keeps the laptop screen on. **External Only** keeps
+it off whenever a usable monitor is there. The choice is intent, not a reading of the hardware:
+External Only stays chosen while no monitor is connected. Launch at Login defaults to off.
 
-Native wired external displays, including native-output docks and multiple monitors, are the intended first supported configurations. DisplayLink, wireless, virtual, and unclassified topologies inhibit disabling initially. Unknown OS versions are evaluated using runtime capabilities, not a version allowlist. Tested compatibility is reported separately from the deployment target.
+User-facing copy and project documentation do not use em dashes.
 
-Mirroring plus a dimmed internal display is a normal incoming configuration for this product. The observer detects mirroring and records the mirror source and desktop coordinates. Until its behavior is validated, disabling is explicitly inhibited. The first guided experiment uses an extended baseline; a separate mirrored-baseline experiment must establish whether disabling and recovery preserve the original arrangement. Do not silently switch the user's mirroring settings or force that conversion as an unexplained workaround.
+## Principles
 
-No normal-use confirmation countdowns. Diagnostics remain local unless explicitly exported. User-facing copy and project documentation do not use em dashes.
+The design handles uncertainty by deciding from observed state, not by timing operations.
 
-## Functional core
+1. **Truth comes from readings, not from calls.** A display call's return, error or hang says
+   nothing about the outcome. Only a reading taken after the call ended does.
+2. **Nothing that can block runs in a long-lived process.** Every private display call runs in a
+   one-shot worker process. A worker that does not finish is killed, and that only means "not done
+   yet": the next reading decides, and a retry follows after a backoff.
+3. **Recovery acts on danger or certainty, never on lateness.** Danger is the laptop screen off
+   with no usable monitor. Certainty is the app process being gone, which the kernel reports by
+   closing a pipe. Nothing kills the app, and nothing quits after recovering.
+4. **Level-triggered, no sticky faults.** Every event leads to the same comparison of what is
+   wanted with what is observed. A problem is shown while it lasts and clears itself. Try Again
+   only skips the backoff.
 
-`Controller.reduce(state, event, at:)` is synchronous and deterministic. It returns the next state and requested effects. It cannot call macOS, inspect a clock, sleep, access storage, or change a display.
+These replace an earlier design built on operation phases, deadlines, a heartbeat lease between
+two processes, and faults that waited for Try Again. Each of its failures in September 2026 was
+two timers disagreeing; see `hardware-findings.md`.
 
-The model separates intent, observed environment, pending operation, possible ownership, and faults. Unknown and conflicting observations have explicit representations. A raw private symbol is not evidence that the display-control contract is validated.
+## Processes
 
-Disabling requires fresh evidence, two separated observations, a stable interval, a known panel, a foreground GUI session, an open lid, a validated backend, and a supported native external display. The executor must check again immediately before sending the request.
+All three roles are the same app executable. `ProductionLaunch.role` selects one from the launch
+arguments, and a child role is accepted only with inherited pipes on its standard streams.
 
-The core requests a durable ownership journal before emitting a disable effect. Journal failure prevents disabling. An API error does not prove that no side effect occurred, so ownership survives errors.
+- **App** (a normal launch). The menu bar, the controller, and the platform coordinator. It holds a
+  per-login `instance` lock, so a second copy exits.
+- **Guardian** (`--solodisplay-guardian`). Started by the app before the laptop screen is turned off,
+  and exists only while it may be off. It reads its panel identity from one request line, holds a
+  per-login `guardian` lock, and replies `ready`. Once a second it takes a reading and applies
+  `GuardianPolicy`: restore at once if the app is gone, restore after two readings in a row that
+  show the screen off with no usable monitor, and exit once the app is gone and the screen is on.
+  `release` from the app means nothing is owed and it exits. It never signals the app.
+- **Display worker** (`--solodisplay-worker`). Makes exactly one change for its parent. It reads a
+  request, rechecks it against a fresh reading, calls the private API with session scope so the
+  change outlives it, and exits. `SoloDisplayApp.init` runs it before any AppKit setup.
+- **Read-only** (`--solodisplay-unprotected`). The diagnostics window with display control
+  unavailable. UI automation uses it.
 
-One operation can be outstanding. A submitted call that exceeds its deadline becomes stalled. Its timeout requests supervisor intervention but never grants permission to start a competing writer. A late completion remains relevant and can trigger restoration.
+Quitting does not wait for anything. If a guardian is running, it sees the app go and restores the
+screen, the same path as a crash or a force quit.
 
-An accepted operation enters verification. Only a newer observation can establish the outcome. Restoration takes precedence over verifying an obsolete disable request. The disappearance of the panel during a verified suppression must be interpreted by the validated platform adapter, not guessed by the core.
+A guardian from an earlier app still holds its lock while it restores. A new app's guardian cannot
+start until that lock is free, so the new app keeps the screen on and retries after a backoff.
 
-The initial timing policy is two seconds of stability, shortened when macOS reports a display reconfiguration: then the arrangement counts as settled once 500 ms pass without another report and a reading taken after that agrees, or after five seconds if the reports never go quiet. It also uses 500 ms between counted observations, five seconds of evidence freshness, three seconds for an operation or awake verification, and at most three restoration attempts with 500 ms and two-second retry delays. These deadlines bound controller decisions, not hardware response.
+## Controller
 
-## Platform boundary
+`Controller.reduce(state, event, at:)` in `SoloDisplayCore` is synchronous and deterministic. It
+cannot call macOS, read a clock, sleep, or touch storage. It returns the next state and effects.
 
-`DisplayObserver` performs read-only CoreGraphics, ColorSync, IOKit, and GUI-session queries. `ControllerObservation` normalizes its readings for shadow execution, but never upgrades raw flags or a private symbol into production authority. Missing or inactive panels remain unknown, not disabled. Mirroring explicitly inhibits the topology; transport and backend validation remain unknown.
+After updating what it knows, every event runs the same two steps:
 
-`PrivateDisplayAPI` is the sole implementation of the private call. It opens SkyLight explicitly, resolves `SLSConfigureDisplayEnabled` then `CGSConfigureDisplayEnabled`, and wraps the call in a CoreGraphics transaction. This adapter is exercised only by explicit lab commands until its contract is validated.
+- **`desired`** says what the laptop screen should be, or nothing when no change should be made
+  right now: the Mac is asleep, the lid is closed, another user is in front, the panel cannot be
+  identified, or a new arrangement is still settling. External Only wants the screen off only when
+  a usable native monitor is present in a supported arrangement. A screen that is off is never kept
+  off without a guardian.
+- **`act`** requests only the next missing step. Turning off needs the record written, then a
+  guardian ready, then a disable worker, each once the step before it has landed. Turning on needs
+  only an enable worker. When the screen is on and staying on, the guardian is released and the
+  record is cleared.
 
-`RecoveryJournal` records the boot, GUI login session, runtime display ID, display UUID, experiment scope, and owner process. Creating a journal is exclusive and synchronized to disk. Existing journals are never silently overwritten. Lab writers hold a kernel-backed GUI-session lock so separate invocations cannot become concurrent writers.
+A finished worker is judged only by a reading sampled after it finished. If the screen did not
+reach the wanted state, `failures` counts up and the next attempt waits 0.5, 1, 2, 5, 10, then 30
+seconds. Three misses in a row are shown in the menu; attempts continue regardless.
 
-Journals are authority to investigate an owned target, not authority to apply an old ID on another boot. Restoration validates boot and GUI session identity, checks that the previous writer is gone, rejects a target that now describes a different display, and verifies the result separately.
+**Settling.** Turning off needs two readings at least 500 ms apart that agree, and a settled
+arrangement. When macOS reported a display reconfiguration that explains the arrangement, it is
+settled once a reading taken 500 ms after the last report still agrees, or after 5 seconds if
+reports keep coming. Any other change, such as the lid or session, waits the full 2 seconds. The
+controller asks for a reading at exactly the moment settling could complete. Turning back on never
+waits to settle.
 
-The lab intentionally retains journals after successful restoration as experiment evidence. The future production executor must serialize journal writes and clears, acknowledge failures, and reconcile any leftover journal before another disable request.
+**Sleep.** `willSleep` and `waking` hold everything until a fresh reading shows the Mac awake. No
+worker starts in between. A worker already running is left alone, and the next reading decides.
 
-Experiments established that reverse UUID lookup can become unavailable during suppression. `RecoveryIdentity` therefore distinguishes live contradictory evidence from an absent, previously owned panel. The cooperative lab child may use its actual live parent's boot/session-scoped ownership; ordinary after-exit recovery retains the stricter unresolved-identity guard. These are different authorities, not interchangeable fallback guesses.
+**The record.** `ProductionJournalStore` keeps one record naming the panel that may be off, with its
+boot and login identity. It is written before a guardian or worker is started, and cleared once the
+screen is observed on. While a record exists, a missing panel reads as SoloDisplay's own
+suppression. Writing the same panel again succeeds. A record from another boot or login is replaced.
+At launch, a record from this session is taken over, and any other leftover is cleared once the
+built-in panel is visibly on; otherwise turning off waits until the person makes the panel
+identifiable and chooses Try Again.
 
-The instrumented CLI handoff produced inconsistent parent/child observations even with callbacks registered. The parent received only callbacks for its own operation. A normal AppKit event loop must be tested before connecting these raw observations to production decisions. Callback registration by itself is not a validated observation contract.
+`Controller.presentation` projects state for the menu: what was chosen, whether the screen is off,
+whether a change is under way, any lasting trouble, and why the screen cannot be off right now.
 
-Subsequent tests established that a native observer receives independent private-API off/on notifications, and a native owner can observe its cooperative child's restoration. The debug-only `NativeRecoveryLab` uses the same app executable for both processes and asynchronous waits that service AppKit. Normal app launches remain read-only, and Release builds reject its arguments. The earlier CLI disagreement did not recur in this native test; its exact cause is not proven. Neither cooperative handoff nor explicit off/on establishes after-crash recovery authority.
+## Platform
 
-## Process and lifecycle design gates
+- `DisplayObserver` performs read-only CoreGraphics, IOKit and GUI-session queries.
+  `ControllerObservation` normalizes a reading. It never guesses that a display it cannot see is off
+  unless the record names it.
+- `DisplayTransportClassifier` counts an external as native only when it correlates to a display
+  service on the SoC display pipeline. An internal panel following one present external mirror
+  source is supported; an internal mirror source is not.
+- `ProductionCoordinator` runs the reducer on the main actor, one event at a time. Readings,
+  storage, and workers each have their own serial lane, so a slow one delays only itself.
+  `DisplayEventMonitor` delivers CoreGraphics reconfiguration callbacks immediately, and a timer
+  drains them as a fallback.
+- `PrivateDisplayAPI` is the only caller of the private SkyLight call, inside a CoreGraphics
+  display transaction. Only the display worker uses it.
+- `RecoveryIdentity` decides whether an enable may address a target: a positively different
+  identity blocks it, and an absent panel is addressable only by the process that turned it off.
 
-First test application-lifetime configuration. Apple documents rollback at process termination, but its behavior with this private call is not established by those public docs.
+## Diagnostics
 
-If application-lifetime configuration does not work, investigate session-lifetime changes only with demonstrated independent recovery. A live frozen process must be tested separately from a terminated process. A recovery helper is allowed if experiments show that it closes a recovery gap.
+Operational events are typed, identity-free JSON written to the unified log under subsystem
+`dev.solodisplay.SoloDisplay`. Export Diagnostics saves up to a day of that history, with run and
+session identifiers replaced by export-local aliases, together with a snapshot of the current
+controller state that carries no display, boot or session identity. Nothing is uploaded.
 
-The supervised normal-exit experiment found no active panel within three seconds of writer exit; the pre-armed supervisor explicitly restored it. Automatic rollback is therefore not an adequate recovery assumption for this tested configuration. A production independent recovery mechanism is now justified for investigation, but the lab supervisor is not that production implementation.
+The diagnostics window is a read-only view of readings and callbacks.
 
-The debug-only exit experiment captures a live target witness before creating its writer. The writer journals and holds the session lock, then waits for a pipe acknowledgement before disabling. The supervisor validates the journal against its own witness, its actual child, and fresh baseline evidence before acknowledging. Recovery responsibility begins before that acknowledgement is sent. After normal writer exit, the supervisor acquires the lock and observes before any enable call, separating OS rollback from explicit recovery. Ordinary cold-start journal recovery retains its stricter identity requirements.
+## Tests
 
-The pipe protocol accepts only bounded fixed-size signals. Lost contact or a bounded lease expiry makes the responsive writer attempt restoration; supervisor takeover requires confirmed writer termination and lock acquisition. These error paths are implemented but not all hardware-validated. Stalled OS calls, simultaneous process failure, and unavailable identity evidence can still prevent physical restoration. No universal blackout guarantee is claimed.
-
-Any helper must be armed before disabling, observe both process progress and operation deadlines, stop the original writer before takeover, and restore only the journaled panel. A responsive controller restores when it loses helper contact. Simultaneous failure of both processes and an unresponsive OS remain outside that mechanism's guarantee.
-
-The production coordinator serializes events without executing configuration calls inside display callbacks. Sleep is a hard write barrier: `willSleep` invalidates the current write generation, and neither sleeping nor waking permits a display call. A wake notification plus a fresh usable observation creates a new generation. Work queued before sleep cannot become valid after wake. Unresolved ownership survives the interval, and an already enabled panel satisfies the required restoration without being misclassified as a competing controller. A fault requires explicit retry.
-
-The menu-bar shell now exists. Its AppKit delegate owns a read-only diagnostic model, a CoreGraphics callback subscription, workspace lifecycle subscriptions, and a main-run-loop timer. Callback and notification handlers defer observation; they never perform configuration writes. The bounded in-memory timeline distinguishes callbacks from snapshots. Unchanged polling updates freshness without evicting useful events.
-
-The native diagnostic model now feeds `ShadowController`, which serially runs the real reducer, services requested timer deadlines, and counts rejected effects without executing writes or persistence. Workspace sleep/wake notifications invalidate intent and evidence. This remains an observation integration, not a production effect executor. Its power evidence deliberately does not become awake merely because an external is reported active.
-
-`RecoveryLease` binds protection to a live handshake and numbered challenges. A pending renewal does not extend the old deadline; a matching acknowledgement grants validity only until the challenge's original deadline. Duplicate, wrong-session, and late acknowledgements cannot revive expired protection. Lost contact, interruption, or expiry emits one restoration request. The process adapter remains responsible for authenticating the peer and for restoring only an owned target.
-
-`RecoveryTakeover` separates writer termination, lock acquisition, fresh target authorization, the restore request, verification, and journal clearing. Timeouts and successful signal delivery are not termination evidence. The native lab uses this ordering guard before supervisor writes and uses the lease model for its bounded writer. Lab journals remain retained evidence, so the lab intentionally does not execute the production journal-clear effect.
-
-## Production process ownership and protection
-
-A normal launch becomes the supervising helper. It never disables a display and launches its controller child from the same app executable over inherited private pipes. It is normally invisible, but that is conditional: if the controller is absent while recovery remains unresolved, the helper owns a recovery-only status item with diagnostics and explicit retry. It cannot remain as an invisible single-instance owner in that state. Both processes run real AppKit event loops. There is no daemon, no root privilege, and no background installation. A per-login instance lock refuses a second pair, and the controller holds the writer lock for its whole run, so the helper cannot acquire it while its controller lives.
-
-`ProtectionMessage` is a versioned, bounded frame carrying session identity, a monotonic sequence number, a challenge number, ownership identity, and outstanding-operation progress. `ProtectionInbox` validates one peer's stream. A stale, duplicated, wrong-session, wrong-sender, unsupported-version, or malformed frame latches that inbox closed: on a private inherited pipe such a frame is evidence of a broken peer, not noise to skip.
-
-`ControllerProtection` wraps `RecoveryLease`, so an unacknowledged challenge lets protection expire instead of receiving a grace renewal. Only `protects(at:)` gates a disable, and a lease is never sufficient by itself: exclusive writer ownership, durable ownership, and fresh platform prerequisites are separate requirements. `HelperProtection` grants protection only after its own independent witness agrees with the claimed target, emits at most one recovery request, and delegates stop-then-confirm ordering to `RecoveryTakeover` rather than repeating that guard. Operation deadlines travel with every heartbeat, so a responsive communication loop cannot conceal a stalled display call.
-
-`ProductionJournalStore` writes ownership to the app's Application Support directory: exclusive creation with 0600 permissions inside a 0700 directory, synchronized to disk, and never silently overwritten. A record carries schema version, run and operation identity, boot and login identity, target, configuration scope, and the topology observed immediately before the request, so recovery can verify rather than assume. Preparation and clearing are serialized and their failures are reported, because a persistence failure must produce a fault instead of an unrecorded change.
-
-Launch reconciliation classifies a leftover record as unresolved for this boot and login, from a prior boot or login, or retained. Every non-empty classification inhibits disabling and carries an explanation the interface can show. A record contradicted by live built-in display evidence is retained, not acted on. A prior-session record is cleared only after an active built-in panel is observed, because a restart already restored the panel. Clearing otherwise happens only after verified restoration.
-
-Helper takeover never enters the private display API in the helper itself. It launches a one-shot recovery-worker role with a versioned, parent-bound request. The worker revalidates the durable record and fresh recovery identity, can only enable the recorded panel at session scope, and inherits a duplicate of the exact locked file description. The helper bounds the worker to three seconds, sends `SIGKILL` to that exact child on timeout, and confirms its exit before releasing responsibility. If the OS cannot yet confirm termination, the inherited lock continues to exclude every other writer. In every failure case the journal is retained and the helper remains responsive with the recovery interface. A driver that refuses every call can still prevent physical restoration; it cannot strand the only long-lived control plane inside that call.
-
-See `status.md` for the current verification boundary instead of inferring hardware coverage from the existence of a model, a lab command, or a process role.
-
-## Diagnostics and tests
-
-`TraceRecorder` bounds history by both event count and encoded size. Evicting an event advances the replay baseline, so the retained suffix still replays correctly. Shared exports replace display, boot, and session identifiers with consistent local pseudonyms.
-
-Regression tests express event sequences and invariants. Generated sequences add missing, delayed, reordered, and conflicting events. They establish properties of the controller under modeled assumptions. Guided hardware tests establish which assumptions match the operating system.
-
-Use SDK and project scaffolding tools where available. The user created the native project with Xcode's macOS App template, including Swift Testing and XCTest UI targets. Integration edits add a repository-relative local package dependency to that generated project. No custom project generator is required.
+Controller behavior is tested as event sequences in `Tests/SoloDisplayCoreTests`, including
+settling, backoff, sleep, and guardian rules. `ProductionCoordinatorTests` runs the real coordinator
+against fake readings, storage, guardian and worker. App tests cover the menu wording, launch roles,
+and the worker's request checks and kill. Hardware behavior is established separately, by the
+passes recorded in `status.md`.

@@ -10,25 +10,12 @@ public struct MonotonicClock: CoordinatorClock {
   }
 }
 
-/// Read-only platform observation carrying whatever backend validation this run has.
+/// Read-only platform observation.
 public struct LivePlatformObserver: PlatformObserving {
-  private let validation: BackendValidation?
-  public init(validation: BackendValidation?) {
-    self.validation = validation
-  }
+  public init() {}
 
   public func read() -> PlatformReading {
-    DisplayObserver.read(validation: validation)
-  }
-}
-
-/// The only production path to the private call. It is always reached from the serial lane.
-public struct LiveDisplayWriter: DisplayWriting {
-  public init() {}
-  public func setEnabled(_ enabled: Bool, displayID: UInt32, scope: DisplayScope) throws {
-    try PrivateDisplayAPI().setEnabled(
-      enabled, displayID: displayID, scope: scope == .application ? .forAppOnly : .forSession
-    )
+    DisplayObserver.read()
   }
 }
 

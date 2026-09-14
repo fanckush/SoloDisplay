@@ -105,13 +105,24 @@ public final class ProductionJournalStore: Sendable {
     file
   }
 
-  /// Exclusive create. An existing record is unresolved ownership and is never overwritten.
+  /// Exclusive create. Recording the panel that is already recorded succeeds and keeps the
+  /// original. A record from another boot or login names nothing here and is replaced. Any
+  /// other existing record is unresolved and is never overwritten.
   public func prepare(_ record: ProductionRecord) throws {
     try record.validate()
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
     let data = try encoder.encode(record)
     try gate.withLock { _ in
+      if let existing = try? loadUnlocked() {
+        if existing.target == record.target {
+          return
+        }
+        guard existing.target.bootID != record.target.bootID
+          || existing.target.loginID != record.target.loginID
+        else { throw JournalError.alreadyExists }
+        try? FileManager.default.removeItem(at: file)
+      }
       let descriptor = open(
         file.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR
       )
@@ -134,12 +145,14 @@ public final class ProductionJournalStore: Sendable {
   }
 
   public func load() throws -> ProductionRecord? {
-    try gate.withLock { _ in
-      guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-      let data = try Data(contentsOf: file, options: .mappedIfSafe)
-      guard data.count < 65536 else { throw JournalError.invalidTarget }
-      return try JSONDecoder().decode(ProductionRecord.self, from: data)
-    }
+    try gate.withLock { _ in try loadUnlocked() }
+  }
+
+  private func loadUnlocked() throws -> ProductionRecord? {
+    guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+    let data = try Data(contentsOf: file, options: .mappedIfSafe)
+    guard data.count < 65536 else { throw JournalError.invalidTarget }
+    return try JSONDecoder().decode(ProductionRecord.self, from: data)
   }
 
   /// Only after verified restoration. A failure here keeps ownership, it does not release it.
@@ -187,5 +200,18 @@ public final class ProductionJournalStore: Sendable {
       )
     }
     return .unresolved(record)
+  }
+}
+
+public enum JournalError: Error, CustomStringConvertible {
+  case unsupportedSchema, invalidTarget, alreadyExists, writeFailed, clearFailed
+  public var description: String {
+    switch self {
+    case .unsupportedSchema: "Unsupported recovery record schema."
+    case .invalidTarget: "Invalid recovery target. No display was changed."
+    case .alreadyExists: "A record for a different panel already exists. No display was changed."
+    case .writeFailed: "The record could not be saved, so no display was changed."
+    case .clearFailed: "The record could not be cleared, so it was kept."
+    }
   }
 }

@@ -1,6 +1,7 @@
+/// Decides from the latest reading, never from a call returning or a deadline passing. Each event
+/// updates what is known, then the controller compares what is wanted with what is observed and
+/// requests only the next missing step. Nothing here is a phase that can time out.
 public enum Controller {
-  // Keep the exhaustive transition table centralized so state mutations stay auditable.
-  // swiftlint:disable:next cyclomatic_complexity function_body_length
   public static func reduce(_ previous: ControllerState, _ event: Event, at now: Instant)
     -> Transition {
     // Receipt time is monotonic. Delayed observations carry their own sampling time.
@@ -17,13 +18,8 @@ public enum Controller {
       else {
         return .init(state: state, effects: [])
       }
-      let old = state.observation?.environment
-      let current = sample.environment
-      if state.ownership != nil, current.restorationMatches == .no {
-        state.fault = .configurationChanged
-        state.manualRequest = false
-      }
-      if let old, old.hasSamePrerequisites(as: current) {
+      if let old = state.observation?.environment,
+         old.hasSamePrerequisites(as: sample.environment) {
         if sample.sampledAt - (state.lastCountedSample ?? sample.sampledAt)
           >= state.policy.sampleSeparation {
           state.matchingSamples += 1
@@ -35,91 +31,18 @@ public enum Controller {
         state.matchingSamples = 1
       }
       state.observation = sample
-      if let deferred = state.recoveryDeferredSequence, sample.sequence > deferred,
-         current.visibilityExpected, current.panel == state.ownership?.target {
-        state.recoveryDeferredSequence = nil
-      }
-      if !current.prerequisitesMet {
-        state.manualRequest = false
-      }
-      // Coming back to a usable machine restarts the clock for whatever is outstanding. Time
-      // spent asleep or closed gave the call no chance to return or to be observed.
-      if old?.visibilityExpected != true, current.visibilityExpected,
-         state.operation?.phase == .verifying || state.operation?.phase == .submitted {
-        state.operation?.deadline = now + state.policy.operationTimeout
-      }
-
-      if let owned = state.ownership, let panel = current.panel, panel != owned.target {
-        state.fault = .identityChanged
-      }
-
-      // Only a post-return observation verifies a completed operation.
-      if let op = state.operation, op.phase == .verifying,
-         sample.sequence > op.issuedSequence, current.panel == op.target {
-        if op.kind == .disable, current.panelState == .disabled {
-          state.operation = nil
-        } else if op.kind == .restore, current.panelState == .enabled,
-                  current.restorationMatches == .yes {
-          state.operation = nil
-          releaseOwnership(&state, effects: &effects)
-        }
-      } else if state.operation == nil, state.ownership != nil, !state.pendingClear,
-                current.panel == state.ownership?.target, current.panelState == .enabled,
-                current.restorationMatches == .yes {
-        // A lifecycle restore may be completed by macOS itself. That satisfies the required
-        // enabled state; only an unrelated restoration is treated as a competing controller.
-        let expectedLifecycleRestoration = state.restorationRequired
-        releaseOwnership(&state, effects: &effects)
-        if !expectedLifecycleRestoration {
-          state.fault = .conflictingController
-        }
-        state.manualRequest = false
-      }
+      judgeFinishedWorker(&state, at: now)
+    case let .displayReconfigured(inProgress):
+      state.lastDisplayChange = now
+      state.displayConfiguring = inProgress
     case let .selectMode(mode):
-      state.preferencesPending = true
       state.mode = mode
-      state.manualRequest = false
+      clearBackoff(&state)
       effects.append(.savePreferences(mode))
-    case .manualOff:
-      if state.mode == .manual {
-        state.manualRequest = true
-      }
-    case .keepOn:
-      state.manualRequest = false
-      if state.mode != .manual {
-        state.mode = .automaticPaused
-        state.preferencesPending = true
-        effects.append(.savePreferences(.automaticPaused))
-      }
-    case let .preferencesSaved(mode, succeeded):
-      if !succeeded {
-        state.fault = .preferencesFailed
-        state.manualRequest = false
-        if state.mode == .automatic {
-          state.mode = .automaticPaused
-        }
-      }
-      if mode == state.mode || !succeeded {
-        state.preferencesPending = false
-      }
-    case .retry:
-      if state.operation == nil {
-        state.fault = nil
-        state.restoreAttempts = 0
-        state.retryAt = nil
-        state.stableSince = now
-        state.matchingSamples = 0
-        effects.append(.observe)
-        // An unresolved record is retried explicitly. Retry never forgets one.
-        if state.pendingClear {
-          effects.append(.clearOwnership)
-        }
-      }
+    case let .preferencesSaved(succeeded):
+      state.preferencesFailed = !succeeded
     case .willSleep, .waking:
-      state.manualRequest = false
-      if event == .willSleep, state.ownership != nil {
-        state.restorationRequired = true
-      }
+      // No change starts until a fresh reading shows the Mac awake again.
       state.stableSince = nil
       state.matchingSamples = 0
       if var sample = state.observation {
@@ -127,233 +50,150 @@ public enum Controller {
         state.observation = sample
       }
       effects.append(.observe)
-    case .quit:
-      state.shuttingDown = true
-      state.manualRequest = false
-    case let .journalSaved(id, succeeded):
-      guard var op = state.operation, op.id == id, op.phase == .journaling else {
-        return .init(state: state, effects: [])
-      }
-      if !succeeded {
-        state.operation = nil
-        state.fault = .journalFailed
-        state.manualRequest = false
-      } else {
-        // A durable record always becomes tracked ownership, even when the attempt stops here.
-        state.ownership = .init(target: op.target, operationID: op.id)
-        if mayDisable(state, at: now), state.observation?.environment.panel == op.target {
-          op.phase = .arming
-          op.deadline = now + state.policy.operationTimeout
-          state.operation = op
-          effects.append(
-            .armProtection(
-              operationID: op.id, ownership: .init(target: op.target, operationID: op.id)
-            )
-          )
-        } else {
-          state.operation = nil
-          releaseOwnership(&state, effects: &effects)
-        }
-      }
-    case let .protectionArmed(id, succeeded):
-      guard var op = state.operation, op.id == id, op.phase == .arming else {
-        return .init(state: state, effects: [])
-      }
-      // No display request is issued before this phase completes, so a failure here is
-      // positively known to have changed nothing. That is why the record can be cleared.
-      if !succeeded {
-        state.operation = nil
-        state.fault = .protectionUnavailable
-        state.manualRequest = false
-        releaseOwnership(&state, effects: &effects)
-      } else if mayDisable(state, at: now), state.observation?.environment.panel == op.target {
-        op.phase = .submitted
-        op.deadline = now + state.policy.operationTimeout
-        op.issuedSequence = state.observation?.sequence ?? 0
-        state.operation = op
-        effects.append(.setPanelEnabled(operationID: op.id, target: op.target, enabled: false))
-      } else {
-        state.operation = nil
-        releaseOwnership(&state, effects: &effects)
-      }
-    case let .protectionAvailable(available):
-      state.protectionAvailable = available
-      // Losing the helper while a panel may be off means restore now and stop disabling.
-      if !available, state.ownership != nil, !state.pendingClear {
-        state.fault = .protectionLost
-        state.manualRequest = false
-      }
-    case let .ownershipCleared(succeeded):
-      guard state.pendingClear else { return .init(state: state, effects: []) }
-      if succeeded {
-        state.pendingClear = false
-        state.ownership = nil
-        state.restorationRequired = false
-        state.restoreAttempts = 0
-        state.retryAt = nil
-      } else {
-        // Keep the record and the ownership it stands for. Forgetting it is the worse failure.
-        state.fault = .ownershipClearFailed
-        state.manualRequest = false
-      }
-    case let .operationRefused(id):
-      guard let op = state.operation, op.id == id, op.phase == .submitted || op.phase == .stalled
-      else {
-        return .init(state: state, effects: [])
-      }
-      // Nothing was sent, so a disable leaves nothing to undo and its record can go.
-      state.operation = nil
-      state.fault = .operationRefused
-      state.manualRequest = false
-      if op.kind == .disable {
-        releaseOwnership(&state, effects: &effects)
-      } else {
-        state.restoreAttempts -= 1
-        scheduleRetry(&state, at: now, effects: &effects)
+    case .retry:
+      clearBackoff(&state)
+      if state.recordBlocked, !state.recordBusy {
+        state.recordBusy = true
+        effects.append(.reconcileRecord)
       }
       effects.append(.observe)
-    case let .restoreDeferred(id):
-      guard let op = state.operation, op.id == id, op.kind == .restore,
-            op.phase == .submitted || op.phase == .stalled
-      else {
-        return .init(state: state, effects: [])
-      }
-      state.operation = nil
-      state.restoreAttempts = max(0, state.restoreAttempts - 1)
-      state.recoveryDeferredSequence = state.observation?.sequence ?? 0
-      // Bound resampling, including adapters that complete synchronously. No immediate retry.
-      state.retryAt = now + state.policy.sampleSeparation
-    case let .operationReturned(id, succeeded):
-      guard var op = state.operation, op.id == id,
-            op.phase == .submitted || op.phase == .stalled
-      else {
-        return .init(state: state, effects: [])
-      }
-      // An API error may still leave side effects. Never drop ownership on error.
-      if !succeeded {
-        state.operation = nil
-        state.fault = .operationFailed
-        state.manualRequest = false
-        if op.kind == .restore {
-          scheduleRetry(&state, at: now, effects: &effects)
-        }
-      } else {
-        op.phase = .verifying
-        op.issuedSequence = state.observation?.sequence ?? 0
-        op.deadline = now + state.policy.operationTimeout
-        state.operation = op
-      }
-      effects.append(.observe)
-    case let .displayReconfigured(inProgress):
-      state.lastDisplayChange = now
-      state.displayConfiguring = inProgress
     case .tick:
       break
-    }
-
-    // A returned disable call is no longer a writer. Restoration takes priority over
-    // completing its verification when sleep, user intent, or external evidence changes.
-    if let op = state.operation, op.kind == .disable, op.phase == .verifying,
-       !state.wantsOff || !mayRemainDisabled(state, at: now) {
-      state.operation = nil
-    }
-
-    if let op = state.operation, now >= op.deadline {
-      switch op.phase {
-      case .journaling:
-        // A slow save is not a failed one: the lane can be stalled behind display calls while
-        // macOS reconfigures. Nothing is written before the acknowledgement, so waiting is safe,
-        // and the acknowledgement itself decides the outcome. The menu reports the wait.
-        break
-      case .arming:
-        // The helper never answered, and nothing was written. Clear the record and fault.
-        state.operation = nil
-        state.fault = .protectionUnavailable
-        state.manualRequest = false
-        releaseOwnership(&state, effects: &effects)
-      case .submitted:
-        // A machine that was asleep did not stall the call, so only count time it could run.
-        if state.observation?.environment.visibilityExpected == true, isFresh(state, at: now) {
-          state.operation?.phase = .stalled
-          state.fault = .operationTimedOut
-          state.manualRequest = false
-          effects.append(.writerUnresponsive(operationID: op.id))
-        }
-      case .verifying:
-        // Sleeping/closed hardware cannot prove visibility. Resume verification when awake.
-        if state.observation?.environment.visibilityExpected == true, isFresh(state, at: now) {
-          state.operation = nil
-          state.fault = .verificationFailed
-          state.manualRequest = false
-          if op.kind == .restore {
-            scheduleRetry(&state, at: now, effects: &effects)
-          }
-        }
-      case .stalled:
-        break
+    case let .recordWritten(target, succeeded):
+      state.recordBusy = false
+      state.recordFailed = !succeeded
+      if succeeded {
+        state.record = target
+      } else {
+        backOff(&state, at: now)
       }
+    case let .recordCleared(succeeded):
+      state.recordBusy = false
+      state.recordFailed = !succeeded
+      if succeeded {
+        state.record = nil
+      } else {
+        backOff(&state, at: now)
+      }
+    case let .recordReconciled(target, blocked):
+      state.recordBusy = false
+      state.recordBlocked = blocked
+      if !blocked {
+        state.record = target
+      }
+    case .guardianReady:
+      if state.guardian == .starting {
+        state.guardian = .ready
+      }
+    case .guardianGone:
+      // A released guardian is already forgotten. Any other exit leaves disabling unguarded.
+      if state.guardian != .absent {
+        state.guardian = .absent
+        backOff(&state, at: now)
+      }
+    case let .workerFinished(outcome):
+      guard var worker = state.worker, worker.finishedAt == nil else { break }
+      worker.finishedAt = now
+      worker.outcome = outcome
+      state.worker = worker
+      effects.append(.observe)
     }
 
-    if state.operation == nil, !state.pendingClear {
-      if let ownership = state.ownership {
-        let shouldRestore =
-          state.restorationRequired || !state.wantsOff || !mayRemainDisabled(state, at: now)
-            || state.observation?.environment.panelState == .unknown
-        let identityMatches = state.observation?.environment.panel == ownership.target
-        let environment = state.observation?.environment
-        // Sleep and wake transitions are hard no-write states. Ownership and its journal remain
-        // until a wake signal followed by fresh awake evidence makes recovery safe to attempt.
-        let canAttempt =
-          environment?.lid == .open && environment?.foregroundSession == .yes
-            && environment?.power == .awake
-        if shouldRestore, identityMatches, state.fault != .identityChanged,
-           canAttempt,
-           state.recoveryDeferredSequence == nil,
-           state.restoreAttempts <= state.policy.restoreRetryDelays.count,
-           now >= (state.retryAt ?? 0) {
-          let op = newOperation(&state, kind: .restore, target: ownership.target, at: now)
-          state.restoreAttempts += 1
-          state.retryAt = nil
-          state.operation = op
-          effects.append(.setPanelEnabled(operationID: op.id, target: op.target, enabled: true))
-        }
-      } else if mayDisable(state, at: now), let target = state.observation?.environment.panel {
-        var op = newOperation(&state, kind: .disable, target: target, at: now)
-        op.phase = .journaling
-        state.operation = op
-        effects.append(.saveOwnership(.init(target: target, operationID: op.id)))
-      }
-    }
-
-    if let op = state.operation, op.phase != .stalled, op.deadline > now {
-      effects.append(.wakeAt(op.deadline))
-    }
-    if let sample = state.observation, state.ownership != nil || state.wantsOff {
-      let expiry = sample.sampledAt + state.policy.evidenceLifetime + 1
-      if expiry > now {
-        effects.append(.wakeAt(expiry))
-      }
-    }
-    // Read at the moment settling could complete. Waiting for the periodic refresh instead let
-    // the decision slip by up to its interval.
-    if state.wantsOff, state.operation == nil, state.ownership == nil,
-       let check = nextSettleCheck(state), let sample = state.observation,
-       check > sample.sampledAt {
-      effects.append(.observeAt(check))
-    }
-    if state.shuttingDown, state.operation == nil, state.ownership == nil,
-       !state.pendingClear {
-      effects.append(.exitReady)
-    }
+    act(&state, effects: &effects, at: now)
+    schedule(state, effects: &effects, at: now)
     return .init(state: state, effects: effects)
   }
 
-  public static func mayDisable(_ state: ControllerState, at now: Instant) -> Bool {
-    guard state.wantsOff, state.protectionAvailable, !state.pendingClear, !state.preferencesPending,
-          isFresh(state, at: now), let sample = state.observation,
-          sample.environment.prerequisitesMet, sample.environment.panelState == .enabled
-    else { return false }
-    return isSettled(state, at: now)
+  /// What the laptop screen should be, or nil when nothing should be changed right now: the Mac
+  /// is asleep or closed, the panel cannot be identified, or an arrangement is still settling.
+  static func desired(_ state: ControllerState, at now: Instant) -> PanelState? {
+    guard let environment = state.observation?.environment, environment.visibilityExpected,
+          environment.panel != nil, environment.panelState != .unknown
+    else { return nil }
+    guard state.wantsOff, !state.recordBlocked,
+          environment.prerequisitesMet else { return .enabled }
+    if environment.panelState == .disabled {
+      // Never stay off without a guardian that would bring the screen back.
+      return state.guardian == .absent ? .enabled : .disabled
+    }
+    return isSettled(state, at: now) ? .disabled : nil
+  }
+
+  /// Requests the one next step toward the wanted state. Turning off needs the record, then the
+  /// guardian, then the worker, each only once the step before it has landed.
+  private static func act(_ state: inout ControllerState, effects: inout [Effect],
+                          at now: Instant) {
+    guard state.worker == nil, !state.recordBusy, now >= (state.retryAt ?? now),
+          let environment = state.observation?.environment, let panel = environment.panel,
+          let desired = desired(state, at: now)
+    else { return }
+    switch (desired, environment.panelState) {
+    case (.disabled, .enabled):
+      if state.record != panel {
+        state.recordBusy = true
+        effects.append(.writeRecord(panel))
+      } else if state.guardian == .absent {
+        state.guardian = .starting
+        effects.append(.spawnGuardian(panel))
+      } else if state.guardian == .ready {
+        state.worker = .init(action: .disable, target: panel, startedAt: now)
+        effects.append(.runWorker(.disable, panel))
+      }
+    case (.enabled, .disabled):
+      state.worker = .init(action: .enable, target: panel, startedAt: now)
+      effects.append(.runWorker(.enable, panel))
+    case (.enabled, .enabled):
+      // The screen is on and staying on, so nothing is owed any more.
+      if state.guardian != .absent {
+        state.guardian = .absent
+        effects.append(.releaseGuardian)
+      }
+      if state.record != nil {
+        state.recordBusy = true
+        effects.append(.clearRecord)
+      }
+    default:
+      break
+    }
+  }
+
+  /// A finished worker is judged only by a reading sampled after it finished. Its exit status
+  /// says nothing about the display: a hung call can have worked, and a returned one can have not.
+  private static func judgeFinishedWorker(_ state: inout ControllerState, at now: Instant) {
+    guard let worker = state.worker, let finished = worker.finishedAt,
+          let sample = state.observation, sample.sampledAt >= finished
+    else { return }
+    state.worker = nil
+    let wanted: PanelState = worker.action == .disable ? .disabled : .enabled
+    if sample.environment.panelState == wanted {
+      clearBackoff(&state)
+    } else {
+      backOff(&state, at: now)
+    }
+  }
+
+  private static func backOff(_ state: inout ControllerState, at now: Instant) {
+    state.failures += 1
+    let delays = state.policy.retryDelays
+    let delay = delays.isEmpty ? 0 : delays[min(state.failures, delays.count) - 1]
+    state.retryAt = now + delay
+  }
+
+  private static func clearBackoff(_ state: inout ControllerState) {
+    state.failures = 0
+    state.retryAt = nil
+  }
+
+  private static func schedule(_ state: ControllerState, effects: inout [Effect], at now: Instant) {
+    // Read at the moment settling could complete, rather than when a periodic refresh happens to.
+    if state.wantsOff, state.worker == nil, let sample = state.observation,
+       sample.environment.panelState == .enabled, let check = nextSettleCheck(state),
+       check > sample.sampledAt {
+      effects.append(.observeAt(check))
+    }
+    if let retryAt = state.retryAt, retryAt > now {
+      effects.append(.wakeAt(retryAt))
+    }
   }
 
   /// Two separated readings agree, and the arrangement has stopped changing. When macOS reported
@@ -389,50 +229,58 @@ public enum Controller {
     guard state.matchingSamples < 2 else { return ready }
     return max(ready, (state.lastCountedSample ?? since) + policy.sampleSeparation)
   }
+}
 
-  private static func mayRemainDisabled(_ state: ControllerState, at now: Instant) -> Bool {
-    isFresh(state, at: now) && state.observation?.environment.prerequisitesMet == true
-  }
-
-  private static func isFresh(_ state: ControllerState, at now: Instant) -> Bool {
-    guard let sample = state.observation else { return false }
-    return now >= sample.sampledAt && now - sample.sampledAt <= state.policy.evidenceLifetime
-  }
-
-  private static func newOperation(
-    _ state: inout ControllerState, kind: OperationKind,
-    target: PanelTarget, at now: Instant
-  ) -> Operation {
-    let id = state.nextOperationID
-    state.nextOperationID += 1
-    return .init(
-      id: id, kind: kind, target: target, phase: .submitted,
-      issuedSequence: state.observation?.sequence ?? 0,
-      deadline: now + state.policy.operationTimeout, startedAt: now
-    )
-  }
-
-  /// Ownership survives until the durable record is actually gone. Only `.ownershipCleared`
-  /// releases it, so a failed clear cannot quietly turn into a forgotten suppressed panel.
-  private static func releaseOwnership(_ state: inout ControllerState, effects: inout [Effect]) {
-    guard !state.pendingClear else { return }
-    state.restoreAttempts = 0
-    state.recoveryDeferredSequence = nil
-    state.retryAt = nil
-    state.pendingClear = true
-    effects.append(.clearOwnership)
-    effects.append(.releaseProtection)
-  }
-
-  private static func scheduleRetry(
-    _ state: inout ControllerState, at now: Instant, effects: inout [Effect]
-  ) {
-    let index = state.restoreAttempts - 1
-    if state.policy.restoreRetryDelays.indices.contains(index) {
-      state.retryAt = now + state.policy.restoreRetryDelays[index]
-      effects.append(.wakeAt(state.retryAt!))
-    } else {
-      state.fault = .recoveryExhausted
+public extension Controller {
+  /// The first reason the laptop screen cannot be off, in the order the controller checks them.
+  static func unavailability(_ state: ControllerState, at now: Instant) -> Unavailability? {
+    guard let environment = state.observation?.environment else { return .noObservation }
+    if environment.panel == nil {
+      return .noConfirmedPanel
     }
+    if environment.lid != .open {
+      return .lidClosed
+    }
+    if environment.power != .awake {
+      return .notAwake
+    }
+    if environment.foregroundSession != .yes {
+      return .sessionNotForeground
+    }
+    if environment.supportedTopology != .yes {
+      return .unsupportedTopology
+    }
+    if environment.nativeExternalAvailable != .yes {
+      return .noNativeExternal
+    }
+    if environment.panelState == .disabled {
+      return nil
+    }
+    return isSettled(state, at: now) ? nil : .settling
+  }
+
+  static func trouble(_ state: ControllerState) -> Trouble? {
+    if state.recordBlocked {
+      return .recordUnresolved
+    }
+    if state.recordFailed {
+      return .recordNotSaved
+    }
+    if state.failures >= state.policy.troubleAfter {
+      return .stillTrying
+    }
+    return state.preferencesFailed ? .preferencesNotSaved : nil
+  }
+
+  static func presentation(_ state: ControllerState, at now: Instant) -> Presentation {
+    let actual = state.observation?.environment.panelState
+    let heading = desired(state, at: now)
+    let working = state.worker != nil || state.guardian == .starting
+      || (heading == .disabled && actual == .enabled)
+      || (heading == .enabled && actual == .disabled)
+    return .init(
+      wantsInternalOff: state.wantsOff, panelOff: actual == .disabled, working: working,
+      trouble: trouble(state), unavailability: unavailability(state, at: now)
+    )
   }
 }

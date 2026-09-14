@@ -5,39 +5,30 @@ import SoloDisplayCore
 /// Deliberately not a free-form logging API. No hardware identity or error description fits here.
 public struct OperationalEvent: Codable, Equatable, Sendable {
   public enum Category: String, Codable, CaseIterable, Sendable {
-    case lifecycle, protection, recovery, diagnostics
+    case lifecycle, recovery, diagnostics
   }
 
-  public enum Role: String, Codable, Sendable { case bootstrap, controller, helper, probe }
+  public enum Role: String, Codable, Sendable { case bootstrap, app, guardian, worker }
   /// Mirrors MenuAction by raw value. The bridge that converts one to the other returns an
-  /// optional and drops a mismatch silently, so a case removed here would quietly empty the
-  /// action field of an exported record. Retired interface actions therefore stay, because
-  /// this type is persisted and older journals still decode through it.
+  /// optional and drops a mismatch silently, so every menu action needs a case here.
   public enum Action: String, Codable, Sendable {
-    case selectManual, selectAutomatic, turnInternalOff, turnInternalOn, keepInternalOn
-    case resumeAutomatic, retryRecovery, toggleLaunchAtLogin, exportDiagnostics, quit
+    case retryRecovery, toggleLaunchAtLogin, exportDiagnostics, quit
     case openDisplayMonitor, selectAllMonitors, selectExternalOnly
   }
 
   public enum Code: String, Codable, Sendable {
-    case started, startupFailed, paired, action, exitRequested, childTerminationRequested
-    case protectionEnded
-    case childExited, childExitUnconfirmed, protectionLost, protectionReady, suspended, resumed
-    case lifecycleReconciled, operationQueued, operationStarted, operationReturned
-    case operationRefused, restoreDeferred, operationVerified, stateChanged, writerUnresponsive
-    case journalPreparing, journalPrepared, journalClearing, journalCleared, preferencesSaved
-    case environmentChanged
-    case recoveryRequested, recoveryWaiting, recoveryBlocked, recoveryVerified
-    case writerLockAcquired, writerLockUnavailable, exportRequested, exportCompleted, exportFailed
+    case started, startupFailed, action, exitRequested, stateChanged, environmentChanged
+    case lifecycleReconciled, suspended, resumed, preferencesSaved, instanceLockUnavailable
+    case journalPreparing, journalPrepared, journalClearing, journalCleared
+    case workerStarted, workerFinished
+    case guardianStarted, guardianReady, guardianGone, guardianReleased, guardianRestoring
+    case childExited, exportRequested, exportCompleted, exportFailed
 
     public var category: Category {
       switch self {
-      case .paired, .protectionLost, .protectionReady, .protectionEnded: .protection
-      case .operationQueued, .operationStarted, .operationReturned, .operationRefused,
-           .restoreDeferred, .operationVerified, .writerUnresponsive, .journalPreparing,
-           .journalPrepared, .journalClearing, .journalCleared, .recoveryRequested,
-           .recoveryWaiting, .recoveryBlocked, .recoveryVerified, .writerLockAcquired,
-           .writerLockUnavailable:
+      case .journalPreparing, .journalPrepared, .journalClearing, .journalCleared,
+           .workerStarted, .workerFinished, .guardianStarted, .guardianReady, .guardianGone,
+           .guardianReleased, .guardianRestoring, .childExited:
         .recovery
       case .exportRequested, .exportCompleted, .exportFailed: .diagnostics
       default: .lifecycle
@@ -46,13 +37,11 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   }
 
   public enum Reason: String, Codable, Sendable {
-    case userQuit, helperLost, nothingOwed, recoveryComplete, controllerLaunchFailed
-    case missingExecutable, invalidLaunch, journalUnavailable, missingSession, alreadyRunning
-    case unresolvedOwnership, priorSession, recordRetained, recordMismatch, recordUnreadable
-    case writerBusy, orderingRefused, evidenceUnavailable, verificationFailed
-    case workspaceSleep, workspaceWake, workspaceScreenSleep, workspaceScreenWake
-    case workspaceSessionActive, workspaceSessionInactive, activityFallback, observationFallback
-    case exited, uncaughtSignal, protectionFailure, exportEncoding, exportWriting
+    case userQuit, missingExecutable, invalidLaunch, journalUnavailable, missingSession
+    case alreadyRunning, released, appGone, noUsableExternal, nothingOwed
+    case workspaceSleep, workspaceWake, workspaceScreenSleep, workspaceSessionActive
+    case workspaceSessionInactive, observationFallback
+    case exited, uncaughtSignal, exportEncoding, exportWriting
   }
 
   public var version = 1
@@ -62,27 +51,20 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   public var session: String?
   public var uptimeMS: Int64
   public var reason: Reason?
-  public var controllerLoss: ControllerProtection.LossReason?
-  public var rejection: ProtectionRejection?
-  public var helperLoss: HelperProtection.Reason?
-  public var operation: OperationProgress?
-  public var operationID: UInt64?
+  public var workerAction: WriteAction?
+  public var workerOutcome: WorkerOutcome?
   public var elapsedMS: Int64?
-  public var progressAgeMS: Int64?
-  public var challengeAgeMS: Int64?
-  public var challenge: UInt64?
-  public var leaseDeadlineMS: Int64?
-  public var deadlineOverdueMS: Int64?
   public var succeeded: Bool?
   public var exitStatus: Int32?
   public var errorCode: Int?
   public var action: Action?
-  public var fault: Fault?
+  public var trouble: Trouble?
   public var unavailability: Unavailability?
   public var mode: Mode?
   public var environment: OperationalEnvironment?
-  public var panelOwned: Bool?
-  public var pendingRecovery: Bool?
+  public var panelOff: Bool?
+  public var working: Bool?
+  public var failures: Int?
   public var appVersion: String?
   public var build: String?
 
@@ -122,7 +104,6 @@ public struct OperationalEnvironment: Codable, Equatable, Sendable {
   public var nativeExternalAvailable: Fact
   public var supportedTopology: Fact
   public var panelState: PanelState
-  public var restorationMatches: Fact
   public init(_ environment: Environment) {
     power = environment.power
     lid = environment.lid
@@ -130,7 +111,6 @@ public struct OperationalEnvironment: Codable, Equatable, Sendable {
     nativeExternalAvailable = environment.nativeExternalAvailable
     supportedTopology = environment.supportedTopology
     panelState = environment.panelState
-    restorationMatches = environment.restorationMatches
   }
 }
 
@@ -146,8 +126,8 @@ public struct UnifiedOperationalSink: OperationalEventSink {
           let payload = String(data: bytes, encoding: .utf8)
     else { return }
     let logger = Logger(subsystem: Self.subsystem, category: event.code.category.rawValue)
-    if event.succeeded == false || event.code == .protectionLost || event.code == .startupFailed
-      || event.code == .recoveryBlocked || event.code == .writerUnresponsive {
+    if event.succeeded == false || event.code == .startupFailed
+      || event.code == .guardianRestoring {
       logger.error("\(payload, privacy: .public)")
     } else {
       logger.notice("\(payload, privacy: .public)")
@@ -170,8 +150,7 @@ public struct OperationalLogger: Sendable {
 
   public func emit(
     _ code: OperationalEvent.Code, session: String? = nil,
-    reason: OperationalEvent.Reason? = nil, operation: OperationProgress? = nil,
-    succeeded: Bool? = nil, errorCode: Int? = nil,
+    reason: OperationalEvent.Reason? = nil, succeeded: Bool? = nil, errorCode: Int? = nil,
     details: (inout OperationalEvent) -> Void = { _ in }
   ) {
     var event = OperationalEvent(
@@ -180,7 +159,6 @@ public struct OperationalLogger: Sendable {
     )
     event.session = session.flatMap { UUID(uuidString: $0)?.uuidString }
     event.reason = reason
-    event.operation = operation
     event.succeeded = succeeded
     event.errorCode = errorCode
     details(&event)
@@ -199,7 +177,7 @@ public struct OperationalLogger: Sendable {
   }
 }
 
-/// One instance per actual child. Reporting is not evidence that authorizes display writes.
+/// One instance per actual child. Reporting is not evidence about any display.
 public struct ChildExitDiagnostics {
   private var recorded = false
   public init() {}

@@ -31,7 +31,7 @@ public struct OperationalHistory: Codable, Sendable {
 }
 
 public protocol OperationalHistoryReading: Sendable {
-  /// Synchronous by design; callers must use a background task, never the protection loop.
+  /// Synchronous by design; callers must use a background task.
   func read(from: Date, through: Date) -> OperationalHistory
 }
 
@@ -90,27 +90,56 @@ public struct SystemOperationalHistoryReader: OperationalHistoryReading {
   }
 }
 
+/// The controller's current state, without any display, boot or session identity.
+public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
+  public var mode: Mode
+  public var panelOff: Bool
+  public var working: Bool
+  public var trouble: Trouble?
+  public var unavailability: Unavailability?
+  public var environment: OperationalEnvironment?
+  public var failures: Int
+  public var guardian: GuardianState
+  public var workerRunning: Bool
+  public var recordHeld: Bool
+
+  public init(_ state: ControllerState, at now: Instant) {
+    let presentation = Controller.presentation(state, at: now)
+    mode = state.mode
+    panelOff = presentation.panelOff
+    working = presentation.working
+    trouble = presentation.trouble
+    unavailability = presentation.unavailability
+    environment = state.observation.map { OperationalEnvironment($0.environment) }
+    failures = state.failures
+    guardian = state.guardian
+    workerRunning = state.worker != nil
+    recordHeld = state.record != nil
+  }
+}
+
 public struct DiagnosticsMetadata: Codable, Sendable {
-  public var schemaVersion = 1
+  public var schemaVersion = 2
   public var collectedAt: Date
   public var requestedFrom: Date
   public var requestedThrough: Date
-  public var traceTruncated: Bool
   public var history: OperationalHistory
   public var explanation: String
   public static let consoleInstructions =
     "In Console, select this Mac and search for subsystem:dev.solodisplay.SoloDisplay. "
-      + "Check the incident time and the lifecycle, protection, and recovery categories. "
+      + "Check the incident time and the lifecycle and recovery categories. "
       + "macOS controls access and retention; Console may require administrator access. "
       + "If historical entries are unavailable, start streaming before reproducing the issue."
 }
 
-/// Replay fields stay at the top level so existing ReplayTrace decoders continue to work.
 public struct DiagnosticsDocument: Codable, Sendable {
-  public var schemaVersion: Int
-  public var initial: ControllerState
-  public var events: [RecordedEvent]
+  public var schemaVersion = 2
+  public var snapshot: DiagnosticsSnapshot?
   public var diagnostics: DiagnosticsMetadata
+}
+
+public enum DiagnosticsExportError: Error {
+  case tooLarge
 }
 
 public protocol DiagnosticsFileWriting: Sendable {
@@ -135,10 +164,10 @@ public struct DiagnosticsExporter: Sendable {
     self.writer = writer
   }
 
-  public func collect(trace: ReplayTrace, at date: Date = Date()) throws -> Data {
+  public func collect(snapshot: DiagnosticsSnapshot?, at date: Date = Date()) throws -> Data {
     let from = date.addingTimeInterval(-24 * 60 * 60)
     return try Self.encode(
-      trace: trace, history: reader.read(from: from, through: date),
+      snapshot: snapshot, history: reader.read(from: from, through: date),
       from: from, through: date, collectedAt: Date()
     )
   }
@@ -148,7 +177,7 @@ public struct DiagnosticsExporter: Sendable {
   }
 
   public static func encode(
-    trace: ReplayTrace, history: OperationalHistory,
+    snapshot: DiagnosticsSnapshot?, history: OperationalHistory,
     from: Date, through: Date, collectedAt: Date
   ) throws -> Data {
     let encoder = JSONEncoder()
@@ -173,7 +202,7 @@ public struct DiagnosticsExporter: Sendable {
     if history.status == .collected || history.status == .empty {
       history.status = history.entries.isEmpty ? .empty : .collected
     }
-    // A single namespace preserves pairing relationships without retaining original run IDs.
+    // A single namespace preserves process relationships without retaining original run IDs.
     var aliases: [String: String] = [:]
     func alias(_ id: String) -> String {
       if let existing = aliases[id] {
@@ -189,33 +218,25 @@ public struct DiagnosticsExporter: Sendable {
         history.entries[index].event.session = alias(session)
       }
     }
-    // Leave room for metadata and JSON framing inside the existing overall 5 MB ceiling.
-    var recorder = TraceRecorder(initial: trace.initial, maxEvents: 8000, maxBytes: 4_450_000)
-    for entry in trace.events {
-      try recorder.append(entry)
-    }
-    let replay = try JSONDecoder().decode(ReplayTrace.self, from: recorder.exportSanitized())
     let explanation = switch history.status {
     case .collected:
       "Available SoloDisplay history only, not a complete record of every exit."
     case .empty:
       "No readable SoloDisplay history was returned. This does not prove nothing happened."
     case .unavailable:
-      "macOS did not grant system-log access. The current replay trace is still included."
+      "macOS did not grant system-log access. The current state is still included."
     case .failed:
-      "System-log collection failed. The current replay trace is still included."
+      "System-log collection failed. The current state is still included."
     }
     let document = DiagnosticsDocument(
-      schemaVersion: replay.schemaVersion, initial: replay.initial,
-      events: replay.events,
+      snapshot: snapshot,
       diagnostics: .init(
-        collectedAt: collectedAt, requestedFrom: from,
-        requestedThrough: through, traceTruncated: replay.events.count < trace.events.count,
+        collectedAt: collectedAt, requestedFrom: from, requestedThrough: through,
         history: history, explanation: explanation + " " + DiagnosticsMetadata.consoleInstructions
       )
     )
     let data = try encoder.encode(document)
-    guard data.count <= 5_000_000 else { throw TraceError.stateExceedsLimit }
+    guard data.count <= 5_000_000 else { throw DiagnosticsExportError.tooLarge }
     return data
   }
 }
