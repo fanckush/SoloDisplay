@@ -57,7 +57,7 @@ jobs:
           grep -c '^SF:' package.lcov
       - name: Upload package coverage
         if: github.event_name == 'push'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           disable_search: true
           fail_ci_if_error: true
@@ -110,7 +110,7 @@ jobs:
           grep -c '^SF:' app.lcov
       - name: Upload app coverage
         if: github.event_name == 'push'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           disable_search: true
           fail_ci_if_error: true
