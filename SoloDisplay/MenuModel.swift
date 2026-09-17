@@ -6,6 +6,7 @@ nonisolated enum MenuAction: String, CaseIterable, Equatable, Sendable {
   case selectAllMonitors, selectExternalOnly
   case retryRecovery
   case toggleLaunchAtLogin
+  case toggleBrightnessKeys
   case openDisplayMonitor
   case exportDiagnostics
   case quit
@@ -14,7 +15,10 @@ nonisolated enum MenuAction: String, CaseIterable, Equatable, Sendable {
 /// Turns controller state into the panel, and nothing else. Keeping this pure means every word
 /// a person can be shown can be read back in a test without launching an app.
 nonisolated enum MenuModel {
-  static func panel(_ presentation: Presentation, launchAtLogin: Bool) -> MenuPanel {
+  static func panel(
+    _ presentation: Presentation, launchAtLogin: Bool,
+    brightnessKeys: Bool = false, brightnessNeedsPermission: Bool = false
+  ) -> MenuPanel {
     let chosenOff = presentation.wantsInternalOff
     let working = presentation.working
     let notRunning = presentation.unavailability == .notRunning
@@ -36,6 +40,10 @@ nonisolated enum MenuModel {
       alert: alert(presentation),
       launchAtLogin: .init(
         title: "Launch at Login", action: .toggleLaunchAtLogin, isOn: launchAtLogin
+      ),
+      brightnessKeys: .init(
+        title: "Brightness Keys", action: .toggleBrightnessKeys, isOn: brightnessKeys,
+        isBlocked: brightnessKeys && brightnessNeedsPermission
       ),
       commands: [
         .init(title: "Diagnostics…", action: .openDisplayMonitor),

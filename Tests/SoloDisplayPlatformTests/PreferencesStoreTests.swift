@@ -17,6 +17,23 @@ struct PreferencesStoreTests {
     #expect(preferences.mode == .manual)
     #expect(!preferences.launchAtLogin)
     #expect(!preferences.manualPathValidated)
+    #expect(!preferences.brightnessKeys)
+  }
+
+  @Test func aFileFromBeforeBrightnessKeysKeepsItsChoices() throws {
+    let store = try PreferencesStore(directory: workspace())
+    let older = """
+    {"launchAtLogin":true,"manualPathValidated":false,"mode":"automatic","schemaVersion":1}
+    """
+    try Data(older.utf8).write(to: store.url)
+    let loaded = store.load()
+    #expect(loaded.mode == .automatic)
+    #expect(loaded.launchAtLogin)
+    #expect(!loaded.brightnessKeys)
+
+    try store.update { $0.brightnessKeys = true }
+    #expect(store.load().brightnessKeys)
+    #expect(store.load().mode == .automatic)
   }
 
   @Test func aPausedAutomaticChoiceSurvivesARestart() throws {

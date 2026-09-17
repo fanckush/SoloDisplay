@@ -12,7 +12,7 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   /// Mirrors MenuAction by raw value. The bridge that converts one to the other returns an
   /// optional and drops a mismatch silently, so every menu action needs a case here.
   public enum Action: String, Codable, Sendable {
-    case retryRecovery, toggleLaunchAtLogin, exportDiagnostics, quit
+    case retryRecovery, toggleLaunchAtLogin, toggleBrightnessKeys, exportDiagnostics, quit
     case openDisplayMonitor, selectAllMonitors, selectExternalOnly
   }
 

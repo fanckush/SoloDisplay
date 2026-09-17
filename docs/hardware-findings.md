@@ -61,3 +61,12 @@ chronological record of the earlier experiments.
   geometry (earlier product passes, and the 2026-09-14 spike).
 - **Screen lock and display sleep invalidate nothing**, so a suppressed panel is simply kept off
   (earlier product path pass).
+
+## External brightness
+
+- **DDC/CI brightness works on the Dell U3223QE over direct USB-C** (spike, 2026-09-17). The
+  private `IOAVServiceWriteI2C` and `IOAVServiceReadI2C` calls reached it through the one
+  `DCPAVServiceProxy` with `Location = External`. `solodisplay-lab ddc get` read 68 out of 100.
+  `ddc set 60` took effect, a later read agreed, and setting 68 restored it. Requests used the
+  standard checksum that includes the 0x51 source address. Docks, HDMI, and other monitors are
+  untested.

@@ -36,6 +36,7 @@ nonisolated struct MenuPanel: Equatable, Sendable {
   var reality: String
   var alert: Alert?
   var launchAtLogin: Option
+  var brightnessKeys: Option
   var commands: [Command]
   var glyph: MenuGlyph
   /// The words the menu bar icon carries for anyone who cannot see it.
@@ -60,6 +61,8 @@ nonisolated struct MenuPanel: Equatable, Sendable {
     var title: String
     var action: MenuAction
     var isOn: Bool
+    /// Chosen, but waiting on something outside the app, such as a permission.
+    var isBlocked = false
   }
 
   struct Command: Equatable, Sendable {
@@ -81,7 +84,7 @@ nonisolated struct MenuPanel: Equatable, Sendable {
   /// once instead of one assertion per label going stale.
   var allStrings: [String] {
     [allMonitors, externalOnly].map(\.title)
-      + [reality, launchAtLogin.title, statusDescription]
+      + [reality, launchAtLogin.title, brightnessKeys.title, statusDescription]
       + commands.map(\.title)
       + [alert?.title, alert?.detail].compactMap(\.self)
   }

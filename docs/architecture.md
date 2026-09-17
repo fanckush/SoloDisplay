@@ -3,8 +3,9 @@
 ## What SoloDisplay does
 
 SoloDisplay turns off one positively identified built-in laptop panel while a native external
-monitor is connected, and turns it back on when that stops being true. It does not change
-external displays, brightness, mirroring, or sleep settings.
+monitor is connected, and turns it back on when that stops being true. It does not change the
+display arrangement, mirroring, or sleep settings. The one change it makes to an external monitor
+is its brightness, and only through the opt-in brightness keys setting described below.
 
 There are two stored choices. **All Monitors** keeps the laptop screen on. **External Only** keeps
 it off whenever a usable monitor is there. The choice is intent, not a reading of the hardware:
@@ -115,6 +116,39 @@ whether a change is under way, any lasting trouble, and why the screen cannot be
   display transaction. Only the display worker uses it.
 - `RecoveryIdentity` decides whether an enable may address a target: a positively different
   identity blocks it, and an absent panel is addressable only by the process that turned it off.
+
+## Brightness keys
+
+While the laptop screen is off, the Mac's brightness keys would control a panel nobody can see.
+With the opt-in Brightness Keys setting, SoloDisplay sends them to the external monitor instead.
+The setting is off by default. Turning it on asks for Accessibility permission, which the event
+tap needs. While it is missing the menu item shows a dash instead of a checkmark, and permission
+is checked every 2 seconds until granted.
+
+- The tap exists only while the setting is on, permission is granted, and SoloDisplay has the
+  laptop screen off. The rest of the time macOS handles the keys.
+- The target is the monitor under the pointer, else the main display, else any that answers.
+  Apple displays are left out because macOS already controls them.
+- A monitor is tied to its DDC service through the SoC display controller they share: the
+  `DCPAVServiceProxy` parent is named `dispext0:...`, and the display's framebuffer service
+  hangs off `dispext0`. `DisplayTransportClassifier` supplies the display side.
+- Brightness moves in 16 steps. The level is read over DDC before the first press, and again
+  after 5 seconds without one, in case the monitor's own buttons changed it. A monitor that does
+  not answer is left to macOS for 10 seconds, since a monitor that was just connected may not
+  answer yet. Connecting or disconnecting a monitor drops every cached level, mapping, and open
+  DDC connection, because the display IDs and services can change; a failed call also reopens
+  its connection next time.
+- DDC calls can stall, which principle 2 keeps out of the app. A one-shot worker per press is too
+  slow for a held key, and a stalled brightness change cannot leave anyone without a usable
+  screen, so each monitor instead gets its own serial queue. `LatestValueWriter` runs one write
+  at a time and keeps only the newest waiting value, so a stalled monitor never blocks the
+  keyboard or the other monitors.
+- The system brightness indicator shows the level on the monitor being changed. It comes from
+  the private OSD framework (`OSDManager`); if that is missing, nothing is shown.
+
+`DDC.swift` holds the DDC/CI messages and the private `IOAVService` calls; `Brightness.swift`
+holds key decoding, stepping, and the per-monitor queue. `solodisplay-lab ddc` reads and sets
+brightness for hardware testing.
 
 ## Diagnostics
 

@@ -13,8 +13,24 @@ public struct Preferences: Codable, Equatable, Sendable {
   /// Automatic mode stays unavailable until a manual off and verified restoration has worked
   /// on this Mac. Offering it before that would be asking the user to trust an untested path.
   public var manualPathValidated = false
+  /// Brightness keys adjust the external monitor while the laptop screen is off.
+  public var brightnessKeys = false
 
   public init() {}
+
+  private enum CodingKeys: String, CodingKey {
+    case schemaVersion, mode, launchAtLogin, manualPathValidated, brightnessKeys
+  }
+
+  /// Fields added later are optional, so an older file keeps the choices it does have.
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+    mode = try container.decode(Mode.self, forKey: .mode)
+    launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
+    manualPathValidated = try container.decode(Bool.self, forKey: .manualPathValidated)
+    brightnessKeys = try container.decodeIfPresent(Bool.self, forKey: .brightnessKeys) ?? false
+  }
 }
 
 public struct PreferencesStore: Sendable {

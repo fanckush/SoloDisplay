@@ -22,6 +22,7 @@ final class ControllerRuntime: CoordinatorDelegate {
   private let exporter: DiagnosticsExporter
   private var exporting = false
   private var exportAlert: NSAlert?
+  private let brightnessKeys = BrightnessKeys()
 
   private(set) var panel: MenuPanel = .placeholder
   var onMenuChanged: (() -> Void)?
@@ -48,6 +49,8 @@ final class ControllerRuntime: CoordinatorDelegate {
     if preferences.launchAtLogin != registered {
       mutatePreferences { $0.launchAtLogin = registered }
     }
+    brightnessKeys.onChange = { [weak self] in self?.refreshMenu() }
+    brightnessKeys.setEnabled(preferences.brightnessKeys, askForPermission: false)
     let observer = LivePlatformObserver()
     let reading = observer.read()
     guard let loginID = reading.loginID else {
@@ -106,6 +109,7 @@ final class ControllerRuntime: CoordinatorDelegate {
     drainTimer?.invalidate()
     drainTimer = nil
     coordinator?.stop()
+    brightnessKeys.stop()
     for (center, token) in subscriptions {
       center.removeObserver(token)
     }
@@ -184,6 +188,7 @@ final class ControllerRuntime: CoordinatorDelegate {
       }
     }
     previous = presentation
+    brightnessKeys.setActive(presentation.panelOff)
     refreshMenu()
   }
 
@@ -194,7 +199,11 @@ final class ControllerRuntime: CoordinatorDelegate {
   }
 
   private func refreshMenu() {
-    let next = MenuModel.panel(presentation, launchAtLogin: preferences.launchAtLogin)
+    let next = MenuModel.panel(
+      presentation, launchAtLogin: preferences.launchAtLogin,
+      brightnessKeys: preferences.brightnessKeys,
+      brightnessNeedsPermission: brightnessKeys.needsPermission
+    )
     // Redrawing an identical panel would move things under the pointer for no reason.
     guard next != panel else { return }
     panel = next
@@ -211,6 +220,9 @@ final class ControllerRuntime: CoordinatorDelegate {
     case .selectExternalOnly: coordinator?.send(.selectMode(.automatic))
     case .retryRecovery: coordinator?.send(.retry)
     case .toggleLaunchAtLogin: toggleLaunchAtLogin()
+    case .toggleBrightnessKeys:
+      mutatePreferences { $0.brightnessKeys.toggle() }
+      brightnessKeys.setEnabled(preferences.brightnessKeys, askForPermission: true)
     case .openDisplayMonitor: onOpenDiagnostics?()
     case .exportDiagnostics: exportDiagnostics()
     case .quit: NSApp.terminate(nil)

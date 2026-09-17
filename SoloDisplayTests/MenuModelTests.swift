@@ -88,6 +88,20 @@ struct MenuModelTests {
     #expect(menuPanel(.init(), launchAtLogin: true).launchAtLogin.isOn == true)
   }
 
+  @Test func brightnessKeysShowWhenPermissionIsMissing() {
+    let off = MenuModel.panel(.init(), launchAtLogin: false)
+    #expect(!off.brightnessKeys.isOn && !off.brightnessKeys.isBlocked)
+    let blocked = MenuModel.panel(
+      .init(), launchAtLogin: false, brightnessKeys: true, brightnessNeedsPermission: true
+    )
+    #expect(blocked.brightnessKeys.isOn && blocked.brightnessKeys.isBlocked)
+    // Permission only matters once the person has asked for the keys.
+    let notAsked = MenuModel.panel(
+      .init(), launchAtLogin: false, brightnessKeys: false, brightnessNeedsPermission: true
+    )
+    #expect(!notAsked.brightnessKeys.isBlocked)
+  }
+
   @Test func everyMenuActionSurvivesTheDiagnosticsBridge() {
     // The action field of an exported record is filled by converting raw values, which drops a
     // mismatch silently, so every action needs a counterpart.
