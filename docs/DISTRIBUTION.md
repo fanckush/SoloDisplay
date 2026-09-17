@@ -84,11 +84,28 @@ Version changes follow Conventional Commits:
 | `docs:` or `chore:` | None by themselves |
 | A `!` suffix or `BREAKING CHANGE:` footer | Minor before 1.0; major afterward |
 
-Scopes such as `feat(menu):` are supported. Unknown subjects remain visible in
-GitHub's generated release notes but do not affect the version. If no releasable
-commit exists, the workflow succeeds without creating a tag and explains why in
-its summary. Stable Git tags and GitHub Releases are the version and changelog
-source of truth; the workflow does not commit generated version files.
+Scopes such as `feat(menu):` are supported. Unknown subjects do not affect the
+version. If no releasable commit exists, the workflow succeeds without creating a
+tag and explains why in its summary. Stable Git tags are the version source of
+truth; the workflow does not commit generated version or changelog files.
+
+## Release notes and changelog
+
+[git-cliff](https://git-cliff.org) builds the notes from the same commits, using
+`cliff.toml`. `feat:`, `fix:`, and `perf:` commits are listed under Features, Bug
+Fixes, and Performance; `docs:`, `chore:`, merge, and unconventional commits are
+left out. The release workflow writes the notes for the new version into the
+GitHub Release body.
+
+For a big feature, edit the published release on GitHub to add highlights above
+the generated list. A repair run keeps the existing body, so those edits survive.
+
+`CHANGELOG.md` is regenerated locally and committed by hand:
+
+```sh
+brew install git-cliff
+git cliff -o CHANGELOG.md
+```
 
 For recovery, a maintainer can still push an explicit stable tag. The tag must
 point to a commit reachable from `main`:

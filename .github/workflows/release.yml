@@ -188,6 +188,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.resolve.outputs.target_sha }}
+          # git-cliff needs the history and tags to build the release notes.
+          fetch-depth: 0
 
       - name: Select latest Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
@@ -230,13 +232,31 @@ jobs:
         with:
           subject-path: build/dist/SoloDisplay-*.zip
 
+      # A repair keeps the published body, which may have been edited by hand.
+      - name: Generate release notes
+        if: ${{ needs.resolve.outputs.mode != 'repair' }}
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          TARGET_SHA: ${{ needs.resolve.outputs.target_sha }}
+        run: |
+          set -euo pipefail
+          brew install git-cliff
+          # The tag may not exist yet, so the range is bounded explicitly and --tag names it.
+          if PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$TARGET_SHA^" 2>/dev/null); then
+            RANGE="$PREV..$TARGET_SHA"
+          else
+            RANGE="$TARGET_SHA"
+          fi
+          git cliff "$RANGE" --tag "$TAG" --strip header --output build/release-notes.md
+          cat build/release-notes.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create or repair GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           name: SoloDisplay ${{ needs.resolve.outputs.version }}
           tag_name: ${{ needs.resolve.outputs.tag }}
           target_commitish: ${{ needs.resolve.outputs.target_sha }}
-          generate_release_notes: ${{ needs.resolve.outputs.mode != 'repair' }}
+          body_path: ${{ needs.resolve.outputs.mode != 'repair' && 'build/release-notes.md' || '' }}
           prerelease: false
           overwrite_files: true
           fail_on_unmatched_files: true
