@@ -23,6 +23,19 @@ struct DisplayTransportTests {
     #expect(capturedInternal.transport == .unclassified)
   }
 
+  /// Reported in issue #8 by a Mac whose display services are named `AppleCLCD2`. The chip
+  /// decides the class name, so the earlier one classifies exactly like the later one.
+  @Test func theEarlierDisplayServiceClassIsAlsoNative() {
+    var earlier = capturedExternal
+    earlier.providerChain = ["AppleCLCD2", "AppleARMIODevice", "AppleSoCIO"]
+    earlier.providerNames = ["AppleCLCD2", "dispext0", "AppleSoCIO"]
+    #expect(earlier.transport == .native)
+
+    var wrongDevice = earlier
+    wrongDevice.providerNames = ["AppleCLCD2", "usbext0", "AppleSoCIO"]
+    #expect(wrongDevice.transport == .unclassified)
+  }
+
   @Test func anUncorrelatedDisplayIsNeverNative() {
     var orphan = capturedExternal
     orphan.match = .none

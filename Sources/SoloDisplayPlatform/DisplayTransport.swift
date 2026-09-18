@@ -36,8 +36,13 @@ public struct TransportEvidence: Codable, Equatable, Sendable {
 public enum DisplayTransportClassifier {
   /// Vendor identifier meaning "unknown" in IOGraphics. Software displays commonly report it.
   static let unknownVendor: UInt32 = 0x756E_6B6E
-  /// The service class that publishes display identity on this hardware family.
-  static let displayServiceClass = "IOMobileFramebufferShim"
+  /// The service classes that publish display identity. Which one a Mac uses follows its chip,
+  /// not its macOS version: `AppleCLCD2` on earlier Apple Silicon, `IOMobileFramebufferShim` on
+  /// later ones. Neither descends from the other, so both names have to be recognised.
+  static let displayServiceClasses: Set<String> = ["IOMobileFramebufferShim", "AppleCLCD2"]
+  /// The nearest shared ancestor of both classes above. Matching it reaches either one, and a
+  /// later rename under the same ancestor keeps working.
+  static let displayServiceSuperclass = "UnifiedPipeline2"
   /// The SoC display controller a real output hangs off, named `disp0`, `dispext0` and so on.
   static let displayControllerClass = "AppleARMIODevice"
   static let displayControllerPrefix = "disp"
@@ -48,7 +53,7 @@ public enum DisplayTransportClassifier {
   public static func classify(_ evidence: TransportEvidence) -> DisplayTransport {
     guard evidence.match == .vendorModelSerial else { return .unclassified }
     let controllerIndex = evidence.providerChain.firstIndex(of: displayControllerClass)
-    if evidence.providerChain.contains(displayServiceClass), let controllerIndex,
+    if evidence.providerChain.contains(where: displayServiceClasses.contains), let controllerIndex,
        controllerIndex < evidence.providerNames.count,
        evidence.providerNames[controllerIndex].hasPrefix(displayControllerPrefix) {
       return .native
@@ -121,7 +126,7 @@ public enum DisplayTransportClassifier {
     var iterator: io_iterator_t = 0
     guard
       IOServiceGetMatchingServices(
-        kIOMainPortDefault, IOServiceMatching(displayServiceClass), &iterator
+        kIOMainPortDefault, IOServiceMatching(displayServiceSuperclass), &iterator
       ) == KERN_SUCCESS
     else { return [] }
     defer { IOObjectRelease(iterator) }
