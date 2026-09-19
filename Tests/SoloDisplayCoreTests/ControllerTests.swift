@@ -16,6 +16,11 @@ func environment(
 struct Rig {
   var state: ControllerState
   var sequence: UInt64 = 0
+  /// What the monitors say when asked. The executor always answers, even with nothing, so the rig
+  /// answers too: `.unknown` is what every monitor that cannot do DDC gives, and it is the answer
+  /// under which the controller must behave exactly as it did before it ever asked.
+  var monitorAnswer: Fact = .unknown
+  var answersMonitors = true
 
   init(mode: Mode = .automatic, record: PanelTarget? = nil) {
     state = .init(mode: mode, record: record)
@@ -24,7 +29,11 @@ struct Rig {
   @discardableResult mutating func send(_ event: Event, at time: Instant) -> [Effect] {
     let transition = Controller.reduce(state, event, at: time)
     state = transition.state
-    return transition.effects
+    var effects = transition.effects
+    if answersMonitors, effects.contains(.readInputSources) {
+      effects += send(.inputSourcesRead(monitorAnswer, sampledAt: time), at: time)
+    }
+    return effects
   }
 
   @discardableResult mutating func observe(_ value: Environment = environment(), at time: Instant)

@@ -10,6 +10,13 @@ public protocol PlatformObserving: Sendable {
   func read() -> PlatformReading
 }
 
+/// Asks each monitor what it is showing, over DDC. These calls block for tens of milliseconds
+/// each and can stall, so they never share a lane with display readings and never run in the
+/// guardian. It always answers, even with nothing, and never throws.
+public protocol InputSourceObserving: Sendable {
+  func read() -> [InputSourceEvidence]
+}
+
 public protocol DisplayWriting: Sendable {
   /// Makes one change with session scope and reports how the attempt ended. The outcome never
   /// says what the display did; only a later reading does.
@@ -150,14 +157,20 @@ public final class ProductionCoordinator {
   private var lastReading: PlatformReading?
   /// Bumped on every spawn and release, so a late callback from an earlier guardian is ignored.
   private var guardianGeneration: UInt64 = 0
+  private let inputSources: (any InputSourceObserving)?
+  private let inputLane: any SerialLane
+  /// One sweep at a time: a monitor that never answers must not queue more behind it.
+  private var inputSweepInFlight = false
 
   public init(
     state: ControllerState, clock: any CoordinatorClock, observer: any PlatformObserving,
     writer: any DisplayWriting, ownership: any OwnershipPersisting,
     preferences: any PreferencePersisting, guardian: (any GuardianControlling)?,
-    delegate: (any CoordinatorDelegate)?, lane: any SerialLane = DispatchLane(),
+    delegate: (any CoordinatorDelegate)?, inputSources: (any InputSourceObserving)? = nil,
+    lane: any SerialLane = DispatchLane(),
     storageLane: any SerialLane = DispatchLane(label: "dev.solodisplay.storage"),
     workerLane: any SerialLane = DispatchLane(label: "dev.solodisplay.worker"),
+    inputLane: any SerialLane = DispatchLane(label: "dev.solodisplay.input"),
     scheduler: (any CoordinatorScheduler)? = nil, session: String = UUID().uuidString,
     diagnostics: OperationalLogger = .init(role: .app)
   ) {
@@ -169,7 +182,9 @@ public final class ProductionCoordinator {
     self.preferences = preferences
     self.guardian = guardian
     self.delegate = delegate
+    self.inputSources = inputSources
     self.lane = lane
+    self.inputLane = inputLane
     self.storageLane = storageLane
     self.workerLane = workerLane
     self.scheduler = scheduler ?? TimerScheduler()
@@ -285,6 +300,8 @@ public final class ProductionCoordinator {
       observe()
     case let .observeAt(instant):
       scheduleObservation(at: instant, from: now)
+    case .readInputSources:
+      readInputSources(at: now)
     case let .wakeAt(instant):
       scheduler.after(Double(max(instant - now, 0)) / 1000) { [weak self] in self?.send(.tick) }
     case let .savePreferences(mode):
@@ -396,6 +413,34 @@ public final class ProductionCoordinator {
         observeAgain = false
         observe()
       }
+    }
+  }
+
+  /// Asks every monitor what it is showing. The answer is one verdict for the whole arrangement,
+  /// and nothing at all is a usable answer: it leaves the standing one alone.
+  private func readInputSources(at now: Instant) {
+    // The controller may ask again after giving up on a sweep that is still out there.
+    guard !inputSweepInFlight else { return }
+    guard let inputSources else {
+      send(.inputSourcesRead(.unknown, sampledAt: now))
+      return
+    }
+    inputSweepInFlight = true
+    // Sampling time is taken before the sweep, so an answer is never treated as fresher than it is.
+    let sampledAt = clock.now()
+    // A sweep that never comes back must not hold the decision open for ever. What it would have
+    // said is nothing, which is how a Mac with no DDC at all already behaves.
+    scheduler.after(Double(state.policy.inputSourceDeadline) / 1000) { [weak self] in
+      guard let self, inputSweepInFlight else { return }
+      send(.inputSourcesRead(.unknown, sampledAt: clock.now()))
+    }
+    inputLane.run {
+      .inputSourcesRead(
+        InputSourceClassifier.showingThisMac(inputSources.read()), sampledAt: sampledAt
+      )
+    } completion: { [weak self] event in
+      self?.inputSweepInFlight = false
+      self?.send(event)
     }
   }
 

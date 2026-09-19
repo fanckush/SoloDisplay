@@ -102,6 +102,8 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
   public var guardian: GuardianState
   public var workerRunning: Bool
   public var recordHeld: Bool
+  /// What the monitors last said they were showing, so a refusal can be read back.
+  public var inputSources: Fact
 
   public init(_ state: ControllerState, at now: Instant) {
     let presentation = Controller.presentation(state, at: now)
@@ -115,6 +117,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
     guardian = state.guardian
     workerRunning = state.worker != nil
     recordHeld = state.record != nil
+    inputSources = state.inputSources
   }
 }
 

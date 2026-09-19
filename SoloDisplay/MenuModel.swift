@@ -115,6 +115,7 @@ nonisolated enum MenuModel {
     case .notAwake: "Waiting for your Mac to wake up fully."
     case .sessionNotForeground: "Another user is logged in and in front."
     case .noNativeExternal: "Connect a monitor directly to this Mac."
+    case .monitorShowsAnotherMachine: "Set your monitor's input back to this Mac."
     case .unsupportedTopology: "SoloDisplay has not been tested with this display arrangement."
     case .settling: "Just a moment."
     case .notRunning: "SoloDisplay could not start. Quit it and open it again."

@@ -88,6 +88,14 @@ public struct Policy: Equatable, Sendable {
   public var retryDelays: [Instant] = [500, 1000, 2000, 5000, 10000, 30000]
   /// Attempts that miss in a row before the menu says so. Attempts continue either way.
   public var troubleAfter = 3
+  /// How often the monitors are asked what they are showing.
+  public var inputSourceInterval: Instant = 10000
+  /// An answer that would change something is confirmed sooner than the ordinary interval.
+  public var inputSourceConfirm: Instant = 1000
+  /// Answers in a row that must agree before the answer itself changes.
+  public var inputSourceReadings = 2
+  /// An ask that never comes back stops holding the decision open after this.
+  public var inputSourceDeadline: Instant = 5000
   public init() {}
 }
 
@@ -130,6 +138,17 @@ public struct ControllerState: Equatable, Sendable {
   /// Attempts in a row that did not reach the wanted state. Cleared as soon as one does.
   public var failures = 0
   public var retryAt: Instant?
+  /// What the monitors say they are showing. A veto and nothing else: `.no` refuses to turn the
+  /// laptop screen off and asks for it back, `.yes` only lifts that refusal, and `.unknown` does
+  /// nothing in either direction. A monitor with no DDC leaves it `.unknown` for ever.
+  public var inputSources: Fact = .unknown
+  /// An answer that has not repeated yet. Enough to refuse, not enough to act.
+  public var inputSourcesPending: Fact = .unknown
+  public var inputSourcesAgreeing = 0
+  /// When the monitors were last asked, whatever they said, and whether an ask is still out.
+  public var inputSourcesAskedAt: Instant?
+  public var inputSourcesBusy = false
+  public var inputSourcesDueAt: Instant?
   public var policy: Policy
 
   public init(mode: Mode = .automaticPaused, record: PanelTarget? = nil, policy: Policy = .init()) {
@@ -140,6 +159,34 @@ public struct ControllerState: Equatable, Sendable {
 
   public var wantsOff: Bool {
     mode == .automatic
+  }
+
+  /// A monitor said, even once, that it is showing another machine. Withholding costs nothing and
+  /// the next answer undoes it, so one answer is enough.
+  var inputRefusal: Bool {
+    inputSources == .no || inputSourcesPending == .no
+  }
+
+  /// The same answer twice. Putting the laptop screen back is a change, so it waits for that.
+  var inputDemand: Bool {
+    inputSources == .no
+  }
+
+  /// A changed arrangement has to be asked again before anything is turned off, but what the
+  /// monitors last said is kept. Putting the laptop screen back is itself a reconfiguration, so
+  /// dropping the refusal here would turn the screen off, on, off, on for ever.
+  mutating func remeasureInputSources() {
+    inputSourcesAskedAt = nil
+    inputSourcesDueAt = nil
+  }
+
+  /// Nothing the monitors say can change anything once the answer is no longer wanted.
+  mutating func forgetInputSources() {
+    inputSources = .unknown
+    inputSourcesPending = .unknown
+    inputSourcesAgreeing = 0
+    inputSourcesAskedAt = nil
+    inputSourcesDueAt = nil
   }
 }
 
@@ -160,6 +207,9 @@ public enum Event: Equatable, Sendable {
   case guardianReady
   case guardianGone
   case workerFinished(WorkerOutcome)
+  /// What the monitors said they are showing, and when they were asked. `.unknown` is an answer
+  /// that says nothing, which is what a monitor without DDC always gives.
+  case inputSourcesRead(Fact, sampledAt: Instant)
 }
 
 public enum Effect: Equatable, Sendable {
@@ -174,6 +224,8 @@ public enum Effect: Equatable, Sendable {
   case spawnGuardian(PanelTarget)
   case releaseGuardian
   case runWorker(WriteAction, PanelTarget)
+  /// Ask the monitors what they are showing. Slow, so it has its own lane and its own answer.
+  case readInputSources
 }
 
 public struct Transition: Equatable, Sendable {
@@ -189,7 +241,7 @@ public enum Trouble: String, Codable, CaseIterable, Sendable {
 /// Why the laptop screen cannot be off right now.
 public enum Unavailability: String, Codable, CaseIterable, Equatable, Sendable {
   case noObservation, noConfirmedPanel, lidClosed, notAwake, sessionNotForeground
-  case noNativeExternal, unsupportedTopology, settling, notRunning
+  case noNativeExternal, unsupportedTopology, monitorShowsAnotherMachine, settling, notRunning
 }
 
 /// A read-only projection for the menu. It derives from state and carries no new authority.

@@ -70,3 +70,41 @@ chronological record of the earlier experiments.
   `ddc set 60` took effect, a later read agreed, and setting 68 restored it. Requests used the
   standard checksum that includes the 0x51 source address. Docks, HDMI, and other monitors are
   untested.
+
+## What the monitor is showing
+
+- **A monitor switched to another machine keeps its link to this Mac up** (2026-09-19). The Dell
+  U3223QE showing a PC over DisplayPort still enumerated in CoreGraphics, still charged over
+  USB-C, and still answered DDC. Nothing in a display reading distinguishes it from a monitor
+  showing this Mac, which is why the app used to turn the laptop screen off and leave nothing
+  visible anywhere.
+- **VCP 0x60 answers the question, on this monitor.** Replies captured while switching inputs:
+
+  | Showing | Reply | `current` |
+  |---|---|---|
+  | This Mac, USB-C | `6E 88 02 00 60 00 1B 1B 1B 1B D4` | `0x1B1B` |
+  | The PC, DisplayPort 1 | same with `SL = 0x0F` | `0x1B0F` |
+  | HDMI 1 | same with `SL = 0x11` | `0x1B11` |
+
+  The low byte is the input on screen. The high byte stayed `0x1B`, the input this Mac is wired
+  to, through all three. Comparing the two bytes answers it with no calibration.
+- **The high byte is not in the standard.** MCCS defines only the low byte and leaves the high
+  byte reserved, so `0x00` there is what a monitor following the standard returns. It is read as
+  unknown, never as disagreement. The risk accepted knowingly: a monitor that fills the high byte
+  with some other constant that never equals its selected input would be refused for ever. That is
+  visible in the menu and All Monitors still works, so it is not the silent failure it replaces.
+- **Not every monitor does DDC at all** (2026-09-19). A second monitor, with DDC/CI enabled in its
+  own menu, acknowledged the bus and returned a null message (`6E 80 ...`) to every request,
+  brightness included. It never reaches a verdict and is left exactly as it was before.
+- **The selected input is reported even with no cable on it.** Choosing an empty DisplayPort still
+  answered `0x0F`, which is right: an empty selected input is still not this Mac.
+- **One exchange failed during a switch** and the next succeeded, so a single silence is never
+  acted on.
+- **A monitor can still be asked while its display is disabled** (2026-09-19, probe). With the
+  external turned off through `SLSConfigureDisplayEnabled`, CoreGraphics stopped listing it
+  entirely, but its `DCPAVServiceProxy` remained and both a fresh and an already open connection
+  read `0x1B1B`. So turning an invisible external off would not cost the evidence needed to turn
+  it back on, provided the monitors are enumerated through IOKit. `answerableControllers` goes
+  through `CGGetOnlineDisplayList` and did go blind, so it is the wrong enumeration for that.
+  The controller-to-display correlation also has to be remembered from before the display was
+  disabled, since transport classification needs a CoreGraphics display to correlate.

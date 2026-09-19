@@ -197,16 +197,8 @@ final class BrightnessKeys {
     if let controllers {
       return controllers
     }
-    var ids = [CGDirectDisplayID](repeating: 0, count: 16)
-    var count: UInt32 = 0
-    CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count)
     // Apple displays take the brightness keys from macOS already.
-    let externals = ids.prefix(Int(count)).filter {
-      CGDisplayIsBuiltin($0) == 0 && CGDisplayVendorNumber($0) != Self.appleVendor
-    }
-    let services = Set(IOAVServiceDDC.externalControllers())
-    let found = IOAVServiceDDC.controllers(forDisplays: Array(externals))
-      .filter { services.contains($0.value) }
+    let found = IOAVServiceDDC.answerableControllers(excludingVendor: Self.appleVendor)
     controllers = found
     return found
   }
@@ -222,6 +214,8 @@ final class BrightnessKeys {
     lastPress.removeAll()
     waiting.removeAll()
     lanes.removeAll()
+    // The lanes are shared, so the connections they hold go with the displays they named.
+    DDCLanes.forget()
   }
 
   private func press(_ key: BrightnessKey, controller: String, displayID: CGDirectDisplayID) {

@@ -182,8 +182,20 @@ private struct SyncLane: SerialLane {
 
 @MainActor private final class ManualScheduler: CoordinatorScheduler {
   var wakes: [Double] = []
-  func after(_ seconds: Double, _: @escaping @MainActor () -> Void) {
+  private var due: [(seconds: Double, fire: @MainActor () -> Void)] = []
+
+  func after(_ seconds: Double, _ fire: @escaping @MainActor () -> Void) {
     wakes.append(seconds)
+    due.append((seconds, fire))
+  }
+
+  /// Fires every wake asked for at this delay, the way one timer firing would.
+  func fire(_ seconds: Double) {
+    let firing = due.filter { $0.seconds == seconds }
+    due.removeAll { $0.seconds == seconds }
+    for wake in firing {
+      wake.fire()
+    }
   }
 
   func startRepeating(_: Double, _: @escaping @MainActor () -> Void) {}
@@ -224,6 +236,62 @@ private func reading(
   )
 }
 
+/// Monitors that answer what they are showing, or do not answer at all.
+private final class FakeInputSources: InputSourceObserving {
+  private struct State {
+    var evidence: [InputSourceEvidence] = []
+    var calls = 0
+    var answers = true
+  }
+
+  private let state = Mutex(State())
+  private let held = DispatchSemaphore(value: 0)
+  private let started = DispatchSemaphore(value: 0)
+
+  var calls: Int {
+    state.withLock { $0.calls }
+  }
+
+  /// A monitor showing the input this Mac is wired to, or another one, as the captured Dell
+  /// replies do: the asking host's input in the high byte, what is on screen in the low byte.
+  func showing(_ shown: ShownSource) {
+    let reply: DDCValue? = switch shown {
+    case .thisMac: .init(current: 0x1B1B, maximum: 0x1B1B)
+    case .otherMachine: .init(current: 0x1B0F, maximum: 0x1B1B)
+    case .unknown: nil
+    }
+    state.withLock { $0.evidence = [.init(controller: "dispext0", reply: reply)] }
+  }
+
+  /// A sweep that does not come back, the way a monitor that takes the bus and holds it behaves.
+  /// It is released at the end of the test rather than left stalled for ever.
+  func stopAnswering() {
+    state.withLock { $0.answers = false }
+  }
+
+  func release() {
+    held.signal()
+  }
+
+  /// Waits until a sweep has actually reached the monitor, since it runs on its own lane.
+  func waitForSweep() {
+    _ = started.wait(timeout: .now() + 5)
+  }
+
+  func read() -> [InputSourceEvidence] {
+    let evidence = state.withLock { state -> [InputSourceEvidence]? in
+      state.calls += 1
+      return state.answers ? state.evidence : nil
+    }
+    started.signal()
+    guard let evidence else {
+      _ = held.wait(timeout: .now() + 10)
+      return []
+    }
+    return evidence
+  }
+}
+
 // MARK: - Harness
 
 @MainActor private final class Harness {
@@ -235,16 +303,21 @@ private func reading(
   let guardian = FakeGuardian()
   let delegate = FakeDelegate()
   let scheduler = ManualScheduler()
+  let inputSources = FakeInputSources()
   let coordinator: ProductionCoordinator
 
-  init(mode: Mode = .automatic, reading start: PlatformReading = reading()) {
+  init(mode: Mode = .automatic, reading start: PlatformReading = reading(),
+       asksMonitors: Bool = false, monitorsOnTheirOwnLane: Bool = false) {
     observer = FakeObserver(start)
     writer = FakeWriter(observer: observer)
     coordinator = ProductionCoordinator(
       state: .init(mode: mode), clock: clock, observer: observer, writer: writer,
       ownership: ownership, preferences: preferences, guardian: guardian, delegate: delegate,
-      lane: SyncLane(), storageLane: SyncLane(), workerLane: SyncLane(), scheduler: scheduler,
-      diagnostics: .init(role: .app, sink: CapturedOperationalEvents())
+      inputSources: asksMonitors ? inputSources : nil,
+      lane: SyncLane(), storageLane: SyncLane(), workerLane: SyncLane(),
+      inputLane: monitorsOnTheirOwnLane
+        ? DispatchLane(label: "dev.solodisplay.test.input") : SyncLane(),
+      scheduler: scheduler, diagnostics: .init(role: .app, sink: CapturedOperationalEvents())
     )
   }
 
@@ -389,5 +462,76 @@ struct ProductionCoordinatorTests {
     let resolved = ProductionCoordinator.resolveRecord(ownership, reading: reading(panel: false))
     #expect(resolved.target == panelTarget)
     #expect(!resolved.blocked)
+  }
+}
+
+/// The monitors are asked over DDC, which is slow and can stall, so the sweep has its own lane,
+/// its own answer, and a deadline. None of it may reach the reading lane or hold a decision open.
+@MainActor
+struct InputSourceCoordinatorTests {
+  @Test func switchingTheMonitorAwayWhileOffTurnsTheScreenBackOn() {
+    let harness = Harness(asksMonitors: true)
+    harness.inputSources.showing(.thisMac)
+    harness.turnOff()
+    #expect(harness.writer.calls == [.init(enabled: false, displayID: 1)])
+
+    harness.inputSources.showing(.otherMachine)
+    harness.step(to: 12200)
+    #expect(harness.writer.calls.count == 1)
+    // The second answer agrees, so the screen comes back and nothing is owed any more.
+    harness.step(to: 13300)
+    #expect(harness.writer.calls.last == .init(enabled: true, displayID: 1))
+    #expect(harness.guardian.released == 1)
+    #expect(
+      harness.coordinator.presentation.unavailability == .monitorShowsAnotherMachine
+    )
+  }
+
+  @Test func aMonitorShowingThisMacIsTurnedOffForAsBefore() {
+    let harness = Harness(asksMonitors: true)
+    harness.inputSources.showing(.thisMac)
+    harness.turnOff()
+    #expect(harness.writer.calls == [.init(enabled: false, displayID: 1)])
+    #expect(harness.inputSources.calls >= 1)
+  }
+
+  @Test func aMonitorThatCannotAnswerIsTurnedOffForAsBefore() {
+    let harness = Harness(asksMonitors: true)
+    harness.inputSources.showing(.unknown)
+    harness.turnOff()
+    #expect(harness.writer.calls == [.init(enabled: false, displayID: 1)])
+  }
+
+  @Test func aSweepThatNeverAnswersIsGivenUpOnAfterTheDeadline() {
+    let harness = Harness(asksMonitors: true, monitorsOnTheirOwnLane: true)
+    harness.inputSources.stopAnswering()
+    defer { harness.inputSources.release() }
+    harness.step(to: 0)
+    harness.inputSources.waitForSweep()
+    // The deadline was scheduled, and firing it answers with nothing so the decision goes on.
+    #expect(harness.scheduler.wakes.contains(5))
+    harness.clock.set(5100)
+    harness.scheduler.fire(5)
+    harness.step(to: 5200)
+    harness.guardian.becomeReady()
+    #expect(harness.writer.calls == [.init(enabled: false, displayID: 1)])
+  }
+
+  @Test func aSecondSweepIsNeverStartedWhileOneIsOutstanding() {
+    let harness = Harness(asksMonitors: true, monitorsOnTheirOwnLane: true)
+    harness.inputSources.stopAnswering()
+    defer { harness.inputSources.release() }
+    harness.step(to: 0)
+    harness.inputSources.waitForSweep()
+    harness.step(to: 600)
+    harness.step(to: 2100)
+    #expect(harness.inputSources.calls == 1)
+  }
+
+  @Test func withNoMonitorsToAskNothingChanges() {
+    let harness = Harness()
+    harness.turnOff()
+    #expect(harness.writer.calls == [.init(enabled: false, displayID: 1)])
+    #expect(harness.inputSources.calls == 0)
   }
 }

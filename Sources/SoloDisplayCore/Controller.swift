@@ -35,9 +35,14 @@ public enum Controller {
     case let .displayReconfigured(inProgress):
       state.lastDisplayChange = now
       state.displayConfiguring = inProgress
+      // The new arrangement is asked again before anything is turned off. The answer itself is
+      // kept: this fires for our own panel change too, and forgetting it there would restore the
+      // screen, turn it off, restore it again, without end.
+      state.remeasureInputSources()
     case let .selectMode(mode):
       state.mode = mode
       clearBackoff(&state)
+      state.remeasureInputSources()
       effects.append(.savePreferences(mode))
     case let .preferencesSaved(succeeded):
       state.preferencesFailed = !succeeded
@@ -45,6 +50,8 @@ public enum Controller {
       // No change starts until a fresh reading shows the Mac awake again.
       state.stableSince = nil
       state.matchingSamples = 0
+      // A monitor can be switched while the Mac sleeps, so what it said before says nothing now.
+      state.forgetInputSources()
       if var sample = state.observation {
         sample.environment.power = event == .willSleep ? .sleeping : .waking
         state.observation = sample
@@ -97,11 +104,75 @@ public enum Controller {
       worker.outcome = outcome
       state.worker = worker
       effects.append(.observe)
+    case let .inputSourcesRead(answer, sampledAt):
+      readInputSources(&state, answer: answer, sampledAt: sampledAt)
     }
 
     act(&state, effects: &effects, at: now)
+    askInputSources(&state, effects: &effects, at: now)
     schedule(state, effects: &effects, at: now)
     return .init(state: state, effects: effects)
+  }
+
+  /// Takes one answer from the monitors. A `.unknown` answer never changes the standing one: a
+  /// monitor that has gone quiet, which is what some do once switched away, must not be able to
+  /// cancel a refusal. An answer that would change it has to arrive twice.
+  private static func readInputSources(_ state: inout ControllerState, answer: Fact,
+                                       sampledAt: Instant) {
+    // A late answer from an ask already given up on is still usable, but only if it is newer.
+    guard sampledAt >= (state.inputSourcesAskedAt ?? sampledAt) else { return }
+    state.inputSourcesBusy = false
+    state.inputSourcesAskedAt = sampledAt
+    guard answer != .unknown, answer != state.inputSources else {
+      state.inputSourcesPending = .unknown
+      state.inputSourcesAgreeing = 0
+      state.inputSourcesDueAt = sampledAt + state.policy.inputSourceInterval
+      return
+    }
+    if answer == state.inputSourcesPending {
+      state.inputSourcesAgreeing += 1
+    } else {
+      state.inputSourcesPending = answer
+      state.inputSourcesAgreeing = 1
+    }
+    guard state.inputSourcesAgreeing >= state.policy.inputSourceReadings else {
+      state.inputSourcesDueAt = sampledAt + state.policy.inputSourceConfirm
+      return
+    }
+    state.inputSources = answer
+    state.inputSourcesPending = .unknown
+    state.inputSourcesAgreeing = 0
+    state.inputSourcesDueAt = sampledAt + state.policy.inputSourceInterval
+  }
+
+  /// Asks the monitors what they are showing: once before anything is turned off, and then every
+  /// interval for as long as the answer could still change what happens.
+  private static func askInputSources(_ state: inout ControllerState, effects: inout [Effect],
+                                      at now: Instant) {
+    guard state.wantsOff, !state.inputSourcesBusy,
+          let environment = state.observation?.environment, environment.visibilityExpected,
+          environment.nativeExternalAvailable == .yes, environment.panelState != .unknown
+    else { return }
+    // While the screen is off, or while a refusal stands, keep asking so it can be lifted again.
+    // Otherwise ask once per settling window, which is what holds the first turn-off back.
+    let due = environment.panelState == .disabled || state.inputRefusal
+      ? now >= (state.inputSourcesDueAt ?? now)
+      : !inputAsked(state, at: now)
+    guard due else { return }
+    state.inputSourcesBusy = true
+    effects.append(.readInputSources)
+  }
+
+  /// The monitors have been asked since this arrangement settled. What they said may be nothing;
+  /// what matters is that the question was put after the change. An ask that never comes back
+  /// stops holding the decision after `inputSourceDeadline`, which is how a Mac whose monitors
+  /// cannot answer at all keeps behaving exactly as it did before.
+  static func inputAsked(_ state: ControllerState, at now: Instant) -> Bool {
+    guard let since = state.stableSince else { return false }
+    if let asked = state.inputSourcesAskedAt, asked >= since {
+      return true
+    }
+    return state.inputSourcesBusy && now - since >= state.policy.inputSourceDeadline
   }
 
   /// What the laptop screen should be, or nil when nothing should be changed right now: the Mac
@@ -110,12 +181,20 @@ public enum Controller {
     guard let environment = state.observation?.environment, environment.visibilityExpected,
           environment.panel != nil, environment.panelState != .unknown
     else { return nil }
+    // A monitor showing another machine is a reason to refuse, never a reason to act. While the
+    // screen is on, one answer is enough to withhold, because withholding changes nothing. While
+    // it is off, putting it back is a change, so that waits for the answer to repeat.
+    let monitorRefuses = environment.panelState == .disabled
+      ? state.inputDemand
+      : state.inputRefusal
     guard state.wantsOff, !state.recordBlocked,
-          environment.prerequisitesMet else { return .enabled }
+          environment.prerequisitesMet, !monitorRefuses else { return .enabled }
     if environment.panelState == .disabled {
       // Never stay off without a guardian that would bring the screen back.
       return state.guardian == .absent ? .enabled : .disabled
     }
+    // Nothing is turned off before the monitors have been asked what they are showing.
+    guard inputAsked(state, at: now) else { return nil }
     return isSettled(state, at: now) ? .disabled : nil
   }
 
@@ -194,6 +273,10 @@ public enum Controller {
     if let retryAt = state.retryAt, retryAt > now {
       effects.append(.wakeAt(retryAt))
     }
+    // Asking again is on its own clock, so it needs its own wake rather than the periodic one.
+    if state.wantsOff, !state.inputSourcesBusy, let due = state.inputSourcesDueAt, due > now {
+      effects.append(.wakeAt(due))
+    }
   }
 
   /// Two separated readings agree, and the arrangement has stopped changing. When macOS reported
@@ -253,10 +336,14 @@ public extension Controller {
     if environment.nativeExternalAvailable != .yes {
       return .noNativeExternal
     }
+    if environment.panelState == .disabled ? state.inputDemand : state.inputRefusal {
+      return .monitorShowsAnotherMachine
+    }
     if environment.panelState == .disabled {
       return nil
     }
-    return isSettled(state, at: now) ? nil : .settling
+    // Waiting for the monitors to answer is a moment, like settling, and reads as one.
+    return isSettled(state, at: now) && inputAsked(state, at: now) ? nil : .settling
   }
 
   static func trouble(_ state: ControllerState) -> Trouble? {

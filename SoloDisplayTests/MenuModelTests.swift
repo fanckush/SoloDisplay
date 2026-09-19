@@ -70,9 +70,22 @@ struct MenuModelTests {
     #expect(!broken.externalOnly.isEnabled && !broken.allMonitors.isEnabled)
     #expect(broken.glyph == .attention)
     for blocked in [Unavailability.lidClosed, .notAwake, .noNativeExternal, .settling,
-                    .unsupportedTopology] {
+                    .unsupportedTopology, .monitorShowsAnotherMachine] {
       #expect(menuPanel(.init(unavailability: blocked)).externalOnly.isEnabled)
     }
+  }
+
+  /// A monitor switched to another machine is a matter of when, like an unplugged one: the
+  /// arrangement stays chosen and stays pickable, and nothing about it is a fault.
+  @Test func aMonitorShowingAnotherMachineIsAMatterOfWhen() {
+    let shown = menuPanel(.init(
+      wantsInternalOff: true, unavailability: .monitorShowsAnotherMachine
+    ))
+    #expect(shown.reality == "Set your monitor's input back to this Mac.")
+    #expect(shown.externalOnly.isSelected)
+    #expect(shown.externalOnly.isEnabled)
+    #expect(shown.glyph == .allMonitors)
+    #expect(shown.alert == nil)
   }
 
   @Test func exactlyOneArrangementIsEverChosen() {
@@ -144,7 +157,13 @@ struct MenuModelTests {
     )
     var sequence: UInt64 = 0
     func send(_ event: Event, at time: Instant) {
-      state = Controller.reduce(state, event, at: time).state
+      let transition = Controller.reduce(state, event, at: time)
+      state = transition.state
+      // The executor always answers when the monitors are asked, even with nothing, and nothing
+      // is what a monitor that cannot be asked over DDC gives.
+      if transition.effects.contains(.readInputSources) {
+        send(.inputSourcesRead(.unknown, sampledAt: time), at: time)
+      }
     }
     func observe(_ environment: Environment, at time: Instant) {
       sequence += 1

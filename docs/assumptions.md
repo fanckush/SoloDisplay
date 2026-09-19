@@ -34,3 +34,7 @@ Status distinguishes documented behavior, direct observations, and unresolved ex
 - [Reference private-call implementation](https://github.com/RonaldPark89/InternalDisplayOff/blob/main/Sources/DisplayManager.swift)
 
 The installed SDK headers also document CoreGraphics callback reentrancy, `IORegisterForSystemPower` acknowledgement, and early-wake restrictions. The implementation was written independently; the reference repository is used to investigate behavior.
+
+## A21: a monitor's own report of which input it shows
+
+| A21 | A monitor can be asked what it is showing, and its answer is a veto only. | VCP 0x60 answers on the Dell U3223QE, including while it shows another machine (2026-09-19). Other monitors answer nothing, and the high byte the verdict rests on is outside the standard. | Only a clear "showing another machine" changes anything, and only by refusing to turn the laptop screen off or asking for it back. Silence, an unknown answer and a monitor without DDC all behave exactly as before. The guardian never asks: it is a one-second watchdog in another process, and a second process on the same I2C bus would corrupt both. The gap that leaves: a wedged app while a monitor is switched away is not caught by anything. |

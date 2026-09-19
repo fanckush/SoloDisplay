@@ -1,4 +1,5 @@
 import CoreFoundation
+import CoreGraphics
 import Darwin
 import Foundation
 import IOKit
@@ -8,6 +9,8 @@ import IOKit
 /// and display-to-host checksums use the 0x50 virtual host address.
 public enum DDCPacket {
   public static let brightness: UInt8 = 0x10
+  /// Input Source. Reports the input the display is showing, whichever host asks.
+  public static let inputSource: UInt8 = 0x60
   static let displayAddress: UInt8 = 0x6E
   static let hostAddress: UInt8 = 0x51
   static let replyAddress: UInt8 = 0x50
@@ -158,6 +161,22 @@ public enum IOAVServiceDDC {
     var names: [String] = []
     forEachExternalService { controller, _ in names.append(controller) }
     return names
+  }
+
+  /// The controllers behind external displays that can actually be talked to: correlated to a
+  /// display, and carrying a live DDC service. Read fresh, because a monitor that is switched
+  /// away or unplugged may leave the display list entirely.
+  public static func answerableControllers(
+    excludingVendor excluded: UInt32? = nil
+  ) -> [UInt32: String] {
+    var ids = [CGDirectDisplayID](repeating: 0, count: 16)
+    var count: UInt32 = 0
+    CGGetOnlineDisplayList(UInt32(ids.count), &ids, &count)
+    let externals = ids.prefix(Int(count)).filter {
+      CGDisplayIsBuiltin($0) == 0 && (excluded == nil || CGDisplayVendorNumber($0) != excluded)
+    }
+    let services = Set(externalControllers())
+    return controllers(forDisplays: Array(externals)).filter { services.contains($0.value) }
   }
 
   public static func channel(controller: String) throws -> DDCChannel {

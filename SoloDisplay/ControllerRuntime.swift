@@ -82,6 +82,7 @@ final class ControllerRuntime: CoordinatorDelegate {
       state: state, clock: MonotonicClock(), observer: observer,
       writer: WorkerDisplayWriter(executable: executable), ownership: journal,
       preferences: store, guardian: GuardianProcess(executable: executable), delegate: self,
+      inputSources: LiveInputSourceObserver(),
       session: session, diagnostics: diagnostics
     )
     self.coordinator = coordinator

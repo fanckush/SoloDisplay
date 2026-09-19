@@ -108,75 +108,31 @@ public final class LatestValueWriter<Value: Sendable>: Sendable {
   }
 }
 
-/// Brightness for one external display, with its own queue so a display that stops answering
-/// only delays itself.
+/// Brightness for one external display, on that display's shared DDC lane so a display that
+/// stops answering only delays itself, and so it never interleaves with other DDC traffic.
 public final class BrightnessLane: Sendable {
-  private static let log = Logger(
-    subsystem: UnifiedOperationalSink.subsystem, category: "brightness"
-  )
-
   public let controller: String
-  private let queue: DispatchQueue
-  private let channel: ChannelBox
+  private let lane: DDCLane
   private let writer: LatestValueWriter<UInt16>
 
   public init(controller: String) {
     self.controller = controller
-    let queue = DispatchQueue(label: "SoloDisplay.brightness.\(controller)", qos: .userInitiated)
-    let channel = ChannelBox(controller: controller)
-    self.queue = queue
-    self.channel = channel
-    writer = LatestValueWriter(queue: queue) { value in
-      do {
-        try channel.open().set(code: DDCPacket.brightness, value: value)
-      } catch {
-        let reason = String(describing: error)
-        Self.log.error("write \(value, privacy: .public) failed: \(reason, privacy: .public)")
-        channel.reset()
-      }
+    let lane = DDCLanes.lane(for: controller)
+    self.lane = lane
+    // The writer drains on the lane itself, so the exchange is already where it belongs.
+    writer = LatestValueWriter(queue: lane.queue) { value in
+      lane.performOnLane { try $0.set(code: DDCPacket.brightness, value: value) }
     }
   }
 
   /// Completes on the lane's queue, with nil when the display does not answer.
   public func read(_ completion: @escaping @Sendable (BrightnessLevel?) -> Void) {
-    queue.async { [channel] in
-      do {
-        let value = try channel.open().get(code: DDCPacket.brightness)
-        completion(BrightnessLevel(value: value.current, maximum: value.maximum))
-      } catch {
-        let reason = String(describing: error)
-        Self.log.error("read failed: \(reason, privacy: .public)")
-        channel.reset()
-        completion(nil)
-      }
+    lane.run { try $0.get(code: DDCPacket.brightness) } completion: { value in
+      completion(value.map { BrightnessLevel(value: $0.current, maximum: $0.maximum) })
     }
   }
 
   public func write(_ value: UInt16) {
     writer.submit(value)
-  }
-}
-
-private final class ChannelBox: Sendable {
-  private let controller: String
-  private let channel = Mutex<DDCChannel?>(nil)
-
-  init(controller: String) {
-    self.controller = controller
-  }
-
-  /// Only called on the lane's queue. A failed open is retried on the next call.
-  func open() throws -> DDCChannel {
-    if let existing = channel.withLock({ $0 }) {
-      return existing
-    }
-    let opened = try IOAVServiceDDC.channel(controller: controller)
-    channel.withLock { $0 = opened }
-    return opened
-  }
-
-  /// A reconnected monitor gets a new service, so a failed call opens it again next time.
-  func reset() {
-    channel.withLock { $0 = nil }
   }
 }
