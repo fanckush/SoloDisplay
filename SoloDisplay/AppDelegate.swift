@@ -53,6 +53,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       FileHandle.standardError.write(
         Data("SoloDisplay is already running in this login session.\n".utf8)
       )
+      // Launched from the Finder this is otherwise an app that opens and vanishes, with the one
+      // line above going nowhere anybody can see. There is nothing to bring forward instead: the
+      // copy that is running lives in the menu bar, so the alert says where to look.
+      showAlreadyRunningAlert()
       exit(0)
     }
     controller = runtime
@@ -84,6 +88,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
       showDiagnostics()
     }
+  }
+
+  /// An accessory app has no window to put this in front of, so it is activated first.
+  private func showAlreadyRunningAlert() {
+    NSApp.activate(ignoringOtherApps: true)
+    let alert = NSAlert()
+    alert.alertStyle = .informational
+    alert.messageText = "SoloDisplay is already running"
+    alert.informativeText =
+      "Look for the SoloDisplay icon in the menu bar at the top of your screen."
+    alert.addButton(withTitle: "OK")
+    alert.runModal()
   }
 
   private func startGuardian() {

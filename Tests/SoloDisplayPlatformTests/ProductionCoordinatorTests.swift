@@ -400,10 +400,17 @@ struct ProductionCoordinatorTests {
     harness.writer.answer(.killed, changesDisplay: false)
     harness.turnOff()
     #expect(harness.writer.calls.count == 1)
+    // A change that has not appeared yet is not a failure, and no second writer is started for
+    // it: that is how two of them end up on the same panel at once.
+    harness.step(to: 2700)
+    #expect(harness.state.failures == 0)
+    #expect(harness.writer.calls.count == 1)
+    // Once the whole window has passed with nothing reported, it did not work.
+    harness.step(to: 7200)
     #expect(harness.state.failures == 1)
     #expect(harness.coordinator.presentation.trouble == nil)
     harness.writer.answer(.done, changesDisplay: true)
-    harness.step(to: 2700)
+    harness.step(to: 7800)
     #expect(harness.writer.calls.count == 2)
     #expect(harness.coordinator.presentation.panelOff)
     #expect(harness.state.failures == 0)
@@ -424,6 +431,10 @@ struct ProductionCoordinatorTests {
     harness.turnOff()
     harness.step(to: 2200, reading: reading(panel: false, external: false))
     #expect(harness.writer.calls.last == .init(enabled: true, displayID: 1))
+    // The record and the guardian are given up once the screen has stayed on, not on the one
+    // reading that first shows it back.
+    #expect(harness.guardian.released == 0)
+    harness.step(to: 4400)
     #expect(harness.guardian.released == 1)
     #expect(harness.ownership.record == nil)
     #expect(!harness.coordinator.presentation.panelOff)
@@ -512,6 +523,7 @@ struct InputSourceCoordinatorTests {
     // The second answer agrees, so the screen comes back and nothing is owed any more.
     harness.step(to: 13300)
     #expect(harness.writer.calls.last == .init(enabled: true, displayID: 1))
+    harness.step(to: 15500)
     #expect(harness.guardian.released == 1)
     #expect(
       harness.coordinator.presentation.unavailability == .monitorShowsAnotherMachine

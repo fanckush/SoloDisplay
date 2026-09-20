@@ -69,7 +69,7 @@ nonisolated enum MenuModel {
         ? "Turning your laptop screen back on." : "Your laptop screen is off."
     }
     if let blocker = presentation.unavailability,
-       blocker == .noConfirmedPanel || blocker == .notRunning {
+       blocker == .noConfirmedPanel || blocker == .notRunning || blocker == .panelUnreadable {
       return reason(blocker)
     }
     if !presentation.wantsInternalOff {
@@ -119,6 +119,7 @@ nonisolated enum MenuModel {
     switch unavailability {
     case .noObservation: "Checking your displays."
     case .noConfirmedPanel: "This Mac has no built-in display to turn off."
+    case .panelUnreadable: "SoloDisplay cannot read your laptop screen, and is turning it back on."
     case .lidClosed: "Open the lid. macOS controls your laptop screen while it is closed."
     case .notAwake: "Waiting for your Mac to wake up fully."
     case .sessionNotForeground: "Another user is logged in and in front."

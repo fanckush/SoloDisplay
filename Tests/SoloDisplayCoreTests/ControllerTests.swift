@@ -120,12 +120,80 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
   var rig = Rig()
   rig.reachDisable()
   rig.send(.workerFinished(.done), at: 2010)
-  let unchanged = rig.observe(at: 2020)
+  // A change nothing has reported is given the whole cap before it is read as a failure, and a
+  // reading is asked for at the moment that verdict could first be reached.
+  let early = rig.observe(at: 2020)
+  #expect(rig.state.failures == 0)
+  #expect(rig.state.worker != nil)
+  #expect(early.contains(.observeAt(7010)))
+  let unchanged = rig.observe(at: 7010)
   #expect(rig.state.failures == 1)
-  #expect(unchanged.contains(.wakeAt(2520)))
+  #expect(unchanged.contains(.wakeAt(7510)))
   #expect(workers(unchanged, .disable) == 0)
-  #expect(workers(rig.observe(at: 2300), .disable) == 0)
-  #expect(workers(rig.observe(at: 2520), .disable) == 1)
+  #expect(workers(rig.observe(at: 7300), .disable) == 0)
+  #expect(workers(rig.observe(at: 7510), .disable) == 1)
+}
+
+/// The report behind GitHub issue #9: switching back to All Monitors said "Having trouble
+/// changing your laptop screen" within seconds, while the restore was on its way. The panel
+/// reappears long after the call that asked for it returns, and until it does there is nothing
+/// to hold against the worker, least of all another worker.
+@Test func aRestoreThatTakesSecondsIsNeitherAFailureNorAskedForTwice() {
+  var rig = Rig()
+  rig.off()
+  #expect(workers(rig.send(.selectMode(.manual), at: 3000), .enable) == 1)
+  rig.send(.workerFinished(.done), at: 3100)
+  // macOS is still carrying the change out, and the panel is not in the inventory yet.
+  for time in stride(from: Instant(3200), to: 7000, by: 400) {
+    rig.send(.displayReconfigured(inProgress: true), at: time)
+    let waiting = rig.observe(environment(panelState: .disabled), at: time + 10)
+    #expect(workers(waiting, .enable) == 0)
+  }
+  #expect(rig.state.failures == 0)
+  let shown = Controller.presentation(rig.state, at: 7000)
+  #expect(shown.trouble == nil)
+  #expect(shown.working)
+  // It arrives, late. The reading that shows it is what settles the matter.
+  rig.observe(at: 7010)
+  #expect(rig.state.worker == nil)
+  #expect(rig.state.failures == 0)
+}
+
+/// A panel that cannot be read used to stop the controller dead: nothing was decided and nothing
+/// was ever attempted again, so the screen stayed off until the Mac was restarted.
+@Test func anUnreadablePanelIsTurnedBackOnWhileTheRecordSaysOneMayBeOff() {
+  var rig = Rig(mode: .manual, record: panel)
+  let effects = rig.observe(environment(panelState: .unknown), at: 0)
+  #expect(workers(effects, .enable) == 1)
+  #expect(Controller.presentation(rig.state, at: 0).unavailability == .panelUnreadable)
+  #expect(Controller.presentation(rig.state, at: 0).working)
+}
+
+@Test func anUnreadablePanelWithNothingOwedIsLeftAlone() {
+  var rig = Rig(mode: .manual)
+  #expect(workers(rig.observe(environment(panelState: .unknown), at: 0), .enable) == 0)
+  #expect(rig.state.worker == nil)
+  #expect(Controller.presentation(rig.state, at: 0).unavailability != .panelUnreadable)
+}
+
+/// The record and the guardian are the only way back. Dropping them on one reading left a panel
+/// that fell out of the inventory again with nothing to recognise it by and nobody to restore it.
+@Test func theRecordAndTheGuardianOutliveASingleReadingSayingTheScreenIsOn() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.selectMode(.manual), at: 3000)
+  rig.send(.workerFinished(.done), at: 3010)
+  let first = rig.observe(at: 3020)
+  #expect(!first.contains(.clearRecord))
+  #expect(!first.contains(.releaseGuardian))
+  #expect(rig.state.record == panel)
+  #expect(rig.state.guardian == .ready)
+  let held = rig.observe(at: 4000)
+  #expect(!held.contains(.clearRecord))
+  // Once the screen has stayed on rather than merely been seen on, nothing is owed.
+  let settled = rig.observe(at: 5100)
+  #expect(settled.contains(.releaseGuardian))
+  #expect(settled.contains(.clearRecord))
 }
 
 @Test func aHungWorkerThatWorkedIsNotAFailure() {
@@ -151,11 +219,15 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
   rig.off()
   rig.observe(environment(panelState: .disabled, external: .no), at: 2100)
   rig.send(.workerFinished(.done), at: 2110)
-  let effects = rig.observe(environment(external: .no), at: 2120)
+  // Seen on is not the same as kept on, and the record is the only thing an absent panel would
+  // be recognised by, so it is not given up on the reading that first shows the screen back.
+  #expect(!rig.observe(environment(external: .no), at: 2120).contains(.releaseGuardian))
+  #expect(rig.state.record == panel)
+  let effects = rig.observe(environment(external: .no), at: 4200)
   #expect(effects.contains(.releaseGuardian))
   #expect(effects.contains(.clearRecord))
   #expect(rig.state.guardian == .absent)
-  rig.send(.recordCleared(succeeded: true), at: 2121)
+  rig.send(.recordCleared(succeeded: true), at: 4201)
   #expect(rig.state.record == nil)
 }
 
@@ -197,7 +269,8 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
   var now: Instant = 2010
   for _ in 0 ..< 3 {
     rig.send(.workerFinished(.failed), at: now)
-    rig.observe(at: now + 10)
+    // Nothing counts against a worker until its change has had the whole window to appear.
+    rig.observe(at: now + rig.state.policy.effectCap)
     now = rig.state.retryAt ?? now
     rig.observe(at: now)
   }
@@ -244,40 +317,59 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
 }
 
 @Test func theGuardianWaitsWhileTheAppIsThereWithAMonitor() {
-  var streak = 0
+  var streaks = GuardianPolicy.Streaks()
   #expect(
-    GuardianPolicy.decide(environment(panelState: .disabled), appAlive: true, dangerStreak: &streak)
+    GuardianPolicy.decide(environment(panelState: .disabled), appAlive: true, streaks: &streaks)
       == .wait
   )
-  #expect(GuardianPolicy.decide(environment(), appAlive: true, dangerStreak: &streak) == .wait)
+  #expect(GuardianPolicy.decide(environment(), appAlive: true, streaks: &streaks) == .wait)
+  // A panel that cannot be read is the app's to sort out first, for a few readings at least.
   #expect(
-    GuardianPolicy.decide(
-      environment(panelState: .unknown, external: .no), appAlive: false, dangerStreak: &streak
-    ) == .wait
+    GuardianPolicy.decide(environment(panelState: .unknown), appAlive: true, streaks: &streaks)
+      == .wait
   )
+}
+
+/// A panel that cannot be read is the state both halves of the safety net used to sit in for
+/// ever: the app decided nothing and the guardian waited, so the screen stayed off until the Mac
+/// was restarted. Nothing is owed by a guardian that was never given a panel, so this only ever
+/// runs where one was.
+@Test func theGuardianRestoresAPanelItCanNoLongerRead() {
+  var streaks = GuardianPolicy.Streaks()
+  let unreadable = environment(panelState: .unknown)
+  for _ in 1 ..< GuardianPolicy.unreadableReadings {
+    #expect(GuardianPolicy.decide(unreadable, appAlive: true, streaks: &streaks) == .wait)
+  }
+  #expect(GuardianPolicy.decide(unreadable, appAlive: true, streaks: &streaks) == .restore)
+  // A reading it can read again starts the count over.
+  #expect(GuardianPolicy.decide(environment(), appAlive: true, streaks: &streaks) == .wait)
+  #expect(GuardianPolicy.decide(unreadable, appAlive: true, streaks: &streaks) == .wait)
+  // With the app gone there is nobody else who could, so it does not wait at all.
+  var alone = GuardianPolicy.Streaks()
+  #expect(GuardianPolicy.decide(unreadable, appAlive: false, streaks: &alone) == .restore)
 }
 
 @Test func theGuardianRestoresOnlyOnceDangerHolds() {
-  var streak = 0
+  var streaks = GuardianPolicy.Streaks()
   let danger = environment(panelState: .disabled, external: .no)
-  #expect(GuardianPolicy.decide(danger, appAlive: true, dangerStreak: &streak) == .wait)
+  #expect(GuardianPolicy.decide(danger, appAlive: true, streaks: &streaks) == .wait)
   // A reading with a monitor in between starts the count again.
   #expect(
-    GuardianPolicy.decide(environment(panelState: .disabled), appAlive: true, dangerStreak: &streak)
+    GuardianPolicy.decide(environment(panelState: .disabled), appAlive: true, streaks: &streaks)
       == .wait
   )
-  #expect(GuardianPolicy.decide(danger, appAlive: true, dangerStreak: &streak) == .wait)
-  #expect(GuardianPolicy.decide(danger, appAlive: true, dangerStreak: &streak) == .restore)
+  #expect(GuardianPolicy.decide(danger, appAlive: true, streaks: &streaks) == .wait)
+  #expect(GuardianPolicy.decide(danger, appAlive: true, streaks: &streaks) == .restore)
 }
 
 @Test func theGuardianActsAtOnceWhenTheAppIsGone() {
-  var streak = 0
+  var streaks = GuardianPolicy.Streaks()
   #expect(
     GuardianPolicy.decide(
-      environment(panelState: .disabled), appAlive: false, dangerStreak: &streak
+      environment(panelState: .disabled), appAlive: false, streaks: &streaks
     ) == .restore
   )
-  #expect(GuardianPolicy.decide(environment(), appAlive: false, dangerStreak: &streak) == .finish)
+  #expect(GuardianPolicy.decide(environment(), appAlive: false, streaks: &streaks) == .finish)
 }
 
 /// A monitor SoloDisplay turned off is never danger: it is only ever turned off while another

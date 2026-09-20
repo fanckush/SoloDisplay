@@ -173,6 +173,11 @@ public struct Policy: Equatable, Sendable {
   public var settleCap: Instant = 5000
   /// Waits after an attempt that did not reach the wanted state. The last one repeats.
   public var retryDelays: [Instant] = [500, 1000, 2000, 5000, 10000, 30000]
+  /// A display keeps reporting the reconfiguration a worker caused for a while after that worker
+  /// exits, and it appears in the inventory only once that is over. A reading that does not yet
+  /// show what was asked for is read as a failure only after this long without a report. It is
+  /// the backstop for a Mac whose reports never go quiet, not the thing being waited for.
+  public var effectCap: Instant = 5000
   /// Attempts that miss in a row before the menu says so. Attempts continue either way.
   public var troubleAfter = 3
   /// How often the monitors are asked what they are showing.
@@ -233,6 +238,11 @@ public struct ControllerState: Equatable, Sendable {
   /// that has not finished yet. Evidence for settling only, never for writing.
   public var lastDisplayChange: Instant?
   public var displayConfiguring = false
+  /// When the laptop screen was last seen in a different state than the reading before it. The
+  /// record and the guardian are the only way to put the screen back, so giving them up waits on
+  /// this rather than on one reading: `stableSince` is anchored to the prerequisites, which our
+  /// own panel change deliberately leaves alone, so it is already stale by the time it is asked.
+  public var panelStateSince: Instant?
   /// The panel the record on disk names. Its absence reads as SoloDisplay's own suppression.
   public var record: PanelTarget?
   /// A record write, clear, or reconciliation is running.
@@ -377,7 +387,7 @@ public enum Trouble: String, Codable, CaseIterable, Sendable {
 
 /// Why the laptop screen cannot be off right now.
 public enum Unavailability: String, Codable, CaseIterable, Equatable, Sendable {
-  case noObservation, noConfirmedPanel, lidClosed, notAwake, sessionNotForeground
+  case noObservation, noConfirmedPanel, panelUnreadable, lidClosed, notAwake, sessionNotForeground
   case noNativeExternal, unsupportedTopology, monitorShowsAnotherMachine, settling, notRunning
 }
 

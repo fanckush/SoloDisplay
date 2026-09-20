@@ -62,6 +62,16 @@ struct MenuModelTests {
     #expect(shown.glyph == .allMonitors)
   }
 
+  /// A panel that cannot be read is said so, rather than being reported as a screen that stays
+  /// on. It is a passing state that SoloDisplay is already working its way out of, so unlike a
+  /// Mac with no built-in screen it never takes the choice away.
+  @Test func anUnreadableScreenIsSaidRatherThanReportedAsOn() {
+    let shown = menuPanel(.init(working: true, unavailability: .panelUnreadable))
+    #expect(shown.reality == MenuModel.reason(.panelUnreadable))
+    #expect(shown.reality != "Your laptop screen stays on.")
+    #expect(shown.externalOnly.isEnabled && shown.allMonitors.isEnabled)
+  }
+
   @Test func onlyAMacWithNoBuiltInScreenOrAFailedStartCannotPickExternalOnly() {
     let mini = menuPanel(.init(unavailability: .noConfirmedPanel))
     #expect(!mini.externalOnly.isEnabled)

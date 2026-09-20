@@ -24,24 +24,44 @@ public enum GuardianPolicy {
   /// Readings in a row that must show danger before acting, so one odd reading during a
   /// reconfiguration the app is already handling does not start a second writer.
   public static let dangerReadings = 2
+  /// Readings in a row that must leave the panel unreadable before acting on that alone. Longer
+  /// than `dangerReadings`, because a panel is briefly unreadable during any ordinary
+  /// reconfiguration and the app is the one that should handle those.
+  public static let unreadableReadings = 5
+
+  /// What this process has seen in a row. A panel that cannot be read and a panel that is off
+  /// with nothing to look at are different dangers and are counted apart.
+  public struct Streaks: Equatable, Sendable {
+    public var danger = 0
+    public var unreadable = 0
+    public init() {}
+  }
 
   public static func decide(
-    _ environment: Environment, appAlive: Bool, dangerStreak: inout Int
+    _ environment: Environment, appAlive: Bool, streaks: inout Streaks
   ) -> GuardianAction {
     switch environment.panelState {
     case .unknown:
-      return .wait
+      // The guardian exists only because this panel was owed. With no way to read it, waiting
+      // for evidence that may never come is how a screen stays off until the Mac is restarted,
+      // and turning on a panel that is already on costs nothing. The app being gone is certainty
+      // enough on its own; while it is still there, it gets a few readings to sort this out.
+      streaks.danger = 0
+      guard appAlive else { return .restore }
+      streaks.unreadable += 1
+      return streaks.unreadable >= unreadableReadings ? .restore : .wait
     case .enabled:
-      dangerStreak = 0
+      streaks = .init()
       return appAlive ? .wait : .finish
     case .disabled:
+      streaks.unreadable = 0
       guard appAlive else { return .restore }
       guard environment.nativeExternalAvailable != .yes else {
-        dangerStreak = 0
+        streaks.danger = 0
         return .wait
       }
-      dangerStreak += 1
-      return dangerStreak >= dangerReadings ? .restore : .wait
+      streaks.danger += 1
+      return streaks.danger >= dangerReadings ? .restore : .wait
     }
   }
 }

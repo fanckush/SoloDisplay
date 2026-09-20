@@ -30,6 +30,9 @@ public enum Controller {
         state.lastCountedSample = sample.sampledAt
         state.matchingSamples = 1
       }
+      if state.observation?.environment.panelState != sample.environment.panelState {
+        state.panelStateSince = sample.sampledAt
+      }
       state.observation = sample
       judgeFinishedWorker(&state, at: now)
     case let .displayReconfigured(inProgress):
@@ -348,9 +351,17 @@ public enum Controller {
   /// What the laptop screen should be, or nil when nothing should be changed right now: the Mac
   /// is asleep or closed, the panel cannot be identified, or an arrangement is still settling.
   static func desired(_ state: ControllerState, at now: Instant) -> PanelState? {
-    guard let environment = state.observation?.environment, environment.visibilityExpected,
-          environment.panel != nil, environment.panelState != .unknown
+    guard let environment = state.observation?.environment, environment.visibilityExpected
     else { return nil }
+    // A panel that cannot be read, while the record says one of ours may be off, is an obligation
+    // that cannot be verified. The safe direction is on: turning on a panel that is already on
+    // changes nothing, and the worker checks the identity itself before it calls. Without a
+    // record nothing is owed, and an unreadable panel is left alone, which is also every Mac
+    // that has no built-in screen at all.
+    if environment.panelState == .unknown {
+      return state.record != nil ? .enabled : nil
+    }
+    guard environment.panel != nil else { return nil }
     // A monitor showing another machine is a reason to refuse, never a reason to act. While the
     // screen is on, one answer is enough to withhold, because withholding changes nothing. While
     // it is off, putting it back is a change, so that waits for the answer to repeat.
@@ -373,9 +384,18 @@ public enum Controller {
   private static func act(_ state: inout ControllerState, effects: inout [Effect],
                           at now: Instant) {
     guard state.worker == nil, !state.recordBusy, now >= (state.retryAt ?? now),
-          let environment = state.observation?.environment, let panel = environment.panel,
+          let environment = state.observation?.environment,
           let desired = desired(state, at: now)
     else { return }
+    // An unreadable panel has no live entry, so only the record names what to address. Turning
+    // one off is never done from a record: that still needs a panel this reading can see.
+    if environment.panelState == .unknown {
+      guard desired == .enabled, let target = state.record else { return }
+      state.worker = .init(action: .enable, target: target, startedAt: now)
+      effects.append(.runWorker(.enable, target))
+      return
+    }
+    guard let panel = environment.panel else { return }
     switch (desired, environment.panelState) {
     case (.disabled, .enabled):
       if state.record != panel {
@@ -400,6 +420,13 @@ public enum Controller {
     case (.enabled, .enabled):
       // The screen is on and staying on, so nothing is owed any more. A monitor that is off is
       // still owed, though, and the guardian is the only thing that would give it back.
+      // One reading is not enough to give up the only means of putting the screen back: the same
+      // agreement that starts a change ends one. A panel that drops out again after a single
+      // reading said it was on would otherwise be left with no record to be recognised by and no
+      // guardian to restore it.
+      guard isSettled(state, at: now), let onSince = state.panelStateSince,
+            now - onSince >= state.policy.stableFor
+      else { break }
       if state.guardian != .absent, state.suppressed.isEmpty {
         state.guardian = .absent
         state.guardianTargets = []
@@ -416,32 +443,64 @@ public enum Controller {
 
   /// A finished worker is judged only by a reading sampled after it finished. Its exit status
   /// says nothing about the display: a hung call can have worked, and a returned one can have not.
+  /// Neither does a reading taken while macOS is still carrying the change out, so a reading that
+  /// does not show it yet only counts against the worker once the display has gone quiet.
   private static func judgeFinishedWorker(_ state: inout ControllerState, at now: Instant) {
     guard let worker = state.worker, let finished = worker.finishedAt,
           let sample = state.observation, sample.sampledAt >= finished
     else { return }
+    let landed = workerLanded(worker, sample: sample)
+    // Only the laptop screen waits for its change to appear. A monitor is judged on the reading
+    // that follows and given up on quickly, because the screen must never queue behind one that
+    // cannot be reached: an unplugged monitor's ID names nothing and no waiting will change that.
+    guard landed || worker.target.kind == .external
+      || effectSettled(state, since: finished, at: now)
+    else { return }
     state.worker = nil
     if worker.target.kind == .external {
-      judgeFinishedMonitorWorker(&state, worker: worker, sample: sample, at: now)
+      judgeFinishedMonitorWorker(&state, worker: worker, landed: landed, at: now)
       return
     }
-    let wanted: PanelState = worker.action == .disable ? .disabled : .enabled
-    if sample.environment.panelState == wanted {
+    if landed {
       clearBackoff(&state)
     } else {
       backOff(&state, at: now)
     }
   }
 
-  /// A monitor that was turned off leaves the inventory; one that came back is in it again.
-  /// The call returning says nothing, the same as everywhere else.
-  private static func judgeFinishedMonitorWorker(
-    _ state: inout ControllerState, worker: RunningWorker, sample: Observation, at now: Instant
-  ) {
+  /// Whether a reading shows what a worker was asked for. A laptop panel that was turned off has
+  /// no live entry to read an identity from; a monitor that was turned off leaves the inventory.
+  static func workerLanded(_ worker: RunningWorker, sample: Observation) -> Bool {
+    guard worker.target.kind == .external else {
+      let wanted: PanelState = worker.action == .disable ? .disabled : .enabled
+      return sample.environment.panelState == wanted
+    }
     let live = sample.environment.externals.contains {
       $0.target.displayUUID == worker.target.displayUUID && !$0.suppressed
     }
-    let landed = worker.action == .disable ? !live : live
+    return worker.action == .disable ? !live : live
+  }
+
+  /// The display has stopped reporting the reconfiguration a worker caused. Anchored to the
+  /// worker rather than to `stableSince`, because our own panel change deliberately does not
+  /// restart settling and would leave that anchor stale. A change nothing has reported at all
+  /// waits out `effectCap`, which is the conservative direction: a panel that has not come back
+  /// yet has not failed, and asking again while it is on its way is how two writers start.
+  static func effectSettled(_ state: ControllerState, since finished: Instant,
+                            at now: Instant) -> Bool {
+    if now - finished >= state.policy.effectCap {
+      return true
+    }
+    guard !state.displayConfiguring, let change = state.lastDisplayChange, change >= finished
+    else { return false }
+    return now - change >= state.policy.quietFor
+  }
+
+  /// A monitor that was turned off leaves the inventory; one that came back is in it again.
+  /// The call returning says nothing, the same as everywhere else.
+  private static func judgeFinishedMonitorWorker(
+    _ state: inout ControllerState, worker: RunningWorker, landed: Bool, at now: Instant
+  ) {
     guard !landed else {
       state.monitorAttempts[worker.target.displayUUID] = nil
       if let controller = worker.target.controller {
@@ -482,6 +541,18 @@ public enum Controller {
        sample.environment.panelState == .enabled, let check = nextSettleCheck(state),
        check > sample.sampledAt {
       effects.append(.observeAt(check))
+    }
+    // A worker whose change has not appeared yet is judged on a reading, so one is asked for at
+    // the first instant a verdict could be reached rather than at the next periodic refresh.
+    if let worker = state.worker, let finished = worker.finishedAt,
+       worker.target.kind != .external {
+      var check = finished + state.policy.effectCap
+      if let change = state.lastDisplayChange, change >= finished {
+        check = min(check, change + state.policy.quietFor)
+      }
+      if check > now {
+        effects.append(.observeAt(check))
+      }
     }
     if let retryAt = state.retryAt, retryAt > now {
       effects.append(.wakeAt(retryAt))
@@ -531,6 +602,11 @@ public extension Controller {
   /// The first reason the laptop screen cannot be off, in the order the controller checks them.
   static func unavailability(_ state: ControllerState, at now: Instant) -> Unavailability? {
     guard let environment = state.observation?.environment else { return .noObservation }
+    // A panel that cannot be read while the record says one may be off is not a Mac without a
+    // built-in screen. It is one whose screen SoloDisplay is still answering for.
+    if environment.panelState == .unknown, state.record != nil {
+      return .panelUnreadable
+    }
     if environment.panel == nil {
       return .noConfirmedPanel
     }
@@ -575,9 +651,10 @@ public extension Controller {
   static func presentation(_ state: ControllerState, at now: Instant) -> Presentation {
     let actual = state.observation?.environment.panelState
     let heading = desired(state, at: now)
+    // An unreadable panel is one of the states a change is still heading away from, so comparing
+    // against what is wanted covers it without naming it.
     let working = state.worker != nil || state.guardian == .starting
-      || (heading == .disabled && actual == .enabled)
-      || (heading == .enabled && actual == .disabled)
+      || (heading != nil && heading != actual)
     var shown = Presentation(
       wantsInternalOff: state.wantsOff, panelOff: actual == .disabled, working: working,
       trouble: trouble(state), unavailability: unavailability(state, at: now)

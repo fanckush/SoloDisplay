@@ -205,7 +205,7 @@ final class GuardianRuntime {
   private var request: GuardianRequest?
   private var lock: SessionWriterLock?
   private var appAlive = true
-  private var dangerStreak = 0
+  private var streaks = GuardianPolicy.Streaks()
   /// Everything owed right now, replaced whole whenever the app says so. It starts as what the
   /// request named and grows when the app turns something else off.
   private var monitors: [PanelTarget] = []
@@ -325,7 +325,7 @@ final class GuardianRuntime {
     let panelAction: GuardianAction = if panel == nil {
       appAlive ? .wait : .finish
     } else {
-      GuardianPolicy.decide(environment, appAlive: appAlive, dangerStreak: &dangerStreak)
+      GuardianPolicy.decide(environment, appAlive: appAlive, streaks: &streaks)
     }
     // The laptop screen comes first: nobody can act on a monitor they cannot see.
     if case .restore = panelAction, let panel {
