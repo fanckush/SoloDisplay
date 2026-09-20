@@ -73,10 +73,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     update(store.panel)
     // A new view on every open, so nothing is carried over from the last time the menu was open.
     let hosting = NSHostingView(rootView: ArrangementView(store: store))
-    // Sized from its content: the line under the cards runs to one, two or three lines.
-    hosting.sizingOptions = [.intrinsicContentSize]
-    hosting.translatesAutoresizingMaskIntoConstraints = false
-    hosting.widthAnchor.constraint(equalToConstant: ArrangementView.width).isActive = true
+    // Measured and sized here, before the menu asks. A menu asks an item's view for its size as
+    // it opens and does not ask again, so a view that only reaches its size at the next layout
+    // opens the menu at the wrong width until something else makes it lay out.
+    hosting.frame = .init(origin: .zero, size: hosting.fittingSize)
+    // The menu is as wide as its widest item, which is usually one of the standard ones. The row
+    // follows that width rather than sitting at its own, so the cards line up with everything
+    // below them instead of leaving a gap down one side.
+    hosting.autoresizingMask = [.width]
     arrangementItem.view = hosting
   }
 

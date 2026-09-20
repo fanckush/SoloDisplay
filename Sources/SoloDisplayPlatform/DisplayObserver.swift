@@ -42,6 +42,9 @@ public struct PlatformReading: Codable, Sendable {
   public var privateSymbol: String?
   /// Kept verbatim so a transport decision can be inspected rather than taken on trust.
   public var transportEvidence: [TransportEvidence] = []
+  /// The DDC endpoint, such as `dispext0`, behind each external display that has one. Learned
+  /// while the display is visible, because a display that is off cannot be correlated at all.
+  public var controllers: [UInt32: String] = [:]
   public var limitations: [String]
 
   public var mirroringDetected: Bool {
@@ -148,7 +151,8 @@ public enum DisplayObserver {
       displays: displays, lid: lid, bootID: bootID,
       loginID: sessionResult == errSecSuccess ? loginID : nil,
       foregroundSession: foreground, privateSymbol: api.symbolName,
-      transportEvidence: evidence, limitations: limitations
+      transportEvidence: evidence,
+      controllers: IOAVServiceDDC.controllers(in: evidence), limitations: limitations
     )
   }
 }

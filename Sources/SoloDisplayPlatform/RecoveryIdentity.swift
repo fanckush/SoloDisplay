@@ -20,8 +20,12 @@ public enum RecoveryIdentity {
     guard (try? checkCurrentDisplays(reading.displays, target: target)) != nil else {
       return .blocked
     }
+    // The lid rule is about the laptop panel, whose restoration would be invisible and undone
+    // again with the lid shut. A monitor must not wait on it: with the lid closed that monitor
+    // may be the only screen there is.
     guard reading.bootID != nil, reading.loginID != nil,
-          reading.foregroundSession == .yes, reading.lid == .open
+          reading.foregroundSession == .yes,
+          target.kind != .builtIn || reading.lid == .open
     else { return .waiting }
     if !reading.displays.isEmpty && reading.displays.allSatisfy(\.asleep) {
       return .waiting
@@ -50,11 +54,16 @@ public enum RecoveryIdentity {
 
   public static func checkCurrentDisplays(_ displays: [DisplayReading],
                                           target: PanelTarget) throws {
+    // Whatever lives at the recorded ID now must be the screen that was recorded there. Display
+    // IDs are reused, so a monitor that inherited one must never be changed in another's name.
     if let current = displays.first(where: { $0.id == target.displayID }) {
-      guard current.builtIn, current.uuid == target.displayUUID else {
+      guard current.builtIn == (target.kind == .builtIn), current.uuid == target.displayUUID else {
         throw IdentityError.contradictoryTarget
       }
     }
+    // A built-in that is not the recorded one means the record names another Mac's panel. There
+    // is no external equivalent: several externals at once are ordinary.
+    guard target.kind == .builtIn else { return }
     if displays.contains(where: {
       $0.builtIn && ($0.id != target.displayID || $0.uuid != target.displayUUID)
     }) {
@@ -68,9 +77,9 @@ public enum IdentityError: Error, CustomStringConvertible {
   public var description: String {
     switch self {
     case .insufficientEvidence:
-      "SoloDisplay cannot establish fresh authority for this internal panel. The record was retained."
+      "SoloDisplay cannot establish fresh authority for this display. The record was retained."
     case .contradictoryTarget:
-      "Live evidence contradicts the recorded built-in target. No change made."
+      "Live evidence contradicts the recorded display. No change made."
     }
   }
 }

@@ -25,6 +25,20 @@ private func record(
 }
 
 struct ProductionJournalTests {
+  /// The record is written beside the old one and renamed over it, so a crash mid-write cannot
+  /// leave a panel suppressed with no record of who owns it.
+  @Test func aRecordIsNeverAbsentWhileItIsBeingReplaced() throws {
+    let directory = try workspace()
+    let store = try ProductionJournalStore(directory: directory)
+    let leftover = directory.appendingPathComponent("recovery.json.new", isDirectory: false)
+    try Data("half a record from a crash".utf8).write(to: leftover)
+
+    try store.prepare(record())
+    #expect(try store.load()?.target == target)
+    // The leftover named nothing and was replaced rather than read.
+    #expect(!FileManager.default.fileExists(atPath: leftover.path))
+  }
+
   @Test func aRecordIsWrittenPrivatelyAndNeverSilentlyReplacedByAnotherPanel() throws {
     let store = try ProductionJournalStore(directory: workspace())
     try store.prepare(record())

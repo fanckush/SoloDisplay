@@ -15,6 +15,13 @@ public protocol PlatformObserving: Sendable {
 /// guardian. It always answers, even with nothing, and never throws.
 public protocol InputSourceObserving: Sendable {
   func read() -> [InputSourceEvidence]
+  /// Told about every reading, so it knows which endpoint carries which monitor before one of
+  /// them stops being visible. It never takes a reading itself.
+  func learn(_ reading: PlatformReading)
+}
+
+public extension InputSourceObserving {
+  func learn(_: PlatformReading) {}
 }
 
 public protocol DisplayWriting: Sendable {
@@ -30,6 +37,15 @@ public protocol OwnershipPersisting: Sendable {
     -> JournalReconciliation
 }
 
+/// Keeps the set of monitors this run has turned off. Separate from the panel's record, which
+/// governs whether anything may be turned off at all.
+public protocol SuppressionPersisting: Sendable {
+  func save(_ targets: [PanelTarget], session: String) throws
+  func clear() throws
+  /// What a previous run of this app left turned off, as far as the record knows.
+  func suppressedTargets() -> [PanelTarget]
+}
+
 public protocol PreferencePersisting: Sendable {
   func save(mode: Mode) throws
 }
@@ -37,9 +53,11 @@ public protocol PreferencePersisting: Sendable {
 /// Starts the guardian child and reports on it. Callbacks arrive on the main actor.
 @MainActor public protocol GuardianControlling: AnyObject {
   func spawn(
-    target: PanelTarget, ready: @escaping @MainActor () -> Void,
+    targets: [PanelTarget], ready: @escaping @MainActor () -> Void,
     gone: @escaping @MainActor () -> Void
   )
+  /// Everything owed now, as a whole set, for a guardian that is already running.
+  func update(targets: [PanelTarget])
   /// Tells the guardian nothing is owed, so it exits without touching the display.
   func release()
 }
@@ -158,6 +176,7 @@ public final class ProductionCoordinator {
   /// Bumped on every spawn and release, so a late callback from an earlier guardian is ignored.
   private var guardianGeneration: UInt64 = 0
   private let inputSources: (any InputSourceObserving)?
+  private let suppression: (any SuppressionPersisting)?
   private let inputLane: any SerialLane
   /// One sweep at a time: a monitor that never answers must not queue more behind it.
   private var inputSweepInFlight = false
@@ -167,6 +186,7 @@ public final class ProductionCoordinator {
     writer: any DisplayWriting, ownership: any OwnershipPersisting,
     preferences: any PreferencePersisting, guardian: (any GuardianControlling)?,
     delegate: (any CoordinatorDelegate)?, inputSources: (any InputSourceObserving)? = nil,
+    suppression: (any SuppressionPersisting)? = nil,
     lane: any SerialLane = DispatchLane(),
     storageLane: any SerialLane = DispatchLane(label: "dev.solodisplay.storage"),
     workerLane: any SerialLane = DispatchLane(label: "dev.solodisplay.worker"),
@@ -183,6 +203,7 @@ public final class ProductionCoordinator {
     self.guardian = guardian
     self.delegate = delegate
     self.inputSources = inputSources
+    self.suppression = suppression
     self.lane = lane
     self.inputLane = inputLane
     self.storageLane = storageLane
@@ -206,6 +227,23 @@ public final class ProductionCoordinator {
   /// A display callback or workspace notification only ever schedules a reading.
   public func platformDidChange() {
     observe()
+  }
+
+  /// Monitors a previous run left turned off. Only this boot and login can name them: a restart
+  /// or a new login has already given them back, and an ID from another one names nothing here.
+  public nonisolated static func resolveSuppression(
+    _ store: (any SuppressionPersisting)?, reading: PlatformReading?
+  ) -> [PanelTarget] {
+    guard let store else { return [] }
+    let targets = store.suppressedTargets()
+    guard let reading, let bootID = reading.bootID, let loginID = reading.loginID else {
+      return []
+    }
+    let mine = targets.filter { $0.bootID == bootID && $0.loginID == loginID }
+    if mine.isEmpty, !targets.isEmpty {
+      try? store.clear()
+    }
+    return mine
   }
 
   /// What a leftover record means at launch. A record that names nothing in this session is
@@ -256,10 +294,19 @@ public final class ProductionCoordinator {
   }
 
   private func tick() {
-    if let sample = state.observation, clock.now() - sample.sampledAt >= 2000 {
+    if let sample = state.observation, clock.now() - sample.sampledAt >= staleness(sample) {
       observe()
     }
     send(.tick)
+  }
+
+  /// How old a reading may be before another is taken. A monitor that has just come back is
+  /// there before it can be told apart, and becoming identifiable raises no display callback, so
+  /// an inconclusive reading is looked at again sooner. It only changes when the answer is
+  /// noticed: how long a decision waits is settling and the monitors' own clock, neither of
+  /// which counts readings.
+  private func staleness(_ sample: Observation) -> Instant {
+    sample.environment.nativeExternalAvailable == .unknown ? 500 : 2000
   }
 
   private func recordDiagnostics(for event: Event) {
@@ -302,6 +349,13 @@ public final class ProductionCoordinator {
       scheduleObservation(at: instant, from: now)
     case .readInputSources:
       readInputSources(at: now)
+    case let .recordSuppression(targets):
+      diagnostics.emit(.monitorSuppressing, session: session) {
+        $0.failures = targets.count
+      }
+      recordSuppression(targets)
+    case let .updateGuardian(targets):
+      guardian?.update(targets: targets)
     case let .wakeAt(instant):
       scheduler.after(Double(max(instant - now, 0)) / 1000) { [weak self] in self?.send(.tick) }
     case let .savePreferences(mode):
@@ -330,13 +384,18 @@ public final class ProductionCoordinator {
         let resolved = Self.resolveRecord(ownership, reading: reading)
         return .recordReconciled(resolved.target, blocked: resolved.blocked)
       } completion: { [weak self] in self?.send($0) }
-    case let .spawnGuardian(target):
-      spawnGuardian(target)
+    case let .spawnGuardian(targets):
+      spawnGuardian(targets)
     case .releaseGuardian:
       guardianGeneration &+= 1
       diagnostics.emit(.guardianReleased, session: session)
       guardian?.release()
     case let .runWorker(action, target):
+      if target.kind == .external {
+        diagnostics.emit(
+          action == .enable ? .monitorRestoring : .monitorSuppressing, session: session
+        ) { $0.workerAction = action }
+      }
       let writer = writer
       diagnostics.emit(.workerStarted, session: session) { $0.workerAction = action }
       workerLane.run {
@@ -363,7 +422,7 @@ public final class ProductionCoordinator {
     } completion: { [weak self] in self?.send($0) }
   }
 
-  private func spawnGuardian(_ target: PanelTarget) {
+  private func spawnGuardian(_ targets: [PanelTarget]) {
     guardianGeneration &+= 1
     let generation = guardianGeneration
     diagnostics.emit(.guardianStarted, session: session)
@@ -372,7 +431,7 @@ public final class ProductionCoordinator {
       return
     }
     guardian.spawn(
-      target: target,
+      targets: targets,
       ready: { [weak self] in
         guard let self, guardianGeneration == generation else { return }
         send(.guardianReady)
@@ -403,17 +462,43 @@ public final class ProductionCoordinator {
       guard let self else { return }
       observationInFlight = false
       lastReading = reading
+      // Before anything is judged: a monitor can only be correlated while it is still visible.
+      inputSources?.learn(reading)
       // The record, read now rather than at dispatch, is what makes an absent panel readable as
       // SoloDisplay's own suppression.
       let owned = state.record.map { OwnedPanelContext(target: $0, disableReturned: true) }
       let power = Self.reconciledLifecycle(reading, current: lifecycle)
-      let environment = ControllerObservation.environment(reading, power: power, owned: owned)
+      let environment = ControllerObservation.environment(
+        reading, power: power, owned: owned, suppressedExternals: state.suppressed
+      )
       send(.observed(.init(sequence: sequence, sampledAt: sampledAt, environment: environment)))
       if observeAgain {
         observeAgain = false
         observe()
       }
     }
+  }
+
+  /// Writes the set of monitors this run has turned off, before any of them is turned off. An
+  /// empty set is the record going away rather than a record of nothing.
+  private func recordSuppression(_ targets: [PanelTarget]) {
+    guard let suppression else {
+      send(.suppressionRecorded(targets, succeeded: false))
+      return
+    }
+    let session = session
+    storageLane.run {
+      do {
+        if targets.isEmpty {
+          try suppression.clear()
+        } else {
+          try suppression.save(targets, session: session)
+        }
+        return .suppressionRecorded(targets, succeeded: true)
+      } catch {
+        return .suppressionRecorded(targets, succeeded: false)
+      }
+    } completion: { [weak self] in self?.send($0) }
   }
 
   /// Asks every monitor what it is showing. The answer is one verdict for the whole arrangement,
@@ -435,8 +520,10 @@ public final class ProductionCoordinator {
       send(.inputSourcesRead(.unknown, sampledAt: clock.now()))
     }
     inputLane.run {
-      .inputSourcesRead(
-        InputSourceClassifier.showingThisMac(inputSources.read()), sampledAt: sampledAt
+      let evidence = inputSources.read()
+      return .inputSourcesRead(
+        InputSourceClassifier.showingThisMac(evidence),
+        monitors: InputSourceClassifier.perMonitor(evidence), sampledAt: sampledAt
       )
     } completion: { [weak self] event in
       self?.inputSweepInFlight = false

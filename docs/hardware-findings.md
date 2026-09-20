@@ -108,3 +108,10 @@ chronological record of the earlier experiments.
   through `CGGetOnlineDisplayList` and did go blind, so it is the wrong enumeration for that.
   The controller-to-display correlation also has to be remembered from before the display was
   disabled, since transport classification needs a CoreGraphics display to correlate.
+- **Turning off a monitor other screens mirror collapses the mirror rather than blanking them**
+  (2026-09-20, probe). With the laptop panel following the Dell, disabling the Dell left the
+  panel `active`, `main`, and out of the mirror set within 1.5s, and it stayed that way. Turning
+  the Dell back on restored the mirror exactly as it was, the panel following it again. So a
+  follower counts as a screen that will still be there afterwards, and the rule worth enforcing
+  is that something visible remains rather than that nothing may follow. Measured on one Mac with
+  one monitor: a follower that is itself an external is untested.

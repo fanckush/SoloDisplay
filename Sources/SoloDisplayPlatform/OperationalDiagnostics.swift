@@ -23,12 +23,16 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
     case workerStarted, workerFinished
     case guardianStarted, guardianReady, guardianGone, guardianReleased, guardianRestoring
     case childExited, exportRequested, exportCompleted, exportFailed
+    /// A monitor was recorded as owed, or given back. What a monitor is showing is never in a
+    /// record: only that this app turned one off, and how many.
+    case monitorSuppressing, monitorRestoring
 
     public var category: Category {
       switch self {
       case .journalPreparing, .journalPrepared, .journalClearing, .journalCleared,
            .workerStarted, .workerFinished, .guardianStarted, .guardianReady, .guardianGone,
-           .guardianReleased, .guardianRestoring, .childExited:
+           .guardianReleased, .guardianRestoring, .childExited,
+           .monitorSuppressing, .monitorRestoring:
         .recovery
       case .exportRequested, .exportCompleted, .exportFailed: .diagnostics
       default: .lifecycle
@@ -104,6 +108,9 @@ public struct OperationalEnvironment: Codable, Equatable, Sendable {
   public var nativeExternalAvailable: Fact
   public var supportedTopology: Fact
   public var panelState: PanelState
+  /// Monitors that could be turned off, and monitors this app has turned off.
+  public var monitors: Int
+  public var monitorsOff: Int
   public init(_ environment: Environment) {
     power = environment.power
     lid = environment.lid
@@ -111,6 +118,8 @@ public struct OperationalEnvironment: Codable, Equatable, Sendable {
     nativeExternalAvailable = environment.nativeExternalAvailable
     supportedTopology = environment.supportedTopology
     panelState = environment.panelState
+    monitors = environment.externals.count { $0.suppressible }
+    monitorsOff = environment.externals.count { $0.suppressed }
   }
 }
 

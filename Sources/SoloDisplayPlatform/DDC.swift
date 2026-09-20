@@ -144,7 +144,12 @@ public enum IOAVServiceDDC {
   /// The display controller behind each display, for displays that can be told apart for
   /// certain. Built-in panels and displays outside the SoC pipeline are left out.
   public static func controllers(forDisplays ids: [UInt32]) -> [UInt32: String] {
-    let evidence = DisplayTransportClassifier.evidence(for: ids.map { ($0, false) })
+    controllers(in: DisplayTransportClassifier.evidence(for: ids.map { ($0, false) }))
+  }
+
+  /// The same correlation over evidence already gathered, so a caller that has taken a reading
+  /// does not enumerate IOKit again to learn which endpoint carries which display.
+  public static func controllers(in evidence: [TransportEvidence]) -> [UInt32: String] {
     var found: [UInt32: String] = [:]
     for item in evidence where item.transport == .native {
       guard let index = item.providerChain

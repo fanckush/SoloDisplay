@@ -2,7 +2,7 @@
 
 ## 1. Objective and source of truth
 
-Deliver a usable local menu-bar app using the existing controller and demonstrated recovery behavior. Preserve the original product decisions: manual default, opt-in automatic mode, persistent Keep Internal On, login off by default, no normal-use countdowns, and no changes to external-display configuration. Brightness is the one exception: the opt-in brightness keys setting, added 2026-09-17, sets the external monitor's brightness while the laptop screen is off.
+Deliver a usable local menu-bar app using the existing controller and demonstrated recovery behavior. Preserve the original product decisions: manual default, opt-in automatic mode, persistent Keep Internal On, login off by default, no normal-use countdowns, and no changes to external-display configuration. There are two exceptions, both limited to what a monitor says about itself: the opt-in brightness keys setting, added 2026-09-17, sets the external monitor's brightness while the laptop screen is off; and from 2026-09-20 a monitor that reports over DDC that it is showing another machine is turned off, and turned back on when it stops saying so.
 
 **Mirroring preservation is required for the first usable local build.** A successful mirrored round trip is evidence for that topology, not authorization to skip its remaining recovery tests.
 

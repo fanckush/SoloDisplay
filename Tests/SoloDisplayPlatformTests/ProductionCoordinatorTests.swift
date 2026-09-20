@@ -19,12 +19,18 @@ private final class FakeClock: CoordinatorClock {
 
 private final class FakeObserver: PlatformObserving {
   private let value: Mutex<PlatformReading>
+  private let reads = Mutex(0)
   init(_ reading: PlatformReading) {
     value = .init(reading)
   }
 
+  var readCount: Int {
+    reads.withLock { $0 }
+  }
+
   func read() -> PlatformReading {
-    value.withLock { $0 }
+    reads.withLock { $0 += 1 }
+    return value.withLock { $0 }
   }
 
   func set(_ reading: PlatformReading) {
@@ -128,17 +134,23 @@ private final class FakePreferences: PreferencePersisting {
 
 @MainActor private final class FakeGuardian: GuardianControlling {
   var spawned: [PanelTarget] = []
+  /// Every set of targets it has been told about, in order.
+  var owed: [[PanelTarget]] = []
   var released = 0
   private var ready: (@MainActor () -> Void)?
   private var gone: (@MainActor () -> Void)?
 
   func spawn(
-    target: PanelTarget, ready: @escaping @MainActor () -> Void,
+    targets: [PanelTarget], ready: @escaping @MainActor () -> Void,
     gone: @escaping @MainActor () -> Void
   ) {
-    spawned.append(target)
+    spawned.append(contentsOf: targets)
     self.ready = ready
     self.gone = gone
+  }
+
+  func update(targets: [PanelTarget]) {
+    owed.append(targets)
   }
 
   func release() {
@@ -198,8 +210,21 @@ private struct SyncLane: SerialLane {
     }
   }
 
-  func startRepeating(_: Double, _: @escaping @MainActor () -> Void) {}
-  func stopRepeating() {}
+  private var repeating: (@MainActor () -> Void)?
+
+  func startRepeating(_: Double, _ fire: @escaping @MainActor () -> Void) {
+    repeating = fire
+  }
+
+  /// One turn of the controller's own timer, which is what decides whether a fresh reading is
+  /// due. Sending a tick event alone skips that.
+  func fireRepeating() {
+    repeating?()
+  }
+
+  func stopRepeating() {
+    repeating = nil
+  }
 }
 
 // MARK: - Fixtures
@@ -260,7 +285,13 @@ private final class FakeInputSources: InputSourceObserving {
     case .otherMachine: .init(current: 0x1B0F, maximum: 0x1B1B)
     case .unknown: nil
     }
-    state.withLock { $0.evidence = [.init(controller: "dispext0", reply: reply)] }
+    // Correlated, the way a monitor that has been seen at least once always is.
+    let monitor = PanelTarget(
+      displayID: 2, displayUUID: "external", bootID: "boot", loginID: 7
+    )
+    state.withLock {
+      $0.evidence = [.init(controller: "dispext0", target: monitor, reply: reply)]
+    }
   }
 
   /// A sweep that does not come back, the way a monitor that takes the bus and holds it behaves.
@@ -533,5 +564,47 @@ struct InputSourceCoordinatorTests {
     harness.turnOff()
     #expect(harness.writer.calls == [.init(enabled: false, displayID: 1)])
     #expect(harness.inputSources.calls == 0)
+  }
+}
+
+/// A monitor that has just come back is there before it can be told apart, and becoming
+/// identifiable raises no display callback. An inconclusive reading is therefore looked at again
+/// sooner, which changes when the answer is noticed and nothing about when anything is decided.
+@MainActor
+struct InconclusiveReadingTests {
+  @Test func anInconclusiveReadingIsLookedAtAgainSooner() {
+    let harness = Harness(reading: reading(externalTransport: .unclassified))
+    harness.coordinator.start()
+    harness.step(to: 0)
+    let afterFirst = harness.observer.readCount
+    // Well inside the ordinary two seconds.
+    harness.clock.set(600)
+    harness.scheduler.fireRepeating()
+    #expect(harness.observer.readCount > afterFirst)
+  }
+
+  @Test func aConclusiveReadingIsLeftAloneForTheUsualInterval() {
+    let harness = Harness()
+    harness.coordinator.start()
+    harness.step(to: 0)
+    let afterFirst = harness.observer.readCount
+    harness.clock.set(600)
+    harness.scheduler.fireRepeating()
+    #expect(harness.observer.readCount == afterFirst)
+  }
+
+  /// Looking more often must never let anything happen earlier. Turning the screen off waits on
+  /// settling and on the monitors' own clock, and neither counts readings.
+  @Test func lookingMoreOftenDecidesNothingSooner() {
+    let harness = Harness(reading: reading(externalTransport: .unclassified))
+    harness.coordinator.start()
+    harness.step(to: 0)
+    for instant in stride(from: 100, through: 1900, by: 100) {
+      harness.clock.set(Instant(instant))
+      harness.scheduler.fireRepeating()
+    }
+    // The arrangement was never usable, so nothing was turned off however often it was read.
+    #expect(harness.writer.calls.isEmpty)
+    #expect(harness.ownership.record == nil)
   }
 }

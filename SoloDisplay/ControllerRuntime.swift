@@ -78,11 +78,17 @@ final class ControllerRuntime: CoordinatorDelegate {
     let resolved = ProductionCoordinator.resolveRecord(journal, reading: reading)
     var state = ControllerState(mode: mode, record: resolved.target)
     state.recordBlocked = resolved.blocked
+    // Monitors a previous run turned off are an obligation to give back, whatever else is true.
+    // Turning a monitor on is always safe, so they are carried in and restored, never assumed.
+    let suppression = try? ExternalSuppressionStore()
+    state.suppressed = ProductionCoordinator.resolveSuppression(
+      suppression, reading: reading
+    )
     let coordinator = ProductionCoordinator(
       state: state, clock: MonotonicClock(), observer: observer,
       writer: WorkerDisplayWriter(executable: executable), ownership: journal,
       preferences: store, guardian: GuardianProcess(executable: executable), delegate: self,
-      inputSources: LiveInputSourceObserver(),
+      inputSources: LiveInputSourceObserver(), suppression: suppression,
       session: session, diagnostics: diagnostics
     )
     self.coordinator = coordinator
@@ -98,8 +104,8 @@ final class ControllerRuntime: CoordinatorDelegate {
     return true
   }
 
-  /// Quitting needs no waiting. If the laptop screen is off, the guardian sees this process go
-  /// and turns it back on, the same path as a crash.
+  /// Quitting needs no waiting. If the laptop screen is off, or a monitor is, the guardian sees
+  /// this process go and turns them back on, the same path as a crash.
   func beginQuit() {
     diagnostics.emit(.exitRequested, session: session, reason: .userQuit) {
       $0.panelOff = coordinator?.presentation.panelOff

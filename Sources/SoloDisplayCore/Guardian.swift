@@ -10,6 +10,17 @@ public enum GuardianAction: Equatable, Sendable {
 /// danger is the laptop screen off with no usable monitor, certainty is the app process gone.
 /// It never stops the app. A hung or slow app with a monitor connected is not dangerous.
 public enum GuardianPolicy {
+  /// Monitors this app turned off are never danger: they are only ever turned off while another
+  /// screen is left, so the person can still see. They are restored on certainty alone, which is
+  /// the app being gone, and never on a monitor's own account: this process must not do DDC,
+  /// because a second process on the same wire corrupts both.
+  public static func monitorsToRestore(
+    _ monitors: [PanelTarget], appAlive: Bool, discharged: Set<UInt32>
+  ) -> [PanelTarget] {
+    guard !appAlive else { return [] }
+    return monitors.filter { !discharged.contains($0.displayID) }
+  }
+
   /// Readings in a row that must show danger before acting, so one odd reading during a
   /// reconfiguration the app is already handling does not start a second writer.
   public static let dangerReadings = 2

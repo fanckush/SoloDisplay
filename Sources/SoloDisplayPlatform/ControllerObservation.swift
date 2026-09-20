@@ -17,7 +17,8 @@ public struct OwnedPanelContext: Equatable, Sendable {
 /// authority, and it never guesses that a display it cannot see is one SoloDisplay turned off.
 public enum ControllerObservation {
   public static func environment(
-    _ reading: PlatformReading, power: Power, owned: OwnedPanelContext? = nil
+    _ reading: PlatformReading, power: Power, owned: OwnedPanelContext? = nil,
+    suppressedExternals: [PanelTarget] = []
   ) -> Environment {
     // An empty inventory is normally unusable evidence. It is coherent in exactly one case:
     // this process turned the only internal panel off and no external remains to enumerate.
@@ -41,7 +42,9 @@ public enum ControllerObservation {
       supportedTopology: topology(
         reading, reliable: reliable, internalPresent: internalDisplay != nil,
         panelOwnedAndAbsent: state == .disabled
-      )
+      ),
+      externals: externals(reading, reliable: reliable, suppressed: suppressedExternals),
+      visibleDisplays: visibleDisplays(reading, reliable: reliable, panelState: state)
     )
   }
 
@@ -82,6 +85,54 @@ public enum ControllerObservation {
           })
     else { return .no }
     return .yes
+  }
+
+  /// Every monitor with a DDC endpoint: the live ones, and the ones this app turned off, which
+  /// left CoreGraphics entirely and are known only from what it recorded about them. A monitor
+  /// is read as off only while it is actually absent: a record says what is owed, never what the
+  /// hardware is doing, and reading it as the hardware would leave a monitor on for ever because
+  /// nothing would ever ask for it to be turned off.
+  static func externals(
+    _ reading: PlatformReading, reliable: Bool, suppressed: [PanelTarget]
+  ) -> [ExternalCandidate] {
+    guard reliable else { return [] }
+    var found: [ExternalCandidate] = []
+    if let bootID = reading.bootID, let loginID = reading.loginID {
+      for display in reading.displays where !display.builtIn {
+        guard let controller = reading.controllers[display.id], let uuid = display.uuid,
+              !found.contains(where: { $0.target.displayUUID == uuid })
+        else { continue }
+        // Turning it off is only safe while it is a real wired output that is not itself
+        // following another screen. A screen that follows this one survives on its own.
+        let suppressible = display.online && !display.asleep
+          && display.transport == DisplayTransport.native.rawValue
+          && display.mirrorSourceID == nil && display.modeAvailable
+        found.append(.init(
+          target: .init(
+            displayID: display.id, displayUUID: uuid, bootID: bootID, loginID: loginID,
+            kind: .external, controller: controller
+          ),
+          suppressible: suppressible, suppressed: false
+        ))
+      }
+    }
+    // Owed and gone from the inventory, which is what this app turning one off looks like.
+    for target in suppressed
+      where !found.contains(where: { $0.target.displayUUID == target.displayUUID }) {
+      found.append(.init(target: target, suppressible: false, suppressed: true))
+    }
+    return found
+  }
+
+  /// Screens a person could look at. A mirror follower is one of them: it is showing something.
+  static func visibleDisplays(
+    _ reading: PlatformReading, reliable: Bool, panelState: PanelState
+  ) -> Int {
+    guard reliable else { return 0 }
+    return reading.displays.count {
+      guard $0.online, !$0.asleep, $0.active || $0.mirrorSourceID != nil else { return false }
+      return $0.builtIn ? panelState != .disabled : true
+    }
   }
 
   /// Transport classification is the sole authority here. An active flag, a display name, and

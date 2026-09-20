@@ -79,6 +79,8 @@ public enum JournalReconciliation: Equatable, Sendable {
 public final class ProductionJournalStore: Sendable {
   private let directory: URL
   private let file: URL
+  /// Written first, then renamed over the record. A crash can leave this behind; nothing reads it.
+  private let pending: URL
   private let gate = Mutex(0)
 
   public static func defaultDirectory() throws -> URL {
@@ -90,6 +92,7 @@ public final class ProductionJournalStore: Sendable {
   public init(directory: URL) throws {
     self.directory = directory
     file = directory.appendingPathComponent("recovery.json", isDirectory: false)
+    pending = directory.appendingPathComponent("recovery.json.new", isDirectory: false)
     try FileManager.default.createDirectory(
       at: directory, withIntermediateDirectories: true,
       attributes: [.posixPermissions: 0o700]
@@ -121,10 +124,13 @@ public final class ProductionJournalStore: Sendable {
         guard existing.target.bootID != record.target.bootID
           || existing.target.loginID != record.target.loginID
         else { throw JournalError.alreadyExists }
-        try? FileManager.default.removeItem(at: file)
       }
+      // Build the new record beside the old one and rename over it. Removing first would leave
+      // an instant with no record at all, and a crash there loses ownership of a panel that is
+      // already off. A leftover from an earlier crash names nothing and is replaced.
+      try? FileManager.default.removeItem(at: pending)
       let descriptor = open(
-        file.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR
+        pending.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW | O_CLOEXEC, S_IRUSR | S_IWUSR
       )
       guard descriptor >= 0 else {
         throw errno == EEXIST ? JournalError.alreadyExists : JournalError.writeFailed
@@ -135,9 +141,11 @@ public final class ProductionJournalStore: Sendable {
         // Ownership must survive a power loss between this call and the display request.
         try handle.synchronize()
         try handle.close()
+        // Atomic: either the old record or the new one is there, never neither.
+        guard rename(pending.path, file.path) == 0 else { throw JournalError.writeFailed }
       } catch {
         try? handle.close()
-        try? FileManager.default.removeItem(at: file)
+        try? FileManager.default.removeItem(at: pending)
         throw JournalError.writeFailed
       }
       syncDirectory()

@@ -3,9 +3,15 @@
 ## What SoloDisplay does
 
 SoloDisplay turns off one positively identified built-in laptop panel while a native external
-monitor is connected, and turns it back on when that stops being true. It does not change the
-display arrangement, mirroring, or sleep settings. The one change it makes to an external monitor
-is its brightness, and only through the opt-in brightness keys setting described below.
+monitor is connected, and turns it back on when that stops being true. It does not change
+mirroring, resolution, arrangement geometry, or sleep settings.
+
+It makes two changes to an external monitor, and no others. Its brightness, through the opt-in
+brightness keys setting described below (2026-09-17). And turning one off while it reports over
+DDC that it is showing another machine, turning it back on when it stops saying so (2026-09-20).
+That second one only ever acts on a monitor's own account, never on a guess: a monitor that
+cannot answer is left exactly as it is, and one is only ever turned off while another screen is
+left to look at.
 
 There are two stored choices. **All Monitors** keeps the laptop screen on. **External Only** keeps
 it off whenever a usable monitor is there. The choice is intent, not a reading of the hardware:

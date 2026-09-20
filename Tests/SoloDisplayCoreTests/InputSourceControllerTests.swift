@@ -121,11 +121,15 @@ struct InputSourceControllerTests {
     #expect(rig.send(.tick, at: 12021).contains(.readInputSources))
   }
 
-  @Test func theMonitorsAreNotAskedWhenNothingCouldComeOfIt() {
+  /// A monitor showing another machine is just as invisible while the laptop screen is on, and
+  /// a monitor this app turned off has to be asked before it can be given back.
+  @Test func theMonitorsAreAskedInEitherArrangement() {
     var paused = Rig(mode: .automaticPaused)
     paused.answersMonitors = false
-    #expect(!paused.observe(at: 0).contains(.readInputSources))
+    #expect(paused.observe(at: 0).contains(.readInputSources))
+  }
 
+  @Test func theMonitorsAreNotAskedWhenNothingCouldComeOfIt() {
     var noMonitor = Rig()
     noMonitor.answersMonitors = false
     #expect(!noMonitor.observe(environment(external: .no), at: 0).contains(.readInputSources))

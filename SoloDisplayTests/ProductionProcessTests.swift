@@ -51,3 +51,33 @@ struct ProductionProcessTests {
     }
   }
 }
+
+/// A pipe carries bytes, not messages. Once more than one kind of message travels this pipe, a
+/// chunk boundary in the wrong place would otherwise be read as the wrong message, or as none.
+struct GuardianLineReaderTests {
+  @Test func aMessageSplitAcrossTwoChunksIsStillOneMessage() {
+    let reader = GuardianLineReader()
+    #expect(reader.lines(Data("rel".utf8)).isEmpty)
+    let lines = reader.lines(Data("ease\n".utf8))
+    #expect(lines.compactMap { String(bytes: $0, encoding: .utf8) } == ["release"])
+  }
+
+  @Test func severalMessagesInOneChunkAreAllRead() {
+    let reader = GuardianLineReader()
+    let lines = reader.lines(Data("one\ntwo\nthree\n".utf8))
+    #expect(lines.compactMap { String(bytes: $0, encoding: .utf8) } == ["one", "two", "three"])
+  }
+
+  @Test func anUnfinishedMessageIsNotAMessageYet() {
+    let reader = GuardianLineReader()
+    #expect(reader.lines(Data("release".utf8)).isEmpty)
+  }
+
+  @Test func aLineThatNeverEndsIsDroppedRatherThanBuffered() {
+    let reader = GuardianLineReader()
+    let flood = Data(repeating: 0x61, count: GuardianLineReader.limit + 1)
+    #expect(reader.lines(flood).isEmpty)
+    // The flood was dropped, so a following message is still read correctly.
+    #expect(reader.lines(Data("release\n".utf8)).count == 1)
+  }
+}

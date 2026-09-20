@@ -26,3 +26,13 @@ extension PreferencesStore: PreferencePersisting {
     try update { $0.mode = mode }
   }
 }
+
+extension ExternalSuppressionStore: SuppressionPersisting {
+  public func save(_ targets: [PanelTarget], session: String) throws {
+    try save(.init(session: session, targets: targets))
+  }
+
+  public func suppressedTargets() -> [PanelTarget] {
+    load()?.targets ?? []
+  }
+}

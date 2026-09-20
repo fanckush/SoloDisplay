@@ -80,7 +80,7 @@ func startsTurningOff(_ effects: [Effect]) -> Bool {
   #expect(startsTurningOff(settled))
   #expect(workers(settled, .disable) == 0)
   let recorded = rig.send(.recordWritten(panel, succeeded: true), at: 2001)
-  #expect(recorded.contains(.spawnGuardian(panel)))
+  #expect(recorded.contains(.spawnGuardian([panel])))
   #expect(workers(recorded, .disable) == 0)
   #expect(workers(rig.send(.guardianReady, at: 2002), .disable) == 1)
 }
@@ -278,4 +278,24 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
     ) == .restore
   )
   #expect(GuardianPolicy.decide(environment(), appAlive: false, dangerStreak: &streak) == .finish)
+}
+
+/// A monitor SoloDisplay turned off is never danger: it is only ever turned off while another
+/// screen is left, so nobody is blind. Only the app being gone makes it owed.
+@Test func monitorsAreRestoredOnlyOnceTheAppIsGone() {
+  let monitor = PanelTarget(
+    displayID: 4, displayUUID: "dell", bootID: "boot-1", loginID: 42,
+    kind: .external, controller: "dispext0"
+  )
+  #expect(
+    GuardianPolicy.monitorsToRestore([monitor], appAlive: true, discharged: []).isEmpty
+  )
+  #expect(
+    GuardianPolicy.monitorsToRestore([monitor], appAlive: false, discharged: []) == [monitor]
+  )
+  // Asked for once each: a monitor that is off is not in the display list at all, so there is
+  // no evidence left to wait for and nothing to ask twice about.
+  #expect(
+    GuardianPolicy.monitorsToRestore([monitor], appAlive: false, discharged: [4]).isEmpty
+  )
 }

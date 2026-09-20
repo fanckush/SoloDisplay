@@ -88,6 +88,24 @@ struct MenuModelTests {
     #expect(shown.alert == nil)
   }
 
+  /// A monitor going dark is the least expected thing a person can be shown, so the menu says it
+  /// before anything else, and says it in either arrangement.
+  @Test func aMonitorTurnedOffForShowingAnotherComputerIsSaidPlainly() {
+    var one = Presentation(wantsInternalOff: false)
+    one.suppressedMonitors = 1
+    #expect(menuPanel(one).reality == "A monitor showing another computer is turned off.")
+
+    var several = Presentation(wantsInternalOff: true, panelOff: true)
+    several.suppressedMonitors = 2
+    #expect(
+      menuPanel(several).reality
+        == "2 monitors showing another computer are turned off."
+    )
+    // It is not a fault, so nothing is raised about it.
+    #expect(menuPanel(one).alert == nil)
+    #expect(menuPanel(one).allMonitors.isEnabled)
+  }
+
   @Test func exactlyOneArrangementIsEverChosen() {
     for wants in [false, true] {
       let shown = menuPanel(.init(wantsInternalOff: wants))

@@ -55,7 +55,15 @@ nonisolated enum MenuModel {
   }
 
   /// What is true right now, as opposed to what was chosen, including why a choice is waiting.
+  /// A monitor turned off for showing another computer is said first: it is the least expected
+  /// thing on the screen, and nothing else here explains it.
   static func reality(_ presentation: Presentation) -> String {
+    if presentation.suppressedMonitors == 1 {
+      return "A monitor showing another computer is turned off."
+    }
+    if presentation.suppressedMonitors > 1 {
+      return "\(presentation.suppressedMonitors) monitors showing another computer are turned off."
+    }
     if presentation.panelOff {
       return presentation.working
         ? "Turning your laptop screen back on." : "Your laptop screen is off."

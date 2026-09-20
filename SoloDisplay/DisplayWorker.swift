@@ -148,10 +148,34 @@ nonisolated enum DisplayWorker {
         reading, target: request.target, ownedTarget: request.target
       )) != nil
       else { throw DisplayWorkerError.refused }
-    } else {
+    } else if request.target.kind == .builtIn {
       guard reading.enumerationError == nil, reading.internalTarget == request.target,
             reading.lid == .open, reading.foregroundSession == .yes
       else { throw DisplayWorkerError.refused }
+    } else {
+      try checkMonitorDisable(request.target, against: reading)
     }
+  }
+
+  /// A monitor is turned off only while someone can still see something. Both clauses are also
+  /// enforced by the controller, and repeated here because this process is the last word before
+  /// the call, and its view is the only one taken after the parent decided.
+  private static func checkMonitorDisable(
+    _ target: PanelTarget, against reading: PlatformReading
+  ) throws {
+    guard reading.enumerationError == nil, reading.foregroundSession == .yes,
+          let current = reading.displays.first(where: { $0.id == target.displayID }),
+          !current.builtIn, current.uuid == target.displayUUID,
+          current.transport == DisplayTransport.native.rawValue,
+          // Never the last screen: something else has to be left that a person could look at.
+          // A screen mirroring this one counts, because it survives on its own when the source
+          // goes: macOS collapses the mirror rather than blanking the follower.
+          reading.displays.contains(where: {
+            $0.id != target.displayID && $0.online && !$0.asleep
+              && ($0.active || $0.mirrorSourceID != nil)
+          }),
+          // A monitor that is itself following another screen is left alone.
+          current.mirrorSourceID == nil
+    else { throw DisplayWorkerError.refused }
   }
 }
