@@ -36,6 +36,9 @@ or
 brew install --cask fanckush/solodisplay/solodisplay
 ```
 
+Either way, the app checks for new versions itself. You can also use **Check for Updates…** in
+the menu.
+
 ## Usage
 
 There are two choices:
@@ -47,8 +50,9 @@ There are two choices:
 
 ## Build from source
 
-Requires Xcode (Swift 6.3) and macOS 26+ on Apple Silicon. No external
-dependencies.
+Requires Xcode (Swift 6.3) and macOS 26+ on Apple Silicon. The Swift package
+has no external dependencies. The app adds [Sparkle](https://sparkle-project.org)
+for updates, which Xcode fetches on first build.
 
 ```sh
 swift build

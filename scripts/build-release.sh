@@ -16,6 +16,10 @@
 # Signing identity (default: "Developer ID Application"):
 #   SIGN_IDENTITY        Full identity name or hash.
 #
+# Update feed (required unless --skip-notarize):
+#   SPARKLE_PRIVATE_KEY  The EdDSA private key from Sparkle's `generate_keys -x`.
+#   RELEASE_NOTES        Optional path to Markdown shown in the update window.
+#
 # Notarization credentials (pick ONE; skipped entirely with --skip-notarize):
 #   Local:  NOTARY_PROFILE   Name of a `notarytool store-credentials` profile.
 #   CI:     AC_API_KEY_ID, AC_API_ISSUER_ID, AC_API_KEY_PATH (path to .p8)
@@ -36,10 +40,14 @@ SIGN_IDENTITY="${SIGN_IDENTITY:-Developer ID Application}"
 DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:?set DEVELOPMENT_TEAM (Apple Team ID)}"
 
 PROJECT="SoloDisplay.xcodeproj"
+INFO_PLIST="Config/SoloDisplay-Info.plist"
 SCHEME="SoloDisplay"
 APP="SoloDisplay.app"
 BUILD_DIR="build"
 ARCHIVE="$BUILD_DIR/SoloDisplay.xcarchive"
+# Resolved packages live here rather than in DerivedData, so Sparkle's tools are at a known path.
+PACKAGES_DIR="$BUILD_DIR/SourcePackages"
+SIGN_UPDATE="$PACKAGES_DIR/artifacts/sparkle/Sparkle/bin/sign_update"
 EXPORT_DIR="$BUILD_DIR/export"
 DIST_DIR="$BUILD_DIR/dist"
 ZIP="$DIST_DIR/SoloDisplay-$VERSION.zip"
@@ -48,6 +56,22 @@ DMG="$DIST_DIR/SoloDisplay-$VERSION.dmg"
 # GitHub's /releases/latest/download/ redirect resolves an exact asset name, which rules out
 # every version-stamped one.
 DMG_LATEST="$DIST_DIR/SoloDisplay.dmg"
+# Also a fixed name: the app's SUFeedURL points at /releases/latest/download/appcast.xml.
+APPCAST="$DIST_DIR/appcast.xml"
+REPO_URL="https://github.com/fanckush/SoloDisplay"
+
+# A release the app cannot verify would strand everyone who installs it, so check before the
+# long build rather than after.
+if [[ "$SKIP_NOTARIZE" == "0" ]]; then
+  if [[ "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$INFO_PLIST")" == SPARKLE_* ]]; then
+    echo "!! SUPublicEDKey in $INFO_PLIST is not set. See docs/DISTRIBUTION.md." >&2
+    exit 1
+  fi
+  [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]] || {
+    echo "!! set SPARKLE_PRIVATE_KEY to sign the update feed." >&2
+    exit 1
+  }
+fi
 
 echo ">> Cleaning $BUILD_DIR"
 rm -rf "$BUILD_DIR"
@@ -60,6 +84,7 @@ xcodebuild archive \
   -configuration Release \
   -destination 'generic/platform=macOS' \
   -archivePath "$ARCHIVE" \
+  -clonedSourcePackagesDirPath "$PACKAGES_DIR" \
   MARKETING_VERSION="$VERSION" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   CODE_SIGN_STYLE=Manual \
@@ -135,6 +160,35 @@ else
   hdiutil create -volname "SoloDisplay $VERSION" -srcfolder "$STAGE" \
     -ov -format UDZO "$DMG" >/dev/null
 fi
+
+echo ">> Writing $APPCAST"
+# Sparkle downloads the zip. Its signature is checked against SUPublicEDKey before anything is
+# installed.
+ENCLOSURE_SIG=$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$SIGN_UPDATE" --ed-key-file - "$ZIP")
+NOTES=""
+if [[ -n "${RELEASE_NOTES:-}" && -s "$RELEASE_NOTES" ]]; then
+  # Markdown goes in as CDATA. A literal ]]> in it would end the section early, so it is split.
+  NOTES="<description sparkle:format=\"markdown\"><![CDATA[$(sed 's/]]>/]]]]><![CDATA[>/g' "$RELEASE_NOTES")]]></description>"
+fi
+cat > "$APPCAST" <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>SoloDisplay</title>
+    <item>
+      <title>SoloDisplay $VERSION</title>
+      <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
+      <sparkle:version>$BUILD_NUMBER</sparkle:version>
+      <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>$REPO_URL/releases</sparkle:fullReleaseNotesLink>
+      $NOTES
+      <enclosure url="$REPO_URL/releases/download/v$VERSION/$(basename "$ZIP")" $ENCLOSURE_SIG type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
+XML
+xmllint --noout "$APPCAST"
 
 echo ">> Publishing $DMG_LATEST"
 cp "$DMG" "$DMG_LATEST"

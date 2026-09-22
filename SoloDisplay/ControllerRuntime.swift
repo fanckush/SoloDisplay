@@ -27,6 +27,7 @@ final class ControllerRuntime: CoordinatorDelegate {
   private(set) var panel: MenuPanel = .placeholder
   var onMenuChanged: (() -> Void)?
   var onOpenDiagnostics: (() -> Void)?
+  var onCheckForUpdates: (() -> Void)?
 
   init(
     diagnostics: OperationalLogger = .init(role: .app),
@@ -230,6 +231,7 @@ final class ControllerRuntime: CoordinatorDelegate {
     case .toggleBrightnessKeys:
       mutatePreferences { $0.brightnessKeys.toggle() }
       brightnessKeys.setEnabled(preferences.brightnessKeys, askForPermission: true)
+    case .checkForUpdates: onCheckForUpdates?()
     case .openDisplayMonitor: onOpenDiagnostics?()
     case .exportDiagnostics: exportDiagnostics()
     case .quit: NSApp.terminate(nil)

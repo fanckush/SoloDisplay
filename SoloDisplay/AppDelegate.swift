@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var lastGlyph: MenuGlyph?
   private var statusMenu: StatusMenu?
   private let panelStore = MenuPanelStore()
+  private var updater: Updater?
   private var knownScreens: Set<CGDirectDisplayID> = []
   private let operationalDiagnostics = OperationalLogger(role: .bootstrap)
 
@@ -69,6 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     statusItem?.menu = statusMenu.menu
     runtime.onMenuChanged = { [weak self] in self?.refreshInterface() }
     runtime.onOpenDiagnostics = { [weak self] in self?.showDiagnostics() }
+    // Only the menu bar app updates. A guardian or worker is this same bundle and must never
+    // show a window or replace the app underneath the process that started it.
+    let updater = Updater()
+    self.updater = updater
+    runtime.onCheckForUpdates = { updater.checkForUpdates() }
     // A display that vanishes can take the menu's own window with it, so close rather than ride
     // out a reconfiguration this app may itself have caused. Only an actual change to the set of
     // displays counts: this notification also fires for every visibleFrame change.

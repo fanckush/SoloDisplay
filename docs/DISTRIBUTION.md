@@ -14,6 +14,29 @@ This is the operator guide. The automation lives in `.github/workflows/` and
    Note the Key ID and Issuer ID.
 3. **Team ID.** The 10-character ID from the Developer portal membership page.
 
+## One-time update signing key (Sparkle)
+
+The app checks `appcast.xml` on the latest GitHub Release and only installs an
+update whose zip is signed by this key.
+
+1. Build the app once in Xcode so the Sparkle package is fetched, then run
+   `generate_keys` from it. It stores the private key in your login Keychain and
+   prints the public key:
+
+   ```sh
+   "$(find ~/Library/Developer/Xcode/DerivedData DerivedData -path '*artifacts/sparkle/Sparkle/bin/generate_keys' 2>/dev/null | head -1)"
+   ```
+
+2. Put the printed public key in `Config/SoloDisplay-Info.plist` as `SUPublicEDKey`,
+   replacing `SPARKLE_PUBLIC_KEY_NOT_SET`, and commit it. A release build refuses
+   to run while the placeholder is there.
+3. Export the private key with `generate_keys -x sparkle-private-key.txt` and store
+   its contents as the `SPARKLE_PRIVATE_KEY` secret. Delete the file afterwards.
+
+Keep a backup of the private key (it stays in the Keychain). If it is lost, installed
+copies can never verify an update again, and everyone has to download the next
+version by hand.
+
 ### Local notarization (optional, for hand builds)
 
 ```sh
@@ -40,6 +63,7 @@ VERSION=0.2.0 DEVELOPMENT_TEAM=TEAMID scripts/build-release.sh --skip-notarize
 | `AC_API_KEY_ID` | App Store Connect Key ID |
 | `AC_API_ISSUER_ID` | App Store Connect Issuer ID |
 | `AC_API_KEY_P8` | base64 of the `.p8` key file |
+| `SPARKLE_PRIVATE_KEY` | the update signing key from `generate_keys -x` |
 | `TAP_REPO_TOKEN` | PAT (repo scope) that can dispatch the tap's `bump.yml` |
 
 ## Homebrew tap (own tap, published first)
@@ -72,6 +96,8 @@ Releases are intentional and automated after the maintainer chooses to publish:
    unversioned `SoloDisplay.dmg` copy. That copy is what the README's download
    button points at: GitHub's `/releases/latest/download/` redirect resolves an
    exact asset name, so a version-stamped one cannot be linked to directly.
+   `appcast.xml` is published the same way. It is the update feed installed apps
+   read, and it points at the signed `.zip` and carries the release notes.
 4. It creates the tag and GitHub Release only after the artifacts are ready, then
    dispatches the Homebrew tap bump.
 
@@ -116,7 +142,7 @@ git push origin v0.2.0
 ```
 
 Release jobs are serialized. A failed run before publication can be rerun with
-the same calculated version. If a tag or release was created but one of the four
+the same calculated version. If a tag or release was created but one of its
 assets is missing, running the workflow again from that tagged `main` commit
 repairs the existing release instead of incrementing the version.
 

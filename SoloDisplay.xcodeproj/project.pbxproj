@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		AF1000000000000000000004 /* SoloDisplayCore in Frameworks */ = {isa = PBXBuildFile; productRef = AF1000000000000000000005 /* SoloDisplayCore */; };
 		AF1000000000000000000001 /* SoloDisplayPlatform in Frameworks */ = {isa = PBXBuildFile; productRef = AF1000000000000000000002 /* SoloDisplayPlatform */; };
+		AF1000000000000000000006 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AF1000000000000000000008 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AF1000000000000000000001 /* SoloDisplayPlatform in Frameworks */,
+				AF1000000000000000000006 /* Sparkle in Frameworks */,
 				AF1000000000000000000004 /* SoloDisplayCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -121,6 +123,7 @@
 			packageProductDependencies = (
 				AF1000000000000000000002 /* SoloDisplayPlatform */,
 				AF1000000000000000000005 /* SoloDisplayCore */,
+				AF1000000000000000000008 /* Sparkle */,
 			);
 			productName = SoloDisplay;
 			productReference = 08C3FB2F3050144C008F98B6 /* SoloDisplay.app */;
@@ -206,6 +209,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AF1000000000000000000003 /* XCLocalSwiftPackageReference "." */,
+				AF1000000000000000000007 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 08C3FB303050144C008F98B6 /* Products */;
@@ -415,6 +419,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/SoloDisplay-Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_LSUIElement = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -448,6 +453,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/SoloDisplay-Info.plist";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_LSUIElement = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -595,6 +601,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		AF1000000000000000000007 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		AF1000000000000000000005 /* SoloDisplayCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -603,6 +620,11 @@
 		AF1000000000000000000002 /* SoloDisplayPlatform */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SoloDisplayPlatform;
+		};
+		AF1000000000000000000008 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AF1000000000000000000007 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

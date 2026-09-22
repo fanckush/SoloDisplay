@@ -101,6 +101,7 @@ jobs:
               "SoloDisplay-$VERSION.dmg.sha256"
               "SoloDisplay.dmg"
               "SoloDisplay.dmg.sha256"
+              "appcast.xml"
             )
             RELEASE_EXISTS=false
             if ASSETS=$(gh release view "$CURRENT_TAG" --json assets --jq '.assets[].name' 2>/dev/null); then
@@ -218,21 +219,9 @@ jobs:
           AC_API_KEY_P8: ${{ secrets.AC_API_KEY_P8 }}
         run: echo "$AC_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/ac_api_key.p8"
 
-      - name: Build, sign, notarize, package
-        env:
-          VERSION: ${{ needs.resolve.outputs.version }}
-          DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
-          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
-          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
-          AC_API_KEY_PATH: ${{ runner.temp }}/ac_api_key.p8
-        run: scripts/build-release.sh
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v1
-        with:
-          subject-path: build/dist/SoloDisplay-*.zip
-
-      # A repair keeps the published body, which may have been edited by hand.
+      # A repair keeps the published body, which may have been edited by hand. The notes are
+      # written before the build so the update feed can show them, and outside build/, which the
+      # build script clears.
       - name: Generate release notes
         if: ${{ needs.resolve.outputs.mode != 'repair' }}
         env:
@@ -247,8 +236,24 @@ jobs:
           else
             RANGE="$TARGET_SHA"
           fi
-          git cliff "$RANGE" --tag "$TAG" --strip header --output build/release-notes.md
-          cat build/release-notes.md >> "$GITHUB_STEP_SUMMARY"
+          git cliff "$RANGE" --tag "$TAG" --strip header --output "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build, sign, notarize, package
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          DEVELOPMENT_TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
+          AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
+          AC_API_KEY_PATH: ${{ runner.temp }}/ac_api_key.p8
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          RELEASE_NOTES: ${{ runner.temp }}/release-notes.md
+        run: scripts/build-release.sh
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: build/dist/SoloDisplay-*.zip
 
       - name: Create or repair GitHub Release
         uses: softprops/action-gh-release@v3
@@ -256,7 +261,7 @@ jobs:
           name: SoloDisplay ${{ needs.resolve.outputs.version }}
           tag_name: ${{ needs.resolve.outputs.tag }}
           target_commitish: ${{ needs.resolve.outputs.target_sha }}
-          body_path: ${{ needs.resolve.outputs.mode != 'repair' && 'build/release-notes.md' || '' }}
+          body_path: ${{ needs.resolve.outputs.mode != 'repair' && format('{0}/release-notes.md', runner.temp) || '' }}
           prerelease: false
           overwrite_files: true
           fail_on_unmatched_files: true
@@ -267,6 +272,7 @@ jobs:
             build/dist/SoloDisplay-*.dmg.sha256
             build/dist/SoloDisplay.dmg
             build/dist/SoloDisplay.dmg.sha256
+            build/dist/appcast.xml
 
       - name: Bump Homebrew cask
         env:

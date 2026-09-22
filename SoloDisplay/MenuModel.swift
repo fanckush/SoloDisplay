@@ -7,6 +7,7 @@ nonisolated enum MenuAction: String, CaseIterable, Equatable, Sendable {
   case retryRecovery
   case toggleLaunchAtLogin
   case toggleBrightnessKeys
+  case checkForUpdates
   case openDisplayMonitor
   case exportDiagnostics
   case quit
@@ -46,6 +47,7 @@ nonisolated enum MenuModel {
         isBlocked: brightnessKeys && brightnessNeedsPermission
       ),
       commands: [
+        .init(title: "Check for Updates…", action: .checkForUpdates),
         .init(title: "Diagnostics…", action: .openDisplayMonitor),
         .init(title: "Quit SoloDisplay", action: .quit)
       ],

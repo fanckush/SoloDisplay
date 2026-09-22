@@ -13,7 +13,7 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   /// optional and drops a mismatch silently, so every menu action needs a case here.
   public enum Action: String, Codable, Sendable {
     case retryRecovery, toggleLaunchAtLogin, toggleBrightnessKeys, exportDiagnostics, quit
-    case openDisplayMonitor, selectAllMonitors, selectExternalOnly
+    case openDisplayMonitor, selectAllMonitors, selectExternalOnly, checkForUpdates
   }
 
   public enum Code: String, Codable, Sendable {
