@@ -129,6 +129,16 @@ struct MenuModelTests {
     #expect(menuPanel(.init(), launchAtLogin: true).launchAtLogin.isOn == true)
   }
 
+  @Test func inputDetectionIsAnExplicitExperimentalOption() {
+    let off = MenuModel.panel(.init(), launchAtLogin: false)
+    #expect(!off.inputDetection.isOn)
+    #expect(off.inputDetection.title == "Input Detection (Experimental)")
+    #expect(off.inputDetection.action == .toggleInputDetection)
+    let on = MenuModel.panel(.init(), launchAtLogin: false, inputDetection: true)
+    #expect(on.inputDetection.isOn)
+    #expect(on.brightnessKeys == off.brightnessKeys)
+  }
+
   @Test func brightnessKeysShowWhenPermissionIsMissing() {
     let off = MenuModel.panel(.init(), launchAtLogin: false)
     #expect(!off.brightnessKeys.isOn && !off.brightnessKeys.isBlocked)

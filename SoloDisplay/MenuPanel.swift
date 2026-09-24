@@ -37,6 +37,7 @@ nonisolated struct MenuPanel: Equatable, Sendable {
   var alert: Alert?
   var launchAtLogin: Option
   var brightnessKeys: Option
+  var inputDetection: Option
   var commands: [Command]
   var glyph: MenuGlyph
   /// The words the menu bar icon carries for anyone who cannot see it.
@@ -84,7 +85,13 @@ nonisolated struct MenuPanel: Equatable, Sendable {
   /// once instead of one assertion per label going stale.
   var allStrings: [String] {
     [allMonitors, externalOnly].map(\.title)
-      + [reality, launchAtLogin.title, brightnessKeys.title, statusDescription]
+      + [
+        reality,
+        launchAtLogin.title,
+        brightnessKeys.title,
+        inputDetection.title,
+        statusDescription
+      ]
       + commands.map(\.title)
       + [alert?.title, alert?.detail].compactMap(\.self)
   }

@@ -192,6 +192,36 @@ private struct SyncLane: SerialLane {
   }
 }
 
+/// Completes a fake sweep only when the test delivers its captured result.
+private final class DeferredInputLane: SerialLane {
+  private struct Pending: Sendable {
+    var event: Event
+    var completion: @Sendable @MainActor (Event) -> Void
+  }
+
+  private let pending = Mutex<[Pending]>([])
+
+  func run(
+    _ work: @escaping @Sendable () -> Event,
+    completion: @escaping @Sendable @MainActor (Event) -> Void
+  ) {
+    let event = work()
+    pending.withLock { $0.append(.init(event: event, completion: completion)) }
+  }
+
+  func observe(
+    _ work: @escaping @Sendable () -> PlatformReading,
+    completion: @escaping @Sendable @MainActor (PlatformReading) -> Void
+  ) {
+    SyncLane().observe(work, completion: completion)
+  }
+
+  @MainActor func deliverNext() {
+    let next = pending.withLock { $0.removeFirst() }
+    next.completion(next.event)
+  }
+}
+
 @MainActor private final class ManualScheduler: CoordinatorScheduler {
   var wakes: [Double] = []
   private var due: [(seconds: Double, fire: @MainActor () -> Void)] = []
@@ -338,16 +368,24 @@ private final class FakeInputSources: InputSourceObserving {
   let coordinator: ProductionCoordinator
 
   init(mode: Mode = .automatic, reading start: PlatformReading = reading(),
-       asksMonitors: Bool = false, monitorsOnTheirOwnLane: Bool = false) {
+       asksMonitors: Bool = false, monitorsOnTheirOwnLane: Bool = false,
+       inputDetectionEnabled: Bool? = nil, inputLane: (any SerialLane)? = nil) {
     observer = FakeObserver(start)
     writer = FakeWriter(observer: observer)
+    let selectedInputLane: any SerialLane = if let inputLane {
+      inputLane
+    } else if monitorsOnTheirOwnLane {
+      DispatchLane(label: "dev.solodisplay.test.input")
+    } else {
+      SyncLane()
+    }
     coordinator = ProductionCoordinator(
-      state: .init(mode: mode), clock: clock, observer: observer, writer: writer,
+      state: .init(mode: mode, inputDetectionEnabled: inputDetectionEnabled ?? asksMonitors),
+      clock: clock, observer: observer, writer: writer,
       ownership: ownership, preferences: preferences, guardian: guardian, delegate: delegate,
       inputSources: asksMonitors ? inputSources : nil,
       lane: SyncLane(), storageLane: SyncLane(), workerLane: SyncLane(),
-      inputLane: monitorsOnTheirOwnLane
-        ? DispatchLane(label: "dev.solodisplay.test.input") : SyncLane(),
+      inputLane: selectedInputLane,
       scheduler: scheduler, diagnostics: .init(role: .app, sink: CapturedOperationalEvents())
     )
   }
@@ -618,5 +656,49 @@ struct InconclusiveReadingTests {
     // The arrangement was never usable, so nothing was turned off however often it was read.
     #expect(harness.writer.calls.isEmpty)
     #expect(harness.ownership.record == nil)
+  }
+}
+
+@MainActor
+struct InputDetectionSettingCoordinatorTests {
+  @Test func disabledDetectionDoesNotCallTheObserverOrDelayNormalAutomation() {
+    let harness = Harness(asksMonitors: true, inputDetectionEnabled: false)
+    harness.inputSources.showing(.otherMachine)
+    harness.turnOff()
+    #expect(harness.inputSources.calls == 0)
+    #expect(harness.writer.calls == [.init(enabled: false, displayID: 1)])
+  }
+
+  @Test func aReplyArrivingAfterDetectionIsDisabledIsDiscarded() {
+    let lane = DeferredInputLane()
+    let harness = Harness(asksMonitors: true, inputLane: lane)
+    harness.inputSources.showing(.otherMachine)
+    harness.step(to: 0)
+    #expect(harness.inputSources.calls == 1)
+    harness.coordinator.send(.setInputDetection(false))
+    lane.deliverNext()
+    harness.scheduler.fire(5)
+    #expect(harness.coordinator.state.inputSources == .unknown)
+    #expect(harness.coordinator.state.monitors.isEmpty)
+    #expect(!harness.coordinator.state.inputSourcesBusy)
+    #expect(harness.inputSources.calls == 1)
+  }
+
+  @Test func togglingOffAndOnCannotReuseThePreviousSweepEvenAtTheSameTimestamp() {
+    let lane = DeferredInputLane()
+    let harness = Harness(asksMonitors: true, inputLane: lane)
+    harness.inputSources.showing(.otherMachine)
+    harness.step(to: 0)
+    harness.coordinator.send(.setInputDetection(false))
+    harness.coordinator.send(.setInputDetection(true))
+    #expect(harness.inputSources.calls == 1)
+    harness.inputSources.showing(.thisMac)
+    lane.deliverNext()
+    #expect(harness.coordinator.state.inputSourcesPending == .unknown)
+    #expect(harness.coordinator.state.monitors.isEmpty)
+    #expect(harness.inputSources.calls == 2)
+    lane.deliverNext()
+    #expect(harness.coordinator.state.inputSourcesPending == .yes)
+    #expect(!harness.coordinator.state.inputSourcesBusy)
   }
 }

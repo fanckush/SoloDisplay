@@ -104,6 +104,8 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
   public var recordHeld: Bool
   /// What the monitors last said they were showing, so a refusal can be read back.
   public var inputSources: Fact
+  /// Optional when decoding diagnostics exported before the experimental setting existed.
+  public var inputDetectionEnabled: Bool?
 
   public init(_ state: ControllerState, at now: Instant) {
     let presentation = Controller.presentation(state, at: now)
@@ -118,6 +120,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
     workerRunning = state.worker != nil
     recordHeld = state.record != nil
     inputSources = state.inputSources
+    inputDetectionEnabled = state.inputDetectionEnabled
   }
 }
 

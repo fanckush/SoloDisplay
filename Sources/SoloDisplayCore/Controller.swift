@@ -11,6 +11,14 @@ public enum Controller {
     state.lastReceipt = now
 
     switch event {
+    case let .setInputDetection(enabled):
+      guard enabled != state.inputDetectionEnabled else { break }
+      state.inputDetectionEnabled = enabled
+      state.forgetInputSources()
+      state.inputSourcesBusy = false
+      state.monitors.removeAll()
+      clearBackoff(&state)
+      effects.append(.observe)
     case let .observed(sample):
       guard sample.sampledAt <= now,
             sample.sequence > (state.observation?.sequence ?? 0),
@@ -110,6 +118,8 @@ public enum Controller {
       state.worker = worker
       effects.append(.observe)
     case let .inputSourcesRead(answer, monitors, sampledAt):
+      guard state.inputDetectionEnabled, sampledAt <= now,
+            sampledAt >= (state.inputSourcesAskedAt ?? sampledAt) else { break }
       readInputSources(&state, answer: answer, sampledAt: sampledAt)
       readMonitors(&state, answers: monitors, sampledAt: sampledAt)
     case let .suppressionRecorded(targets, succeeded):
@@ -169,7 +179,10 @@ public enum Controller {
     guard let answers else { return }
     for answer in answers {
       var verdict = state.monitors[answer.controller] ?? .init()
-      verdict.lastAnswered = sampledAt
+      // A completed poll with no usable reply is still silence.
+      if answer.shown != .unknown {
+        verdict.lastAnswered = sampledAt
+      }
       if answer.shown == .unknown || answer.shown == verdict.shown {
         verdict.pending = .unknown
         verdict.agreeing = 0
@@ -265,6 +278,9 @@ public enum Controller {
     _ state: ControllerState, environment: Environment, at now: Instant
   ) -> PanelTarget? {
     state.suppressed.first { target in
+      if !state.inputDetectionEnabled {
+        return true
+      }
       guard let controller = target.controller else { return true }
       let verdict = state.monitors[controller]
       // One answer is enough here. Turning a monitor back on is always safe, and the worst a
@@ -293,7 +309,7 @@ public enum Controller {
   static func monitorToSuppress(
     _ state: ControllerState, environment: Environment, at now: Instant
   ) -> PanelTarget? {
-    guard environment.visibilityExpected, !state.recordBlocked,
+    guard state.inputDetectionEnabled, environment.visibilityExpected, !state.recordBlocked,
           environment.visibleDisplays >= 2, isSettled(state, at: now)
     else { return nil }
     return environment.externals.first { candidate in
@@ -303,9 +319,11 @@ public enum Controller {
         $0.displayUUID == candidate.target.displayUUID
       })
       else { return false }
+      // Silence recovery must not reuse an expired verdict to turn the monitor off again.
       guard candidate.suppressible, !candidate.suppressed,
             let controller = candidate.target.controller,
-            let verdict = state.monitors[controller], verdict.shown == .otherMachine
+            let verdict = state.monitors[controller], verdict.shown == .otherMachine,
+            now - verdict.lastAnswered < state.policy.monitorSilence
       else { return false }
       // Left alone for a while after it was last changed, so two rules disagreeing show up as
       // slowness rather than as a screen going on and off.
@@ -320,7 +338,7 @@ public enum Controller {
                                       at now: Instant) {
     // Asked in either arrangement: a monitor showing another machine is just as invisible when
     // the laptop screen is on, and a monitor this app turned off has to be asked to get it back.
-    guard !state.inputSourcesBusy,
+    guard state.inputDetectionEnabled, !state.inputSourcesBusy,
           let environment = state.observation?.environment, environment.visibilityExpected,
           environment.nativeExternalAvailable == .yes || !state.suppressed.isEmpty,
           environment.panelState != .unknown
@@ -341,6 +359,7 @@ public enum Controller {
   /// stops holding the decision after `inputSourceDeadline`, which is how a Mac whose monitors
   /// cannot answer at all keeps behaving exactly as it did before.
   static func inputAsked(_ state: ControllerState, at now: Instant) -> Bool {
+    guard state.inputDetectionEnabled else { return true }
     guard let since = state.stableSince else { return false }
     if let asked = state.inputSourcesAskedAt, asked >= since {
       return true
@@ -362,6 +381,10 @@ public enum Controller {
       return state.record != nil ? .enabled : nil
     }
     guard environment.panel != nil else { return nil }
+    // Restore the experimental feature's monitors before returning to normal panel automation.
+    if !state.inputDetectionEnabled, !state.suppressed.isEmpty {
+      return .enabled
+    }
     // A monitor showing another machine is a reason to refuse, never a reason to act. While the
     // screen is on, one answer is enough to withhold, because withholding changes nothing. While
     // it is off, putting it back is a change, so that waits for the answer to repeat.

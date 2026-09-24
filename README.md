@@ -47,6 +47,11 @@ There are two choices:
 - **External Only** turns it off whenever a monitor is connected, and back on when
   you unplug.
 
+**Brightness Controls**
+You can control the brightness of you rexternal monitor with the brightness keys on your mac
+
+**Input Detection (Experimental)**
+It detects monitor input changes and internally turns off a monitor showing another computer.
 
 ## Build from source
 

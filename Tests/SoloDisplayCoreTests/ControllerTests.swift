@@ -22,8 +22,8 @@ struct Rig {
   var monitorAnswer: Fact = .unknown
   var answersMonitors = true
 
-  init(mode: Mode = .automatic, record: PanelTarget? = nil) {
-    state = .init(mode: mode, record: record)
+  init(mode: Mode = .automatic, record: PanelTarget? = nil, inputDetectionEnabled: Bool = true) {
+    state = .init(mode: mode, record: record, inputDetectionEnabled: inputDetectionEnabled)
   }
 
   @discardableResult mutating func send(_ event: Event, at time: Instant) -> [Effect] {

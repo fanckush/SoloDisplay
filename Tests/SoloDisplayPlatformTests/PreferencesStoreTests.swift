@@ -18,6 +18,7 @@ struct PreferencesStoreTests {
     #expect(!preferences.launchAtLogin)
     #expect(!preferences.manualPathValidated)
     #expect(!preferences.brightnessKeys)
+    #expect(!preferences.inputDetection)
   }
 
   @Test func aFileFromBeforeBrightnessKeysKeepsItsChoices() throws {
@@ -34,6 +35,25 @@ struct PreferencesStoreTests {
     try store.update { $0.brightnessKeys = true }
     #expect(store.load().brightnessKeys)
     #expect(store.load().mode == .automatic)
+  }
+
+  @Test func inputDetectionRequiresOptInAfterAnUpgradeAndPersists() throws {
+    let directory = try workspace()
+    let store = try PreferencesStore(directory: directory)
+    let older = """
+    {"schemaVersion":1,"mode":"automatic","launchAtLogin":true,"manualPathValidated":true,"brightnessKeys":true}
+    """
+    try Data(older.utf8).write(to: store.url)
+    let loaded = store.load()
+    #expect(!loaded.inputDetection)
+    #expect(loaded.brightnessKeys && loaded.launchAtLogin)
+    #expect(loaded.mode == .automatic)
+    try store.update { $0.inputDetection = true }
+    let reopened = try PreferencesStore(directory: directory)
+    #expect(reopened.load().inputDetection)
+    try reopened.update { $0.inputDetection = false }
+    #expect(!store.load().inputDetection)
+    #expect(store.load().brightnessKeys)
   }
 
   @Test func aPausedAutomaticChoiceSurvivesARestart() throws {
@@ -58,6 +78,7 @@ struct PreferencesStoreTests {
     try store.update {
       $0.launchAtLogin = true
       $0.manualPathValidated = true
+      $0.inputDetection = true
     }
     // The coordinator persists the mode alone through this path.
     try store.save(mode: .automatic)
@@ -65,6 +86,7 @@ struct PreferencesStoreTests {
     #expect(after.mode == .automatic)
     #expect(after.launchAtLogin)
     #expect(after.manualPathValidated)
+    #expect(after.inputDetection)
   }
 
   @Test func anUnreadableOrUnsupportedFileFallsBackToSafeDefaults() throws {

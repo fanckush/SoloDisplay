@@ -263,3 +263,73 @@ struct GuardianKnowledgeTests {
     #expect(rig.state.guardianTargets.isEmpty)
   }
 }
+
+struct ExperimentalSuppressionRecoveryTests {
+  @Test func disablingDetectionRestoresAnOwedMonitorBeforeTurningThePanelOff() {
+    var rig = Rig()
+    rig.answersMonitors = false
+    rig.state.suppressed = [dell]
+    rig.state.recordedSuppression = [dell]
+    rig.state.guardian = .ready
+    rig.observe(withMonitor(suppressed: [dell], visible: 1), at: 0)
+    let effects = rig.send(.setInputDetection(false), at: 100)
+    #expect(effects.contains(.runWorker(.enable, dell)))
+    #expect(!effects.contains(.writeRecord(panel)))
+    #expect(!effects.contains(.readInputSources))
+    rig.send(.workerFinished(.done), at: 200)
+    rig.observe(withMonitor(), at: 300)
+    #expect(rig.state.suppressed.isEmpty)
+    rig.send(.suppressionRecorded([], succeeded: true), at: 400)
+    #expect(startsTurningOff(rig.observe(withMonitor(), at: 2400)))
+  }
+
+  @Test func defaultOffRestoresSuppressionInheritedFromAnEarlierRun() {
+    var rig = Rig(inputDetectionEnabled: false)
+    rig.answersMonitors = false
+    rig.state.suppressed = [dell]
+    let first = rig.observe(withMonitor(suppressed: [dell], visible: 1), at: 0)
+    #expect(first.contains(.recordSuppression([dell])))
+    let recorded = rig.send(.suppressionRecorded([dell], succeeded: true), at: 100)
+    #expect(recorded.contains(.runWorker(.enable, dell)))
+    #expect(!recorded.contains(.readInputSources))
+  }
+
+  @Test func disablingDuringAnExternalDisableRestoresItAfterTheWorkerFinishes() {
+    var rig = Rig(mode: .automaticPaused)
+    rig.answersMonitors = false
+    rig.observe(withMonitor(), at: 0)
+    rig.observe(withMonitor(), at: 2000)
+    rig.send(answers(.otherMachine, at: 2100), at: 2100)
+    rig.send(answers(.otherMachine, at: 3200), at: 3200)
+    rig.send(.tick, at: 3300)
+    rig.send(.suppressionRecorded([dell], succeeded: true), at: 3400)
+    #expect(rig.send(.guardianReady, at: 3500).contains(.runWorker(.disable, dell)))
+    let toggled = rig.send(.setInputDetection(false), at: 3600)
+    #expect(workers(toggled, .enable) == 0)
+    rig.send(.workerFinished(.done), at: 3700)
+    #expect(rig.observe(withMonitor(suppressed: [dell], visible: 1), at: 3800)
+      .contains(.runWorker(.enable, dell)))
+  }
+
+  @Test func unansweredPollsDoNotResetSilenceRecovery() {
+    var rig = Rig(mode: .automaticPaused)
+    rig.answersMonitors = false
+    rig.state.suppressed = [dell]
+    rig.state.recordedSuppression = [dell]
+    rig.state.guardian = .ready
+    rig.observe(withMonitor(suppressed: [dell], visible: 1), at: 0)
+    rig.send(answers(.otherMachine, at: 0), at: 0)
+    rig.send(answers(.otherMachine, at: 100), at: 100)
+    for time in stride(from: Instant(10000), through: 300_000, by: 10000) {
+      #expect(workers(rig.send(answers(.unknown, at: time), at: time), .enable) == 0)
+    }
+    #expect(rig.state.monitors["dispext0"]?.lastAnswered == 100)
+    #expect(rig.send(.tick, at: 300_100).contains(.runWorker(.enable, dell)))
+    rig.send(.workerFinished(.done), at: 300_200)
+    rig.observe(withMonitor(), at: 300_300)
+    rig.send(.suppressionRecorded([], succeeded: true), at: 300_400)
+    rig.observe(withMonitor(), at: 332_000)
+    #expect(rig.state.suppressed.isEmpty)
+    #expect(rig.state.worker == nil)
+  }
+}

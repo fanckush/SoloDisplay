@@ -229,6 +229,7 @@ public struct RunningWorker: Equatable, Sendable {
 
 public struct ControllerState: Equatable, Sendable {
   public var mode: Mode
+  public var inputDetectionEnabled: Bool
   public var observation: Observation?
   public var stableSince: Instant?
   public var matchingSamples = 0
@@ -284,8 +285,10 @@ public struct ControllerState: Equatable, Sendable {
   public var inputSourcesDueAt: Instant?
   public var policy: Policy
 
-  public init(mode: Mode = .automaticPaused, record: PanelTarget? = nil, policy: Policy = .init()) {
+  public init(mode: Mode = .automaticPaused, record: PanelTarget? = nil, policy: Policy = .init(),
+              inputDetectionEnabled: Bool = false) {
     self.mode = mode
+    self.inputDetectionEnabled = inputDetectionEnabled
     self.record = record
     self.policy = policy
   }
@@ -303,12 +306,12 @@ public struct ControllerState: Equatable, Sendable {
   /// A monitor said, even once, that it is showing another machine. Withholding costs nothing and
   /// the next answer undoes it, so one answer is enough.
   var inputRefusal: Bool {
-    inputSources == .no || inputSourcesPending == .no
+    inputDetectionEnabled && (inputSources == .no || inputSourcesPending == .no)
   }
 
   /// The same answer twice. Putting the laptop screen back is a change, so it waits for that.
   var inputDemand: Bool {
-    inputSources == .no
+    inputDetectionEnabled && inputSources == .no
   }
 
   /// A changed arrangement has to be asked again before anything is turned off, but what the
@@ -330,6 +333,7 @@ public struct ControllerState: Equatable, Sendable {
 }
 
 public enum Event: Equatable, Sendable {
+  case setInputDetection(Bool)
   case observed(Observation)
   /// macOS reported a display reconfiguration. `inProgress` means the last report opened one.
   case displayReconfigured(inProgress: Bool)

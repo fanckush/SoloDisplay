@@ -18,6 +18,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let arrangementItem = NSMenuItem()
   private let launchItem = NSMenuItem()
   private let brightnessItem = NSMenuItem()
+  private let inputDetectionItem = NSMenuItem()
 
   init(store: MenuPanelStore, perform: @escaping (MenuAction) -> Void) {
     self.store = store
@@ -35,9 +36,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     configure(
       brightnessItem, title: store.panel.brightnessKeys.title, action: .toggleBrightnessKeys
     )
+    configure(
+      inputDetectionItem, title: store.panel.inputDetection.title, action: .toggleInputDetection
+    )
     for item in [
       alertItem, retryItem, alertSeparator, arrangementItem, .separator(), launchItem,
-      brightnessItem
+      brightnessItem, inputDetectionItem
     ] {
       menu.addItem(item)
     }
@@ -63,6 +67,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     alertSeparator.isHidden = panel.alert == nil
     launchItem.title = panel.launchAtLogin.title
     launchItem.state = panel.launchAtLogin.isOn ? .on : .off
+    inputDetectionItem.title = panel.inputDetection.title
+    inputDetectionItem.state = panel.inputDetection.isOn ? .on : .off
     brightnessItem.title = panel.brightnessKeys.title
     // A dash rather than a subtitle, so the menu keeps its size while permission is missing.
     brightnessItem.state = panel.brightnessKeys.isBlocked

@@ -9,9 +9,12 @@ mirroring, resolution, arrangement geometry, or sleep settings.
 It makes two changes to an external monitor, and no others. Its brightness, through the opt-in
 brightness keys setting described below (2026-09-17). And turning one off while it reports over
 DDC that it is showing another machine, turning it back on when it stops saying so (2026-09-20).
-That second one only ever acts on a monitor's own account, never on a guess: a monitor that
-cannot answer is left exactly as it is, and one is only ever turned off while another screen is
-left to look at.
+The second change is gated by **Input Detection (Experimental)**, which is off by default,
+including for existing installations. It relies on monitor-specific DDC behavior and is not
+a reliable visibility guarantee across monitors. A monitor is only selected for suppression
+while another screen is observed available. Turning detection off stops polling, clears its
+verdicts, and restores owned external monitors before resuming normal panel automation.
+Replies and deadlines from an earlier setting are discarded. Brightness Keys is independent.
 
 There are two stored choices. **All Monitors** keeps the laptop screen on. **External Only** keeps
 it off whenever a usable monitor is there. The choice is intent, not a reading of the hardware:
@@ -122,6 +125,13 @@ whether a change is under way, any lasting trouble, and why the screen cannot be
   display transaction. Only the display worker uses it.
 - `RecoveryIdentity` decides whether an enable may address a target: a positively different
   identity blocks it, and an absent panel is addressable only by the process that turned it off.
+
+## Experimental input detection
+
+The saved `inputDetection` preference defaults to false when absent. With it off, display
+presence alone drives External Only and no input-source DDC sweep is started. With it on,
+the existing input-veto and external-suppression paths run. Unanswered polls do not refresh
+a monitor's last meaningful-answer time, so the five-minute silence recovery can expire.
 
 ## Brightness keys
 

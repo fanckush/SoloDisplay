@@ -77,7 +77,9 @@ final class ControllerRuntime: CoordinatorDelegate {
     // Only External Only turns anything off. Older preference files may still say manual.
     let mode: Mode = preferences.mode == .automatic ? .automatic : .automaticPaused
     let resolved = ProductionCoordinator.resolveRecord(journal, reading: reading)
-    var state = ControllerState(mode: mode, record: resolved.target)
+    var state = ControllerState(
+      mode: mode, record: resolved.target, inputDetectionEnabled: preferences.inputDetection
+    )
     state.recordBlocked = resolved.blocked
     // Monitors a previous run turned off are an obligation to give back, whatever else is true.
     // Turning a monitor on is always safe, so they are carried in and restored, never assumed.
@@ -210,7 +212,8 @@ final class ControllerRuntime: CoordinatorDelegate {
     let next = MenuModel.panel(
       presentation, launchAtLogin: preferences.launchAtLogin,
       brightnessKeys: preferences.brightnessKeys,
-      brightnessNeedsPermission: brightnessKeys.needsPermission
+      brightnessNeedsPermission: brightnessKeys.needsPermission,
+      inputDetection: preferences.inputDetection
     )
     // Redrawing an identical panel would move things under the pointer for no reason.
     guard next != panel else { return }
@@ -231,6 +234,9 @@ final class ControllerRuntime: CoordinatorDelegate {
     case .toggleBrightnessKeys:
       mutatePreferences { $0.brightnessKeys.toggle() }
       brightnessKeys.setEnabled(preferences.brightnessKeys, askForPermission: true)
+    case .toggleInputDetection:
+      mutatePreferences { $0.inputDetection.toggle() }
+      coordinator?.send(.setInputDetection(preferences.inputDetection))
     case .checkForUpdates: onCheckForUpdates?()
     case .openDisplayMonitor: onOpenDiagnostics?()
     case .exportDiagnostics: exportDiagnostics()

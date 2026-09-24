@@ -15,11 +15,13 @@ public struct Preferences: Codable, Equatable, Sendable {
   public var manualPathValidated = false
   /// Brightness keys adjust the external monitor while the laptop screen is off.
   public var brightnessKeys = false
+  /// Experimental monitor input detection is opt-in, including after an upgrade.
+  public var inputDetection = false
 
   public init() {}
 
   private enum CodingKeys: String, CodingKey {
-    case schemaVersion, mode, launchAtLogin, manualPathValidated, brightnessKeys
+    case schemaVersion, mode, launchAtLogin, manualPathValidated, brightnessKeys, inputDetection
   }
 
   /// Fields added later are optional, so an older file keeps the choices it does have.
@@ -30,6 +32,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     launchAtLogin = try container.decode(Bool.self, forKey: .launchAtLogin)
     manualPathValidated = try container.decode(Bool.self, forKey: .manualPathValidated)
     brightnessKeys = try container.decodeIfPresent(Bool.self, forKey: .brightnessKeys) ?? false
+    inputDetection = try container.decodeIfPresent(Bool.self, forKey: .inputDetection) ?? false
   }
 }
 

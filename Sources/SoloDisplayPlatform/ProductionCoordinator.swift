@@ -180,6 +180,9 @@ public final class ProductionCoordinator {
   private let inputLane: any SerialLane
   /// One sweep at a time: a monitor that never answers must not queue more behind it.
   private var inputSweepInFlight = false
+  /// A reply from before an opt-in change must never apply to the new choice.
+  private var inputConfigurationGeneration: UInt64 = 0
+  private var inputDeadlineGeneration: UInt64 = 0
 
   public init(
     state: ControllerState, clock: any CoordinatorClock, observer: any PlatformObserving,
@@ -275,6 +278,9 @@ public final class ProductionCoordinator {
     let now = clock.now()
     recordDiagnostics(for: event)
     switch event {
+    case let .setInputDetection(enabled) where enabled != state.inputDetectionEnabled:
+      inputConfigurationGeneration &+= 1
+      inputDeadlineGeneration &+= 1
     case .willSleep:
       lifecycle = .sleeping
     case .waking:
@@ -504,21 +510,27 @@ public final class ProductionCoordinator {
   /// Asks every monitor what it is showing. The answer is one verdict for the whole arrangement,
   /// and nothing at all is a usable answer: it leaves the standing one alone.
   private func readInputSources(at now: Instant) {
-    // The controller may ask again after giving up on a sweep that is still out there.
-    guard !inputSweepInFlight else { return }
+    guard state.inputDetectionEnabled else { return }
     guard let inputSources else {
       send(.inputSourcesRead(.unknown, sampledAt: now))
       return
     }
-    inputSweepInFlight = true
+    let configuration = inputConfigurationGeneration
+    inputDeadlineGeneration &+= 1
+    let deadline = inputDeadlineGeneration
     // Sampling time is taken before the sweep, so an answer is never treated as fresher than it is.
     let sampledAt = clock.now()
     // A sweep that never comes back must not hold the decision open for ever. What it would have
     // said is nothing, which is how a Mac with no DDC at all already behaves.
     scheduler.after(Double(state.policy.inputSourceDeadline) / 1000) { [weak self] in
-      guard let self, inputSweepInFlight else { return }
+      guard let self, configuration == inputConfigurationGeneration,
+            deadline == inputDeadlineGeneration, state.inputSourcesBusy else { return }
       send(.inputSourcesRead(.unknown, sampledAt: clock.now()))
     }
+    // A previous configuration may still have a blocked call. The new request gets its own
+    // deadline, but must not start a second exchange on the wire.
+    guard !inputSweepInFlight else { return }
+    inputSweepInFlight = true
     inputLane.run {
       let evidence = inputSources.read()
       return .inputSourcesRead(
@@ -526,8 +538,15 @@ public final class ProductionCoordinator {
         monitors: InputSourceClassifier.perMonitor(evidence), sampledAt: sampledAt
       )
     } completion: { [weak self] event in
-      self?.inputSweepInFlight = false
-      self?.send(event)
+      guard let self else { return }
+      inputSweepInFlight = false
+      guard configuration == inputConfigurationGeneration else {
+        if state.inputDetectionEnabled, state.inputSourcesBusy {
+          readInputSources(at: clock.now())
+        }
+        return
+      }
+      send(event)
     }
   }
 
