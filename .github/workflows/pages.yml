@@ -1,0 +1,66 @@
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - ".github/workflows/pages.yml"
+  # Redeploy after a release so the version on the site stays current.
+  # workflow_run runs on main, which the github-pages environment allows.
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  SITE_URL: https://fanckush.github.io/SoloDisplay/
+  INDEXNOW_KEY: 47e481f42350670e15b60f17c00e90cd
+
+jobs:
+  deploy:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp latest release and date
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName | ltrimstr("v")')
+          today=$(date -u +%F)
+          echo "Stamping v$version, $today"
+          find site \( -name '*.html' -o -name 'sitemap.xml' \) -print0 | xargs -0 sed -i -E \
+            -e "s|(<span data-version>)v[^<]*(</span>)|\1v$version\2|g" \
+            -e "s|(\"softwareVersion\": \")[^\"]*\"|\1$version\"|g" \
+            -e "s|(\"dateModified\": \")[^\"]*\"|\1$today\"|g" \
+            -e "s|(<lastmod>)[^<]*(</lastmod>)|\1$today\2|g"
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      # Tell Bing (and the engines that share IndexNow) the pages changed.
+      - name: Ping IndexNow
+        continue-on-error: true
+        run: |
+          host=$(echo "$SITE_URL" | cut -d/ -f3)
+          curl -sS -o /dev/null -w "IndexNow: %{http_code}\n" -X POST https://api.indexnow.org/indexnow \
+            -H 'Content-Type: application/json; charset=utf-8' \
+            -d "{\"host\":\"$host\",\"key\":\"$INDEXNOW_KEY\",\"keyLocation\":\"${SITE_URL}${INDEXNOW_KEY}.txt\",\"urlList\":[\"$SITE_URL\",\"${SITE_URL}guide/external-monitor-only-macbook/\"]}"

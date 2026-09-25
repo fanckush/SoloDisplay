@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Absolute URLs use https://fanckush.github.io/SoloDisplay/. To move to a custom domain, replace that string across site/ and add a CNAME file. -->
+<title>Turn Off MacBook Screen with External Monitor | SoloDisplay</title>
+<meta name="description" content="Free Mac app that turns off your MacBook's built-in display when an external monitor is connected. Like clamshell mode, but the lid stays open.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="author" content="fanckush">
+<meta name="application-name" content="SoloDisplay">
+<link rel="canonical" href="https://fanckush.github.io/SoloDisplay/">
+<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="site.webmanifest">
+<meta name="theme-color" content="#0f1012">
+<meta name="color-scheme" content="dark">
+
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="SoloDisplay">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Turn off your MacBook screen without closing the lid">
+<meta property="og:description" content="SoloDisplay turns off the built-in display when an external monitor is connected. Free and open source for Mac.">
+<meta property="og:url" content="https://fanckush.github.io/SoloDisplay/">
+<meta property="og:image" content="https://fanckush.github.io/SoloDisplay/og-v1.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A MacBook with its screen off next to an external monitor that's on. Text: Turn off your MacBook screen. Keep the lid open.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Turn off your MacBook screen without closing the lid">
+<meta name="twitter:description" content="SoloDisplay turns off the built-in display when an external monitor is connected. Free and open source for Mac.">
+<meta name="twitter:image" content="https://fanckush.github.io/SoloDisplay/og-v1.png">
+<meta name="twitter:image:alt" content="A MacBook with its screen off next to an external monitor that's on.">
+
+<!-- Keep in sync with the FAQ section below. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": "https://fanckush.github.io/SoloDisplay/#website",
+      "url": "https://fanckush.github.io/SoloDisplay/",
+      "name": "SoloDisplay",
+      "inLanguage": "en"
+    },
+    {
+      "@type": "WebPage",
+      "@id": "https://fanckush.github.io/SoloDisplay/#webpage",
+      "url": "https://fanckush.github.io/SoloDisplay/",
+      "name": "Turn Off MacBook Screen with External Monitor | SoloDisplay",
+      "isPartOf": {
+        "@id": "https://fanckush.github.io/SoloDisplay/#website"
+      },
+      "about": {
+        "@id": "https://fanckush.github.io/SoloDisplay/#app"
+      },
+      "primaryImageOfPage": "https://fanckush.github.io/SoloDisplay/og-v1.png",
+      "dateModified": "2026-09-25",
+      "inLanguage": "en"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://fanckush.github.io/SoloDisplay/#app",
+      "name": "SoloDisplay",
+      "description": "Free macOS menu bar app that turns off the MacBook's built-in display while an external monitor is connected, without closing the lid.",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "macOS",
+      "softwareRequirements": "macOS Tahoe 26 or later, Apple silicon MacBook",
+      "softwareVersion": "0.7.1",
+      "fileSize": "2.4 MB",
+      "url": "https://fanckush.github.io/SoloDisplay/",
+      "downloadUrl": "https://github.com/fanckush/SoloDisplay/releases/latest/download/SoloDisplay.dmg",
+      "installUrl": "https://github.com/fanckush/SoloDisplay/releases/latest",
+      "image": "https://fanckush.github.io/SoloDisplay/og-v1.png",
+      "screenshot": "https://fanckush.github.io/SoloDisplay/screenshot.webp",
+      "featureList": [
+        "Turns off the MacBook screen when an external monitor is connected",
+        "Keeps the lid open, unlike clamshell mode",
+        "Brightness keys control the external monitor over DDC",
+        "Detects when the monitor switches to another input (experimental)",
+        "Restores the laptop screen if the app quits or crashes"
+      ],
+      "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+      "isAccessibleForFree": true,
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Person",
+        "name": "fanckush",
+        "url": "https://github.com/fanckush",
+        "sameAs": [
+          "https://github.com/fanckush"
+        ]
+      },
+      "codeRepository": "https://github.com/fanckush/SoloDisplay"
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://fanckush.github.io/SoloDisplay/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "How do I use only my external monitor on a MacBook?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Install SoloDisplay, open it from the menu bar and choose External Only. From then on the MacBook screen turns off whenever a monitor is connected, and comes back when you unplug. The guide compares this with clamshell mode and the other workarounds."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I use clamshell mode with the lid open?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not with macOS alone. Clamshell mode only works with the lid closed, so you lose the keyboard, trackpad, Touch ID, camera and microphone. SoloDisplay gives you the same monitor-only setup with the lid open."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is there a \"Second screen only\" mode on Mac like on Windows?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Not built in. On Windows you press Win+P and pick Second screen only. macOS has no such setting. SoloDisplay adds it: External Only is the same idea."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why not just turn the brightness all the way down?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A dimmed screen is still part of your desktop. The pointer and windows keep ending up on a screen you can't see. SoloDisplay turns it off, so macOS only uses your monitor."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Why do my windows and pointer keep ending up on the laptop screen?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Because macOS still treats the built-in display as part of your desktop, even when it's dimmed. Once SoloDisplay turns it off, macOS only has your monitor, so everything opens there."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What happens when I unplug the monitor?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "The laptop screen turns back on. If External Only is still chosen, it turns off again the next time you plug a monitor in."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it work with docks, hubs and more than one monitor?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Monitors connected directly, through a USB-C or Thunderbolt hub, or through a dock all count, and you can have more than one."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I control my external monitor's brightness?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Turn on Brightness Keys and the Mac's brightness keys control the external monitor, on monitors that support DDC. It needs Accessibility permission."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What happens if I switch my monitor to another input?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "With Input Detection (Experimental) turned on, SoloDisplay notices when the monitor is showing another device, like a PS5 or a PC. It turns that monitor off in macOS and brings the laptop screen back, while the cable stays connected. It needs a monitor that reports its input over DDC."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "What if the app crashes?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "A small helper process watches the app while the screen is off. If the app quits, crashes or is force quit, the helper turns the laptop screen back on. It does the same if the screen is off and no usable monitor is connected."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it change my resolution or display arrangement?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. It doesn't touch mirroring, resolution, arrangement or sleep settings."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Which Macs does it work on?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "MacBook Air and MacBook Pro with Apple silicon (M1 and later), running macOS Tahoe 26 or later. Intel Macs aren't supported."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is SoloDisplay an alternative to BetterDisplay?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "For this one job, yes. BetterDisplay is a large toolkit for managing displays. SoloDisplay only turns the laptop screen off when a monitor is connected, and it's free and open source."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "How do I uninstall it?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Quit SoloDisplay from its menu and drag it from Applications to the Trash, or run brew uninstall --cask solodisplay if you installed it with Homebrew. The laptop screen comes back on when the app quits."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Is it free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. SoloDisplay is open source under the GPL-3.0 license. The code is on GitHub."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- Shared drawings, reused by both demos -->
+<svg class="sprites" aria-hidden="true" focusable="false">
+  <defs>
+    <g id="win">
+      <rect x=".5" y=".5" width="151" height="103" rx="6" fill="#fff" stroke="#b7bfce"/>
+      <path d="M6.5.5h139a6 6 0 0 1 6 6V15H.5V6.5a6 6 0 0 1 6-6z" fill="#e3e7ef"/>
+      <circle cx="10" cy="8" r="2.6" fill="#ff5f57"/><circle cx="18.5" cy="8" r="2.6" fill="#febc2e"/><circle cx="27" cy="8" r="2.6" fill="#28c840"/>
+      <rect x="14" y="28" width="96" height="7" rx="3.5" fill="#d3d9e4"/>
+      <rect x="14" y="43" width="120" height="7" rx="3.5" fill="#d3d9e4"/>
+      <rect x="14" y="58" width="70" height="7" rx="3.5" fill="#d3d9e4"/>
+      <rect x="14" y="76" width="44" height="14" rx="4" fill="#4f8cff" opacity=".3"/>
+    </g>
+    <g id="monitor-body">
+      <!-- Straight neck and thin foot, Studio Display style -->
+      <rect x="350" y="232" width="46" height="53" fill="#a5a8af"/>
+      <rect x="350" y="232" width="46" height="4" fill="#7c7f86"/>
+      <rect x="320" y="285" width="106" height="4" rx="2" fill="#bfc2c8"/>
+      <rect x="196" y="10" width="354" height="224" rx="5" fill="#a5a8af"/>
+      <rect x="197.5" y="11.5" width="351" height="221" rx="3.5" fill="#0a0a0b"/>
+    </g>
+    <g id="desktop">
+      <rect width="336" height="9" fill="#fff" opacity=".22"/>
+      <use href="#win" transform="translate(23 27) scale(1.05)"/>
+      <use href="#win" transform="translate(161 79)"/>
+    </g>
+    <g id="laptop-lid">
+      <!-- Rounded top corners only: the bottom of the lid meets the hinge -->
+      <path d="M23 150h192a9 9 0 0 1 9 9v134H14V159a9 9 0 0 1 9-9z" fill="#a5a8af"/>
+      <path d="M23 151.5h192a7.5 7.5 0 0 1 7.5 7.5v133.5H15.5V159a7.5 7.5 0 0 1 7.5-7.5z" fill="#0a0a0b"/>
+      <rect x="21" y="157" width="196" height="129" rx="2.5" fill="#050506"/>
+    </g>
+    <g id="laptop-front">
+      <!-- Notch, then a thin base with the thumb cutout -->
+      <path d="M108 157h22v3.4a2 2 0 0 1-2 2h-18a2 2 0 0 1-2-2z" fill="#0a0a0b"/>
+      <circle cx="119" cy="159.4" r="1" fill="#1d2030"/>
+      <path d="M0 293h238v2.2c0 2.2-3.5 3.8-8 3.8H8c-4.5 0-8-1.6-8-3.8z" fill="#b3b6bd"/>
+      <rect x="0" y="293" width="238" height="1" fill="#dcdee2"/>
+      <path d="M100 293h38v.9c0 1-1 1.7-2.4 1.7h-33.2c-1.4 0-2.4-.7-2.4-1.7z" fill="#8a8d95"/>
+    </g>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./"><img src="icon-64.png" alt="" width="30" height="30">SoloDisplay</a>
+    <nav aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="guide/external-monitor-only-macbook/">Guide</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/fanckush/SoloDisplay">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <div class="hero">
+      <div>
+        <h1>Turn off your MacBook screen without closing the lid.</h1>
+        <p class="lede">Windows has Second screen only. macOS doesn't. SoloDisplay adds it: plug in an external monitor and your MacBook's built-in display turns off, lid open. Unplug and it comes back.</p>
+        <div class="actions">
+          <a class="btn" href="https://github.com/fanckush/SoloDisplay/releases/latest/download/SoloDisplay.dmg">
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 14h11" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Download for Mac
+          </a>
+          <div class="brew">
+            <code id="brew-cmd">brew install --cask fanckush/solodisplay/solodisplay</code>
+            <button type="button" id="copy" aria-label="Copy Homebrew install command">Copy</button>
+          </div>
+        </div>
+        <p class="fine">Free and open source &middot; <span data-version>v0.7.1</span> &middot; 2.4 MB &middot; macOS Tahoe 26+ &middot; Apple silicon</p>
+      </div>
+
+      <div class="demo" id="hero-demo" data-mode="all" data-auto="external">
+        <svg viewBox="0 0 560 304" role="img" aria-labelledby="hero-demo-title">
+          <title id="hero-demo-title">A MacBook next to an external monitor. In External Only mode the MacBook screen turns off and its window shows up on the monitor.</title>
+          <use href="#monitor-body"/>
+          <rect x="205" y="19" width="336" height="206" rx="2" fill="#4f8cff"/>
+          <rect x="205" y="19" width="336" height="9" fill="#fff" opacity=".22"/>
+          <use href="#win" transform="translate(228 46) scale(1.05)"/>
+          <g class="arrive"><use href="#win" transform="translate(366 98)"/></g>
+          <use href="#laptop-lid"/>
+          <g class="lap-lit">
+            <rect x="21" y="157" width="196" height="129" rx="2.5" fill="#4f8cff"/>
+            <rect x="21" y="157" width="196" height="7" fill="#fff" opacity=".22"/>
+            <use href="#win" transform="translate(44 182) scale(.72)"/>
+          </g>
+          <use href="#laptop-front"/>
+        </svg>
+
+        <div class="seg" role="radiogroup" aria-label="Display mode">
+          <button type="button" role="radio" aria-checked="true" data-mode="all" data-status="Your laptop screen is on.">All Monitors</button>
+          <button type="button" role="radio" aria-checked="false" tabindex="-1" data-mode="external" data-status="Your laptop screen is off. Its window is on the monitor now.">External Only</button>
+        </div>
+        <p class="status" aria-live="polite">Your laptop screen is on.</p>
+      </div>
+    </div>
+
+    <section id="features">
+      <h2>What it does</h2>
+
+      <div class="features">
+        <article class="card">
+          <h3>Plug in a monitor, the laptop screen turns off.</h3>
+          <p>Pick External Only once. Every time a monitor is connected the laptop screen turns off, and it comes back when you unplug.</p>
+          <p>It isn't dimmed, it's off. macOS stops using it, so windows and the pointer stay on your monitor.</p>
+        </article>
+
+        <article class="card keyed">
+          <h3>Brightness keys work on your monitor.</h3>
+          <p>Adjust your external monitor from the keyboard, with the usual macOS brightness overlay.</p>
+          <p class="note">Needs a monitor that supports DDC, and Accessibility permission.</p>
+          <div class="keys" aria-hidden="true">
+            <div class="key">
+              <svg width="16" height="16" viewBox="0 0 16 16"><g transform="translate(8 8) scale(.7) translate(-8 -8)" stroke-width="1.6"><circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" stroke="currentColor" stroke-linecap="round"/></g></svg>
+              F1
+            </div>
+            <div class="key">
+              <svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6 13 13M3 13l1.4-1.4M11.6 4.4 13 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+              F2
+            </div>
+          </div>
+        </article>
+
+        <article class="card wide demo" id="input-demo" data-mode="mac" data-auto="console">
+          <div class="copy">
+            <span class="tag">Experimental</span>
+            <h3>Knows when your monitor is showing something else.</h3>
+            <p>Switch the monitor to a PS5 or a PC and the MacBook screen takes over. Switch back and it turns off again. The cable stays plugged in, so charging keeps working.</p>
+            <p class="note">Off by default. Needs a monitor that reports its input over DDC.</p>
+          </div>
+
+          <div class="art">
+            <svg viewBox="0 0 560 304" role="img" aria-labelledby="input-demo-title">
+              <title id="input-demo-title">When the monitor switches to another device, the MacBook screen turns back on and every window moves to it.</title>
+              <use href="#monitor-body"/>
+              <rect x="205" y="19" width="336" height="206" rx="2" fill="#4f8cff"/>
+              <use href="#desktop" transform="translate(205 19)"/>
+              <defs>
+                <clipPath id="mon-screen"><rect x="205" y="19" width="336" height="206" rx="2"/></clipPath>
+                <linearGradient id="game-sky" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#27306f"/>
+                  <stop offset=".62" stop-color="#d8715c"/>
+                  <stop offset="1" stop-color="#f4b36c"/>
+                </linearGradient>
+              </defs>
+
+              <!-- HDMI 2: a racing game -->
+              <g class="scene scene-console" clip-path="url(#mon-screen)">
+                <rect x="205" y="19" width="336" height="150" fill="url(#game-sky)"/>
+                <circle cx="408" cy="132" r="28" fill="#ffd9a0" opacity=".9"/>
+                <polygon points="205,152 248,112 286,140 334,96 382,146 428,106 478,142 541,110 541,162 205,162" fill="#3b2a5c"/>
+                <polygon points="205,160 262,138 318,158 373,150 430,160 488,140 541,156 541,166 205,166" fill="#2a2046"/>
+                <rect x="205" y="162" width="336" height="63" fill="#1b1733"/>
+                <polygon points="364,162 382,162 476,225 270,225" fill="#35324a"/>
+                <polygon points="372,166 374,166 375,173 371,173" fill="#f3e6c4"/>
+                <polygon points="370,181 376,181 377.5,193 368.5,193" fill="#f3e6c4"/>
+                <polygon points="366.5,205 379.5,205 382,222 364,222" fill="#f3e6c4"/>
+                <rect x="356" y="187" width="34" height="10" rx="4" fill="#8e2620"/>
+                <rect x="359" y="189" width="28" height="6" rx="2" fill="#2b1a2a"/>
+                <rect x="348" y="195" width="50" height="17" rx="5" fill="#d9463b"/>
+                <rect x="351" y="200" width="9" height="3.5" rx="1.5" fill="#ffcf5a"/>
+                <rect x="386" y="200" width="9" height="3.5" rx="1.5" fill="#ffcf5a"/>
+                <rect x="352" y="211" width="8" height="5" rx="1.5" fill="#141217"/>
+                <rect x="386" y="211" width="8" height="5" rx="1.5" fill="#141217"/>
+                <rect x="236" y="31" width="72" height="8" rx="4" fill="#000" opacity=".45"/>
+                <rect x="237.5" y="32.5" width="50" height="5" rx="2.5" fill="#5ee08a"/>
+                <text x="236" y="213" fill="#fff" font-size="20" font-weight="700" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">142</text>
+                <text x="274" y="213" fill="#fff" opacity=".75" font-size="8" font-weight="600" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">KM/H</text>
+                <circle cx="516" cy="200" r="16" fill="#000" opacity=".4"/>
+                <circle cx="516" cy="200" r="16" fill="none" stroke="#fff" stroke-opacity=".5"/>
+                <path d="M510 208c3-6 8-6 6-12s4-8 7-9" fill="none" stroke="#fff" stroke-opacity=".7" stroke-width="1.6" stroke-linecap="round"/>
+                <circle cx="514" cy="202" r="2" fill="#ffcf5a"/>
+                <rect x="466" y="32" width="62" height="20" rx="10" fill="#000" opacity=".55"/>
+                <text x="497" y="46" text-anchor="middle" fill="#fff" font-size="10.5" font-weight="600" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">HDMI 2</text>
+              </g>
+
+              <!-- DisplayPort: a PC desktop -->
+              <g class="scene scene-pc" clip-path="url(#mon-screen)">
+                <rect x="205" y="19" width="336" height="206" fill="#10394a"/>
+                <circle cx="486" cy="40" r="110" fill="#1b6475" opacity=".55"/>
+                <circle cx="250" cy="220" r="80" fill="#0c2c3a" opacity=".8"/>
+                <rect x="236" y="42" width="196" height="132" rx="4" fill="#f3f4f6"/>
+                <rect x="236" y="42" width="196" height="17" rx="4" fill="#e3e5e9"/>
+                <rect x="236" y="54" width="196" height="5" fill="#e3e5e9"/>
+                <path d="M395 51h7" stroke="#555" stroke-width="1.2"/>
+                <rect x="408" y="47.5" width="6.5" height="6.5" fill="none" stroke="#555" stroke-width="1.2"/>
+                <path d="M420 47.5l6.5 6.5M426.5 47.5l-6.5 6.5" stroke="#555" stroke-width="1.2"/>
+                <rect x="236" y="59" width="44" height="115" fill="#e9ebef"/>
+                <rect x="244" y="68" width="28" height="5" rx="2.5" fill="#c7ccd4"/>
+                <rect x="244" y="80" width="22" height="5" rx="2.5" fill="#c7ccd4"/>
+                <rect x="244" y="92" width="26" height="5" rx="2.5" fill="#c7ccd4"/>
+                <rect x="292" y="70" width="120" height="7" rx="3.5" fill="#d3d8e0"/>
+                <rect x="292" y="85" width="90" height="7" rx="3.5" fill="#d3d8e0"/>
+                <rect x="292" y="104" width="126" height="54" rx="4" fill="#2f7cf6" opacity=".2"/>
+                <rect x="205" y="207" width="336" height="18" fill="#0a0d12" opacity=".88"/>
+                <rect x="339" y="211.5" width="9" height="9" rx="2" fill="#4f8cff"/>
+                <rect x="353" y="211.5" width="9" height="9" rx="2" fill="#f2c14e"/>
+                <rect x="367" y="211.5" width="9" height="9" rx="2" fill="#e05d5d"/>
+                <rect x="381" y="211.5" width="9" height="9" rx="2" fill="#7bd389"/>
+                <rect x="395" y="211.5" width="9" height="9" rx="2" fill="#c9ccd3"/>
+                <text x="532" y="219" text-anchor="end" fill="#dfe2e6" font-size="7.5" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">21:04</text>
+                <rect x="444" y="32" width="84" height="20" rx="10" fill="#000" opacity=".55"/>
+                <text x="486" y="46" text-anchor="middle" fill="#fff" font-size="10.5" font-weight="600" font-family="-apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif">DisplayPort</text>
+              </g>
+              <use href="#laptop-lid"/>
+              <g class="lap-lit">
+                <rect x="21" y="157" width="196" height="129" rx="2.5" fill="#4f8cff"/>
+                <use href="#desktop" transform="translate(21 157) scale(.5833)"/>
+              </g>
+              <use href="#laptop-front"/>
+            </svg>
+          </div>
+
+          <div class="ctrl">
+            <div class="seg" role="radiogroup" aria-label="Monitor input">
+              <button type="button" role="radio" aria-checked="true" data-mode="mac" data-status="Monitor on this Mac. Laptop screen off."><span class="port">USB-C</span>This Mac</button>
+              <button type="button" role="radio" aria-checked="false" tabindex="-1" data-mode="console" data-status="Monitor on the PS5. Your windows move to the laptop screen."><span class="port">HDMI 2</span>PS5</button>
+              <button type="button" role="radio" aria-checked="false" tabindex="-1" data-mode="pc" data-status="Monitor on the PC. Your windows move to the laptop screen."><span class="port">DisplayPort</span>PC</button>
+            </div>
+            <p class="status" aria-live="polite">Monitor on this Mac. Laptop screen off.</p>
+          </div>
+        </article>
+
+        <article class="card">
+          <h3>Clamshell mode, without the downsides.</h3>
+          <p>Clamshell mode only works with the lid shut, so you give up the keyboard, trackpad, Touch ID, camera, microphone and speakers. SoloDisplay keeps the lid open and turns off just the screen.</p>
+        </article>
+
+        <article class="card">
+          <h3>Built so you don't end up with a black screen.</h3>
+          <ul class="checks">
+            <li>If the app quits, crashes or is force quit, a helper process turns the laptop screen back on.</li>
+            <li>If the laptop screen is off and no usable monitor is connected, it comes back on by itself.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="facts">
+        <figure>
+          <img src="screenshot.webp" width="882" height="630" loading="lazy" alt="The SoloDisplay menu bar panel with All Monitors and External Only, Launch at Login, Diagnostics and Quit">
+          <figcaption>It lives in the menu bar.</figcaption>
+        </figure>
+        <dl>
+          <div><dt>2.4 MB</dt><dd>download</dd></div>
+          <div><dt>1 dependency</dt><dd>Sparkle, for updates. Nothing else.</dd></div>
+          <div><dt>macOS 26+</dt><dd>on Apple silicon MacBooks</dd></div>
+          <div><dt>GPL-3.0</dt><dd>Free and open source.</dd></div>
+        </dl>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="faq">
+        <h2>Questions about turning off the MacBook screen</h2>
+        <details id="use-only-external-monitor">
+          <summary>How do I use only my external monitor on a MacBook?</summary>
+          <p>Install SoloDisplay, open it from the menu bar and choose External Only. From then on the MacBook screen turns off whenever a monitor is connected, and comes back when you unplug. <a href="guide/external-monitor-only-macbook/">The guide</a> compares this with clamshell mode and the other workarounds.</p>
+        </details>
+        <details id="clamshell-lid-open">
+          <summary>Can I use clamshell mode with the lid open?</summary>
+          <p>Not with macOS alone. Clamshell mode only works with the lid closed, so you lose the keyboard, trackpad, Touch ID, camera and microphone. SoloDisplay gives you the same monitor-only setup with the lid open.</p>
+        </details>
+        <details id="second-screen-only">
+          <summary>Is there a "Second screen only" mode on Mac like on Windows?</summary>
+          <p>Not built in. On Windows you press Win+P and pick Second screen only. macOS has no such setting. SoloDisplay adds it: External Only is the same idea.</p>
+        </details>
+        <details id="brightness-zero">
+          <summary>Why not just turn the brightness all the way down?</summary>
+          <p>A dimmed screen is still part of your desktop. The pointer and windows keep ending up on a screen you can't see. SoloDisplay turns it off, so macOS only uses your monitor.</p>
+        </details>
+        <details id="windows-on-laptop-screen">
+          <summary>Why do my windows and pointer keep ending up on the laptop screen?</summary>
+          <p>Because macOS still treats the built-in display as part of your desktop, even when it's dimmed. Once SoloDisplay turns it off, macOS only has your monitor, so everything opens there.</p>
+        </details>
+        <details id="unplug">
+          <summary>What happens when I unplug the monitor?</summary>
+          <p>The laptop screen turns back on. If External Only is still chosen, it turns off again the next time you plug a monitor in.</p>
+        </details>
+        <details id="docks-and-multiple-monitors">
+          <summary>Does it work with docks, hubs and more than one monitor?</summary>
+          <p>Yes. Monitors connected directly, through a USB-C or Thunderbolt hub, or through a dock all count, and you can have more than one.</p>
+        </details>
+        <details id="brightness-keys">
+          <summary>Can I control my external monitor's brightness?</summary>
+          <p>Yes. Turn on Brightness Keys and the Mac's brightness keys control the external monitor, on monitors that support DDC. It needs Accessibility permission.</p>
+        </details>
+        <details id="monitor-input">
+          <summary>What happens if I switch my monitor to another input?</summary>
+          <p>With Input Detection (Experimental) turned on, SoloDisplay notices when the monitor is showing another device, like a PS5 or a PC. It turns that monitor off in macOS and brings the laptop screen back, while the cable stays connected. It needs a monitor that reports its input over DDC.</p>
+        </details>
+        <details id="crash">
+          <summary>What if the app crashes?</summary>
+          <p>A small helper process watches the app while the screen is off. If the app quits, crashes or is force quit, the helper turns the laptop screen back on. It does the same if the screen is off and no usable monitor is connected.</p>
+        </details>
+        <details id="resolution">
+          <summary>Does it change my resolution or display arrangement?</summary>
+          <p>No. It doesn't touch mirroring, resolution, arrangement or sleep settings.</p>
+        </details>
+        <details id="requirements">
+          <summary>Which Macs does it work on?</summary>
+          <p>MacBook Air and MacBook Pro with Apple silicon (M1 and later), running macOS Tahoe 26 or later. Intel Macs aren't supported.</p>
+        </details>
+        <details id="betterdisplay">
+          <summary>Is SoloDisplay an alternative to BetterDisplay?</summary>
+          <p>For this one job, yes. BetterDisplay is a large toolkit for managing displays. SoloDisplay only turns the laptop screen off when a monitor is connected, and it's free and open source.</p>
+        </details>
+        <details id="uninstall">
+          <summary>How do I uninstall it?</summary>
+          <p>Quit SoloDisplay from its menu and drag it from Applications to the Trash, or run <code>brew uninstall --cask solodisplay</code> if you installed it with Homebrew. The laptop screen comes back on when the app quits.</p>
+        </details>
+        <details id="free">
+          <summary>Is it free?</summary>
+          <p>Yes. SoloDisplay is open source under the <a href="https://github.com/fanckush/SoloDisplay/blob/main/LICENSE">GPL-3.0</a> license. The code is on <a href="https://github.com/fanckush/SoloDisplay">GitHub</a>.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="row">
+      <div>
+        <p>SoloDisplay is free software under GPL-3.0.</p>
+        <p>Thanks to <a href="https://github.com/RonaldPark89/InternalDisplayOff">InternalDisplayOff</a> for the technique and <a href="https://github.com/waydabber/BetterDisplay">BetterDisplay</a> for proving it was possible.</p>
+      </div>
+      <div>
+        <a href="guide/external-monitor-only-macbook/">Use only an external monitor on a MacBook</a> &middot;
+        <a href="https://github.com/fanckush/SoloDisplay">GitHub</a> &middot;
+        <a href="https://github.com/fanckush/SoloDisplay/releases">Releases</a> &middot;
+        <a href="https://github.com/fanckush/SoloDisplay/issues">Report an issue</a>
+      </div>
+    </div>
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // Longest transition in either demo (fade plus delay), in ms.
+    var SETTLE = 750;
+
+    document.querySelectorAll(".demo").forEach(function (demo) {
+      var buttons = demo.querySelectorAll(".seg button");
+      var status = demo.querySelector(".status");
+      var autoTimer = null;
+      var used = false;
+      var busy = false;
+      var wanted = demo.dataset.mode;
+
+      // The switch and caption follow the choice right away. The drawing finishes
+      // its current change first, then jumps to the latest choice, so rapid
+      // clicks never stack transitions.
+      function choose(mode) {
+        wanted = mode;
+        buttons.forEach(function (b) {
+          var on = b.dataset.mode === mode;
+          b.setAttribute("aria-checked", String(on));
+          b.tabIndex = on ? 0 : -1;
+          if (on) status.textContent = b.dataset.status;
+        });
+        show();
+      }
+
+      function show() {
+        var from = demo.dataset.mode;
+        if (busy || wanted === from) return;
+        demo.classList.toggle("swap", from !== "mac" && wanted !== "mac");
+        demo.dataset.mode = wanted;
+        if (reduced) return;
+        busy = true;
+        setTimeout(function () { busy = false; show(); }, SETTLE);
+      }
+
+      function byUser(mode) {
+        used = true;
+        clearTimeout(autoTimer);
+        choose(mode);
+      }
+
+      buttons.forEach(function (b, i) {
+        b.addEventListener("click", function () { byUser(b.dataset.mode); });
+        b.addEventListener("keydown", function (e) {
+          var step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+          if (!step) return;
+          e.preventDefault();
+          var next = buttons[(i + step + buttons.length) % buttons.length];
+          byUser(next.dataset.mode);
+          next.focus();
+        });
+      });
+
+      // Play the switch once when the demo first comes into view, unless the
+      // visitor has already used it.
+      if (reduced || !("IntersectionObserver" in window)) return;
+      var seen = new IntersectionObserver(function (entries) {
+        if (!entries[0].isIntersecting) return;
+        seen.disconnect();
+        if (used) return;
+        autoTimer = setTimeout(function () { choose(demo.dataset.auto); }, 1200);
+      }, { threshold: 0.6 });
+      seen.observe(demo.querySelector("svg"));
+    });
+
+    var copy = document.getElementById("copy");
+    copy.addEventListener("click", function () {
+      var text = document.getElementById("brew-cmd").textContent;
+      navigator.clipboard.writeText(text).then(function () {
+        copy.textContent = "Copied";
+        setTimeout(function () { copy.textContent = "Copy"; }, 1600);
+      });
+    });
+  })();
+</script>
+</body>
+</html>

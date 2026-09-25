@@ -1,0 +1,74 @@
+<!doctype html>
+<!--
+  Share card for the website (og:image). Render with:
+    swift scripts/og/render.swift scripts/og/og.html site/og-v1.png
+    swift scripts/og/render.swift "scripts/og/og.html?guide" site/og-guide-v1.png
+  The drawing matches the sprites in site/index.html.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: #0f1012; color: #ececee;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; align-items: center;
+    padding-top: 46px; box-sizing: border-box;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; font-size: 26px; font-weight: 600; color: #c9cacf; }
+  .brand img { width: 44px; height: 44px; }
+  h1 {
+    margin: 22px 0 0; text-align: center;
+    font-size: 58px; line-height: 1.08; letter-spacing: -0.03em; font-weight: 700;
+  }
+  h1 span { color: #9a9ba1; }
+  svg { width: 600px; height: auto; margin-top: 30px; }
+</style>
+</head>
+<body>
+  <div class="brand"><img src="../../site/icon-192.png" alt="">SoloDisplay</div>
+  <h1 id="headline">Turn off your MacBook screen.<br><span>Keep the lid open.</span></h1>
+
+  <svg viewBox="0 0 560 304">
+    <defs>
+      <g id="win">
+        <rect x=".5" y=".5" width="151" height="103" rx="6" fill="#fff" stroke="#b7bfce"/>
+        <path d="M6.5.5h139a6 6 0 0 1 6 6V15H.5V6.5a6 6 0 0 1 6-6z" fill="#e3e7ef"/>
+        <circle cx="10" cy="8" r="2.6" fill="#ff5f57"/><circle cx="18.5" cy="8" r="2.6" fill="#febc2e"/><circle cx="27" cy="8" r="2.6" fill="#28c840"/>
+        <rect x="14" y="28" width="96" height="7" rx="3.5" fill="#d3d9e4"/>
+        <rect x="14" y="43" width="120" height="7" rx="3.5" fill="#d3d9e4"/>
+        <rect x="14" y="58" width="70" height="7" rx="3.5" fill="#d3d9e4"/>
+        <rect x="14" y="76" width="44" height="14" rx="4" fill="#4f8cff" opacity=".3"/>
+      </g>
+    </defs>
+    <!-- Monitor -->
+    <rect x="350" y="232" width="46" height="53" fill="#a5a8af"/>
+    <rect x="350" y="232" width="46" height="4" fill="#7c7f86"/>
+    <rect x="320" y="285" width="106" height="4" rx="2" fill="#bfc2c8"/>
+    <rect x="196" y="10" width="354" height="224" rx="5" fill="#a5a8af"/>
+    <rect x="197.5" y="11.5" width="351" height="221" rx="3.5" fill="#0a0a0b"/>
+    <rect x="205" y="19" width="336" height="206" rx="2" fill="#4f8cff"/>
+    <rect x="205" y="19" width="336" height="9" fill="#fff" opacity=".22"/>
+    <use href="#win" transform="translate(228 46) scale(1.05)"/>
+    <use href="#win" transform="translate(366 98)"/>
+    <!-- MacBook, screen off -->
+    <path d="M23 150h192a9 9 0 0 1 9 9v134H14V159a9 9 0 0 1 9-9z" fill="#a5a8af"/>
+    <path d="M23 151.5h192a7.5 7.5 0 0 1 7.5 7.5v133.5H15.5V159a7.5 7.5 0 0 1 7.5-7.5z" fill="#0a0a0b"/>
+    <rect x="21" y="157" width="196" height="129" rx="2.5" fill="#050506"/>
+    <path d="M108 157h22v3.4a2 2 0 0 1-2 2h-18a2 2 0 0 1-2-2z" fill="#0a0a0b"/>
+    <circle cx="119" cy="159.4" r="1" fill="#1d2030"/>
+    <path d="M0 293h238v2.2c0 2.2-3.5 3.8-8 3.8H8c-4.5 0-8-1.6-8-3.8z" fill="#b3b6bd"/>
+    <rect x="0" y="293" width="238" height="1" fill="#dcdee2"/>
+    <path d="M100 293h38v.9c0 1-1 1.7-2.4 1.7h-33.2c-1.4 0-2.4-.7-2.4-1.7z" fill="#8a8d95"/>
+  </svg>
+
+  <script>
+    if (location.search.indexOf("guide") !== -1) {
+      document.getElementById("headline").innerHTML =
+        "How to use only an external<br>monitor on a MacBook";
+    }
+  </script>
+</body>
+</html>
