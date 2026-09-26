@@ -78,6 +78,11 @@ xcodebuild -project SoloDisplay.xcodeproj -scheme SoloDisplay -configuration Deb
   test -only-testing:SoloDisplayTests
 ```
 
+## Support
+
+SoloDisplay is free. If it's useful to you, you can support it on
+[GitHub Sponsors](https://github.com/sponsors/fanckush).
+
 ## Credits
 
 - [RonaldPark89/InternalDisplayOff](https://github.com/RonaldPark89/InternalDisplayOff),
