@@ -3,7 +3,7 @@
 <p align="center">
   <em>Turn off the internal display without closing the lid</em>
   <br>
-  <a href="https://fanckush.github.io/SoloDisplay/">fanckush.github.io/SoloDisplay</a>
+  <a href="https://solodisplay.app/">solodisplay.app</a>
 </p>
 
 <p align="center">

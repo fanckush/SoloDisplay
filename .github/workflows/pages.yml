@@ -23,7 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SITE_URL: https://fanckush.github.io/SoloDisplay/
+  SITE_URL: https://solodisplay.app/
   INDEXNOW_KEY: 47e481f42350670e15b60f17c00e90cd
 
 jobs:
