@@ -1,73 +1,113 @@
 <!doctype html>
 <!--
-  Share card for the website (og:image). Render with:
-    swift scripts/og/render.swift scripts/og/og.html site/og-v1.png
-    swift scripts/og/render.swift "scripts/og/og.html?guide" site/og-guide-v1.png
-  The drawing matches the sprites in site/index.html.
+  Share card for the website (og:image), in the site's style. Render with:
+    swift scripts/og/render.swift scripts/og/og.html site/og-v2.png
+    swift scripts/og/render.swift "scripts/og/og.html?guide" site/og-guide-v2.png
+  Bump the file version (and the og:image URLs) when the card changes, so social sites refetch it.
+  The drawing reuses the sprites from site/index.html: copy them again if those change.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <style>
+  @font-face { font-family: "IBM Plex Sans"; src: url("../../site/fonts/ibm-plex-sans-400.woff2") format("woff2"); font-weight: 400; }
+  @font-face { font-family: "IBM Plex Sans"; src: url("../../site/fonts/ibm-plex-sans-600.woff2") format("woff2"); font-weight: 600; }
+  @font-face { font-family: "IBM Plex Mono"; src: url("../../site/fonts/ibm-plex-mono-400.woff2") format("woff2"); font-weight: 400; }
   html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
   body {
-    background: #0f1012; color: #ececee;
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", Helvetica, Arial, sans-serif;
+    background: #f6f5f1; color: #1a1a1c;
+    font-family: "IBM Plex Sans", -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
-    display: flex; flex-direction: column; align-items: center;
-    padding-top: 46px; box-sizing: border-box;
+    display: grid; grid-template-columns: 500px 1fr; align-items: center; gap: 24px;
+    padding: 0 56px 0 72px; box-sizing: border-box;
   }
-  .brand { display: flex; align-items: center; gap: 12px; font-size: 26px; font-weight: 600; color: #c9cacf; }
-  .brand img { width: 44px; height: 44px; }
-  h1 {
-    margin: 22px 0 0; text-align: center;
-    font-size: 58px; line-height: 1.08; letter-spacing: -0.03em; font-weight: 700;
-  }
-  h1 span { color: #9a9ba1; }
-  svg { width: 600px; height: auto; margin-top: 30px; }
+  .brand { display: flex; align-items: center; gap: 12px; font-size: 24px; font-weight: 600; }
+  .brand img { width: 42px; height: 42px; }
+  h1 { margin: 36px 0 0; font-size: 54px; line-height: 1.08; letter-spacing: -0.025em; font-weight: 600; }
+  p { margin: 20px 0 0; font-size: 26px; line-height: 1.35; color: #66666b; }
+  .url { margin-top: 44px; font: 20px "IBM Plex Mono", monospace; color: #66666b; }
+  svg { width: 100%; height: auto; overflow: visible; }
 </style>
 </head>
 <body>
-  <div class="brand"><img src="../../site/icon-192.png" alt="">SoloDisplay</div>
-  <h1 id="headline">Turn off your MacBook screen.<br><span>Keep the lid open.</span></h1>
+  <div>
+    <div class="brand"><img src="../../site/icon-192.png" alt="">SoloDisplay</div>
+    <h1 id="headline">Turn off your MacBook screen. Keep the lid open.</h1>
+    <p id="sub">Plug in a monitor and only the monitor stays on. Free and open source.</p>
+    <div class="url">solodisplay.app</div>
+  </div>
 
   <svg viewBox="0 0 560 304">
     <defs>
-      <g id="win">
-        <rect x=".5" y=".5" width="151" height="103" rx="6" fill="#fff" stroke="#b7bfce"/>
-        <path d="M6.5.5h139a6 6 0 0 1 6 6V15H.5V6.5a6 6 0 0 1 6-6z" fill="#e3e7ef"/>
-        <circle cx="10" cy="8" r="2.6" fill="#ff5f57"/><circle cx="18.5" cy="8" r="2.6" fill="#febc2e"/><circle cx="27" cy="8" r="2.6" fill="#28c840"/>
-        <rect x="14" y="28" width="96" height="7" rx="3.5" fill="#d3d9e4"/>
-        <rect x="14" y="43" width="120" height="7" rx="3.5" fill="#d3d9e4"/>
-        <rect x="14" y="58" width="70" height="7" rx="3.5" fill="#d3d9e4"/>
-        <rect x="14" y="76" width="44" height="14" rx="4" fill="#4f8cff" opacity=".3"/>
-      </g>
-    </defs>
-    <!-- Monitor -->
-    <rect x="350" y="232" width="46" height="53" fill="#a5a8af"/>
-    <rect x="350" y="232" width="46" height="4" fill="#7c7f86"/>
-    <rect x="320" y="285" width="106" height="4" rx="2" fill="#bfc2c8"/>
-    <rect x="196" y="10" width="354" height="224" rx="5" fill="#a5a8af"/>
-    <rect x="197.5" y="11.5" width="351" height="221" rx="3.5" fill="#0a0a0b"/>
-    <rect x="205" y="19" width="336" height="206" rx="2" fill="#4f8cff"/>
-    <rect x="205" y="19" width="336" height="9" fill="#fff" opacity=".22"/>
-    <use href="#win" transform="translate(228 46) scale(1.05)"/>
-    <use href="#win" transform="translate(366 98)"/>
+    <!-- Soft light around a screen that's on -->
+    <filter id="halo" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="20"/></filter>
+    <!-- Wallpaper for every lit screen: a blue gradient with low-poly facets. Slice keeps it filling the laptop's slightly squarer screen. -->
+    <linearGradient id="wall-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#63a0ff"/>
+      <stop offset="1" stop-color="#3469e6"/>
+    </linearGradient>
+    <symbol id="wall" viewBox="0 0 336 206" preserveAspectRatio="xMidYMid slice">
+      <rect width="336" height="206" fill="url(#wall-bg)"/>
+      <polygon points="0,0 84,0 0,72" fill="#8cbcff" opacity=".35"/>
+      <polygon points="120,0 236,0 178,86" fill="#86b6ff" opacity=".3"/>
+      <polygon points="236,0 336,0 336,64 268,44" fill="#9cc4ff" opacity=".28"/>
+      <polygon points="178,86 268,44 336,64 336,84 196,152" fill="#4a86f7" opacity=".55"/>
+      <polygon points="0,136 112,92 196,152 336,84 336,206 0,206" fill="#2e62d8" opacity=".55"/>
+      <polygon points="0,178 92,150 170,192 262,142 336,162 336,206 0,206" fill="#2453c4" opacity=".65"/>
+      <polygon points="112,92 178,86 196,152" fill="#5b95fb" opacity=".45"/>
+    </symbol>
+    <g id="win">
+      <rect x=".5" y=".5" width="151" height="103" rx="6" fill="#fff" stroke="#b7bfce"/>
+      <path d="M6.5.5h139a6 6 0 0 1 6 6V15H.5V6.5a6 6 0 0 1 6-6z" fill="#e3e7ef"/>
+      <circle cx="10" cy="8" r="2.6" fill="#ff5f57"/><circle cx="18.5" cy="8" r="2.6" fill="#febc2e"/><circle cx="27" cy="8" r="2.6" fill="#28c840"/>
+      <rect x="14" y="28" width="96" height="7" rx="3.5" fill="#d3d9e4"/>
+      <rect x="14" y="43" width="120" height="7" rx="3.5" fill="#d3d9e4"/>
+      <rect x="14" y="58" width="70" height="7" rx="3.5" fill="#d3d9e4"/>
+      <rect x="14" y="76" width="44" height="14" rx="4" fill="#4f8cff" opacity=".3"/>
+    </g>
+    <g id="monitor-body">
+      <!-- Straight neck and thin foot, Studio Display style -->
+      <rect x="350" y="232" width="46" height="53" fill="#a5a8af"/>
+      <rect x="350" y="232" width="46" height="4" fill="#7c7f86"/>
+      <rect x="320" y="285" width="106" height="4" rx="2" fill="#bfc2c8"/>
+      <rect x="196" y="10" width="354" height="224" rx="5" fill="#a5a8af"/>
+      <rect x="197.5" y="11.5" width="351" height="221" rx="3.5" fill="#0a0a0b"/>
+    </g>
+    <g id="desktop">
+      <rect width="336" height="9" fill="#fff" opacity=".22"/>
+      <use href="#win" transform="translate(23 27) scale(1.05)"/>
+      <use href="#win" transform="translate(161 79)"/>
+    </g>
+    <g id="laptop-lid">
+      <!-- Rounded top corners only: the bottom of the lid meets the hinge -->
+      <path d="M23 150h192a9 9 0 0 1 9 9v134H14V159a9 9 0 0 1 9-9z" fill="#a5a8af"/>
+      <path d="M23 151.5h192a7.5 7.5 0 0 1 7.5 7.5v133.5H15.5V159a7.5 7.5 0 0 1 7.5-7.5z" fill="#0a0a0b"/>
+      <rect x="21" y="157" width="196" height="129" rx="2.5" fill="#050506"/>
+    </g>
+    <g id="laptop-front">
+      <!-- Notch, then a thin base with the thumb cutout -->
+      <path d="M108 155h22v5.4a2 2 0 0 1-2 2h-18a2 2 0 0 1-2-2z" fill="#0a0a0b"/>
+      <circle cx="119" cy="159.4" r="1" fill="#1d2030"/>
+      <path d="M0 293h238v2.2c0 2.2-3.5 3.8-8 3.8H8c-4.5 0-8-1.6-8-3.8z" fill="#b3b6bd"/>
+      <rect x="0" y="293" width="238" height="1" fill="#dcdee2"/>
+      <path d="M100 293h38v1.3c0 1.1-1.1 1.8-2.6 1.8h-32.8c-1.5 0-2.6-.7-2.6-1.8z" fill="#8a8d95"/>
+    </g>
+  </defs>
+    <g fill="none" stroke="#3a3a3e" stroke-width="2.4" stroke-linecap="round"><path d="M248 296C258 296 264 300 272 300C282 300 284 280 284 230"/></g>
+    <rect x="234" y="293.6" width="14" height="4.8" rx="1.4" fill="#3a3a3e"/>
+    <rect x="205" y="19" width="336" height="206" rx="4" fill="#4f8cff" filter="url(#halo)" opacity=".55"/>
+    <use href="#monitor-body"/>
+    <use href="#wall" x="205" y="19" width="336" height="206"/>
+    <use href="#desktop" transform="translate(205 19)"/>
     <!-- MacBook, screen off -->
-    <path d="M23 150h192a9 9 0 0 1 9 9v134H14V159a9 9 0 0 1 9-9z" fill="#a5a8af"/>
-    <path d="M23 151.5h192a7.5 7.5 0 0 1 7.5 7.5v133.5H15.5V159a7.5 7.5 0 0 1 7.5-7.5z" fill="#0a0a0b"/>
-    <rect x="21" y="157" width="196" height="129" rx="2.5" fill="#050506"/>
-    <path d="M108 157h22v3.4a2 2 0 0 1-2 2h-18a2 2 0 0 1-2-2z" fill="#0a0a0b"/>
-    <circle cx="119" cy="159.4" r="1" fill="#1d2030"/>
-    <path d="M0 293h238v2.2c0 2.2-3.5 3.8-8 3.8H8c-4.5 0-8-1.6-8-3.8z" fill="#b3b6bd"/>
-    <rect x="0" y="293" width="238" height="1" fill="#dcdee2"/>
-    <path d="M100 293h38v.9c0 1-1 1.7-2.4 1.7h-33.2c-1.4 0-2.4-.7-2.4-1.7z" fill="#8a8d95"/>
+    <use href="#laptop-lid"/>
+    <use href="#laptop-front"/>
   </svg>
 
   <script>
     if (location.search.indexOf("guide") !== -1) {
-      document.getElementById("headline").innerHTML =
-        "How to use only an external<br>monitor on a MacBook";
+      document.getElementById("headline").textContent = "How to use only an external monitor on a MacBook";
+      document.getElementById("sub").textContent = "Every workaround, and what each one costs you.";
     }
   </script>
 </body>
