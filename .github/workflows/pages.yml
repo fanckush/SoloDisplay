@@ -54,7 +54,7 @@ jobs:
         with:
           path: site
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
       # Tell Bing (and the engines that share IndexNow) the pages changed.
       - name: Ping IndexNow
