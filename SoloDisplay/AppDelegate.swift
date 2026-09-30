@@ -63,6 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     controller = runtime
     installStatusItem()
     panelStore.perform = { [weak self] action in self?.controller?.perform(action) }
+    ShortcutBridge.panel = { [weak self] in self?.controller?.panel ?? .placeholder }
+    ShortcutBridge.perform = { [weak self] action in self?.controller?.perform(action) }
     let statusMenu = StatusMenu(store: panelStore) { [weak self] action in
       self?.controller?.perform(action)
     }
