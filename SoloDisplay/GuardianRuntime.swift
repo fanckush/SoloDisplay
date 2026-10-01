@@ -214,6 +214,10 @@ final class GuardianRuntime {
   private var discharged: Set<UInt32> = []
   /// A reading or a restore is under way. The next check waits for it.
   private var busy = false
+  /// Laptop screen restores in a row that still left one owed, and the uptime before which the
+  /// next may not start. Cleared once a reading no longer asks for one.
+  private var misses = 0
+  private var restoreNotBefore: TimeInterval = 0
   private var timer: Timer?
   private var activity: (any NSObjectProtocol)?
 
@@ -329,9 +333,18 @@ final class GuardianRuntime {
     }
     // The laptop screen comes first: nobody can act on a monitor they cannot see.
     if case .restore = panelAction, let panel {
+      let now = ProcessInfo.processInfo.systemUptime
+      guard now >= restoreNotBefore else {
+        busy = false
+        return
+      }
+      misses += 1
+      restoreNotBefore = now + GuardianPolicy.restoreDelay(afterMisses: misses)
       restore(panel, reason: appAlive ? .noUsableExternal : .appGone)
       return
     }
+    misses = 0
+    restoreNotBefore = 0
     let owed = GuardianPolicy.monitorsToRestore(
       monitors, appAlive: appAlive, discharged: discharged
     )

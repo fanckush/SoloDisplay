@@ -21,6 +21,16 @@ public enum GuardianPolicy {
     return monitors.filter { !discharged.contains($0.displayID) }
   }
 
+  /// Seconds between restores while they keep not leaving the screen on, the last repeating.
+  /// Pacing only: whether to restore is still the reading's call. A restore that cannot land,
+  /// such as one refused because its login session is not in front, otherwise asks every second
+  /// for as long as that lasts.
+  public static let restoreDelays: [Double] = [1, 2, 5, 10, 30]
+
+  public static func restoreDelay(afterMisses misses: Int) -> Double {
+    restoreDelays[min(max(misses, 1), restoreDelays.count) - 1]
+  }
+
   /// Readings in a row that must show danger before acting, so one odd reading during a
   /// reconfiguration the app is already handling does not start a second writer.
   public static let dangerReadings = 2

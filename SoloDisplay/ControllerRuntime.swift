@@ -221,6 +221,18 @@ final class ControllerRuntime: CoordinatorDelegate {
     onMenuChanged?()
   }
 
+  /// Asked before `perform`, so the caller can close the menu before showing the question.
+  func confirmation(for action: MenuAction) -> MenuModel.Confirmation? {
+    MenuModel.confirmation(
+      for: action, presentation, turningOnCanFreeze: Chip.turningOnCanFreeze,
+      freezeWarningDismissed: preferences.freezeWarningDismissed
+    )
+  }
+
+  func dismissFreezeWarning() {
+    mutatePreferences { $0.freezeWarningDismissed = true }
+  }
+
   func perform(_ action: MenuAction) {
     diagnostics.emit(.action, session: session) {
       $0.action = OperationalEvent.Action(rawValue: action.rawValue)

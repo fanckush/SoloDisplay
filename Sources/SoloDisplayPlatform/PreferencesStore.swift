@@ -17,11 +17,15 @@ public struct Preferences: Codable, Equatable, Sendable {
   public var brightnessKeys = false
   /// Experimental monitor input detection is opt-in, including after an upgrade.
   public var inputDetection = false
+  /// The person said not to be warned again that the laptop screen can freeze this Mac on its
+  /// way back on. Only a Mac with that chip ever asks.
+  public var freezeWarningDismissed = false
 
   public init() {}
 
   private enum CodingKeys: String, CodingKey {
     case schemaVersion, mode, launchAtLogin, manualPathValidated, brightnessKeys, inputDetection
+    case freezeWarningDismissed
   }
 
   /// Fields added later are optional, so an older file keeps the choices it does have.
@@ -33,6 +37,8 @@ public struct Preferences: Codable, Equatable, Sendable {
     manualPathValidated = try container.decode(Bool.self, forKey: .manualPathValidated)
     brightnessKeys = try container.decodeIfPresent(Bool.self, forKey: .brightnessKeys) ?? false
     inputDetection = try container.decodeIfPresent(Bool.self, forKey: .inputDetection) ?? false
+    freezeWarningDismissed =
+      try container.decodeIfPresent(Bool.self, forKey: .freezeWarningDismissed) ?? false
   }
 }
 

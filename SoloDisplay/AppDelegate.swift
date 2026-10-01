@@ -62,9 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     controller = runtime
     installStatusItem()
-    panelStore.perform = { [weak self] action in self?.controller?.perform(action) }
+    panelStore.perform = { [weak self] action in self?.perform(action) }
     let statusMenu = StatusMenu(store: panelStore) { [weak self] action in
-      self?.controller?.perform(action)
+      self?.perform(action)
     }
     self.statusMenu = statusMenu
     statusItem?.menu = statusMenu.menu
@@ -94,6 +94,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     if ProcessInfo.processInfo.arguments.contains("--diagnostics") {
       showDiagnostics()
     }
+  }
+
+  /// Every menu choice comes through here, so one that needs a question first cannot slip past.
+  private func perform(_ action: MenuAction) {
+    guard let controller else { return }
+    guard controller.confirmation(for: action) != nil else {
+      controller.perform(action)
+      return
+    }
+    // The cards are a view inside the menu, and clicking one leaves it open. An alert opened
+    // inside the menu's tracking loop would sit behind it, so the menu closes first.
+    statusMenu?.menu.cancelTracking()
+    DispatchQueue.main.async { [weak self] in
+      MainActor.assumeIsolated { self?.confirm(action) }
+    }
+  }
+
+  /// Asked again once the menu is gone, because the screen may have changed in between.
+  private func confirm(_ action: MenuAction) {
+    guard let controller else { return }
+    guard let question = controller.confirmation(for: action) else {
+      controller.perform(action)
+      return
+    }
+    NSApp.activate(ignoringOtherApps: true)
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = question.title
+    alert.informativeText = question.detail
+    alert.addButton(withTitle: question.confirm)
+    alert.addButton(withTitle: "Cancel")
+    alert.showsSuppressionButton = question.dismissible
+    alert.suppressionButton?.title = "Don't warn me again"
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    if question.dismissible, alert.suppressionButton?.state == .on {
+      controller.dismissFreezeWarning()
+    }
+    controller.perform(action)
   }
 
   /// An accessory app has no window to put this in front of, so it is activated first.

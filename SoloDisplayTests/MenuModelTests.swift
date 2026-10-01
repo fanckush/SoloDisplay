@@ -164,6 +164,67 @@ struct MenuModelTests {
     }
   }
 
+  @Test func onlyAMacWhoseScreenCanFreezeIsAskedAnything() {
+    let off = Presentation(wantsInternalOff: true, panelOff: true)
+    for action in MenuAction.allCases {
+      for value in [Presentation(), off] {
+        #expect(MenuModel.confirmation(for: action, value, turningOnCanFreeze: false) == nil)
+      }
+    }
+  }
+
+  @Test func externalOnlyWarnsUntilDismissedAndOnlyWhenNewlyChosen() {
+    let warning = MenuModel.confirmation(
+      for: .selectExternalOnly, .init(), turningOnCanFreeze: true
+    )
+    #expect(warning?.dismissible == true)
+    #expect(warning?.detail.contains("restart") == true)
+    #expect(MenuModel.confirmation(
+      for: .selectExternalOnly, .init(), turningOnCanFreeze: true, freezeWarningDismissed: true
+    ) == nil)
+    #expect(MenuModel.confirmation(
+      for: .selectExternalOnly, .init(wantsInternalOff: true), turningOnCanFreeze: true
+    ) == nil)
+  }
+
+  /// Bringing the screen back is about to happen, so it is asked every time, dismissed or not.
+  @Test func anythingThatTurnsTheScreenBackOnAsksEveryTime() {
+    let off = Presentation(wantsInternalOff: true, panelOff: true)
+    for action in [MenuAction.selectAllMonitors, .quit] {
+      let question = MenuModel.confirmation(
+        for: action, off, turningOnCanFreeze: true, freezeWarningDismissed: true
+      )
+      #expect(question != nil && question?.dismissible == false)
+      // Nothing to bring back when the screen is already on.
+      #expect(MenuModel.confirmation(for: action, .init(), turningOnCanFreeze: true) == nil)
+    }
+    for action in MenuAction.allCases where ![.selectAllMonitors, .selectExternalOnly, .quit]
+      .contains(action) {
+      #expect(MenuModel.confirmation(for: action, off, turningOnCanFreeze: true) == nil)
+    }
+  }
+
+  @Test func everyQuestionIsPlain() {
+    let questions = [
+      MenuModel.confirmation(for: .selectExternalOnly, .init(), turningOnCanFreeze: true),
+      MenuModel.confirmation(
+        for: .selectAllMonitors, .init(wantsInternalOff: true, panelOff: true),
+        turningOnCanFreeze: true
+      ),
+      MenuModel.confirmation(
+        for: .quit, .init(wantsInternalOff: true, panelOff: true), turningOnCanFreeze: true
+      )
+    ].compactMap(\.self)
+    #expect(questions.count == 3)
+    for question in questions {
+      #expect(!question.title.hasSuffix(".") && question.detail.hasSuffix("."))
+      #expect(question.detail.first?.isUppercase == true)
+      for text in [question.title, question.detail, question.confirm] {
+        #expect(!text.contains("—") && !text.lowercased().contains("internal display"))
+      }
+    }
+  }
+
   @Test func everyStringThePanelCanShowIsPlain() {
     let presentations = [Presentation(), .init(wantsInternalOff: true, panelOff: true)]
       + Unavailability.allCases.map { Presentation(wantsInternalOff: true, unavailability: $0) }

@@ -61,6 +61,52 @@ nonisolated enum MenuModel {
     )
   }
 
+  /// A question asked before an action that costs more on this Mac than it says.
+  struct Confirmation: Equatable, Sendable {
+    var title: String
+    var detail: String
+    var confirm: String
+    /// Offers "Don't warn me again". Only for a warning about what might happen later, never
+    /// for one about what is about to happen now.
+    var dismissible = false
+  }
+
+  /// On a base M3, turning the laptop screen back on can freeze the Mac and log the person out.
+  /// SoloDisplay cannot prevent that, so it says so before the screen goes off, and again before
+  /// anything the person chooses brings it back, so there is a moment to save their work.
+  static func confirmation(
+    for action: MenuAction, _ presentation: Presentation, turningOnCanFreeze: Bool,
+    freezeWarningDismissed: Bool = false
+  ) -> Confirmation? {
+    guard turningOnCanFreeze else { return nil }
+    let crash = "Your Mac will likely crash!"
+    switch action {
+    case .selectExternalOnly where !presentation.wantsInternalOff && !freezeWarningDismissed:
+      return .init(
+        title: "This is one way on your Mac",
+        detail: "SoloDisplay can turn off your internal screen, but if you unplug the monitor "
+          + "or click on \u{201C}All Monitors\u{201D} your Mac will likely crash and force you "
+          + "to restart.",
+        confirm: "Use External Only", dismissible: true
+      )
+    case .selectAllMonitors where presentation.panelOff:
+      return .init(
+        title: crash,
+        detail: "Save your work! Since you have a base M3 Mac, it will crash if you attempt to "
+          + "turn the internal screen back on.",
+        confirm: "Turn On Laptop Screen"
+      )
+    case .quit where presentation.panelOff:
+      return .init(
+        title: crash,
+        detail: "Quitting turns your laptop screen back on, which can freeze this Mac and log you out.",
+        confirm: "Quit"
+      )
+    default:
+      return nil
+    }
+  }
+
   /// What is true right now, as opposed to what was chosen, including why a choice is waiting.
   /// A monitor turned off for showing another computer is said first: it is the least expected
   /// thing on the screen, and nothing else here explains it.

@@ -349,6 +349,15 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
   #expect(GuardianPolicy.decide(unreadable, appAlive: false, streaks: &alone) == .restore)
 }
 
+/// Issue #9: with its session gone, a guardian asked for a refused restore every second, 457
+/// times in a row. It still asks for as long as one is owed, just less and less often.
+@Test func theGuardianAsksLessOftenWhileRestoresKeepMissing() {
+  let delays = (1 ... 8).map { GuardianPolicy.restoreDelay(afterMisses: $0) }
+  #expect(delays == [1, 2, 5, 10, 30, 30, 30, 30])
+  #expect(delays == delays.sorted())
+  #expect(GuardianPolicy.restoreDelay(afterMisses: 0) == 1)
+}
+
 @Test func theGuardianRestoresOnlyOnceDangerHolds() {
   var streaks = GuardianPolicy.Streaks()
   let danger = environment(panelState: .disabled, external: .no)
