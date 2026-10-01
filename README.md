@@ -55,6 +55,10 @@ You can control the brightness of you rexternal monitor with the brightness keys
 **Input Detection (Experimental)**
 It detects monitor input changes and internally turns off a monitor showing another computer.
 
+**Shortcuts and Spotlight**
+"Toggle Arrangement" and "Set Arrangement" are available in the Shortcuts app and Spotlight.
+Add one to a shortcut and give it a keyboard shortcut to switch modes from the keyboard.
+
 ## Build from source
 
 Requires Xcode (Swift 6.3) and macOS 26+ on Apple Silicon. The Swift package
