@@ -19,7 +19,7 @@ cask "solodisplay" do
 
   # The app updates itself through Sparkle, so brew leaves upgrades to it.
   auto_updates true
-  depends_on macos: :tahoe
+  depends_on macos: :sequoia
 
   app "SoloDisplay.app"
 

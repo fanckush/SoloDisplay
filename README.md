@@ -11,7 +11,7 @@
   <a href="https://codecov.io/gh/fanckush/SoloDisplay"><img alt="Test coverage" src="https://codecov.io/gh/fanckush/SoloDisplay/branch/main/graph/badge.svg"></a>
   <a href="https://github.com/fanckush/SoloDisplay/releases"><img alt="Release" src="https://img.shields.io/github/v/release/fanckush/SoloDisplay?include_prereleases&sort=semver"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/License-GPLv3-blue.svg"></a>
-  <img alt="Platform" src="https://img.shields.io/badge/macOS%2026%2B-Universal-black?logo=apple">
+  <img alt="Platform" src="https://img.shields.io/badge/macOS%2015%2B-Universal-black?logo=apple">
 </p>
 
 <p align="center">
@@ -61,7 +61,7 @@ Add one to a shortcut and give it a keyboard shortcut to switch modes from the k
 
 ## Build from source
 
-Requires Xcode (Swift 6.3) and macOS 26+ on Apple Silicon. The Swift package
+Requires Xcode with Swift 6.3. The app runs on macOS 15+ on Apple Silicon. The Swift package
 has no external dependencies. The app adds [Sparkle](https://sparkle-project.org)
 for updates, which Xcode fetches on first build.
 

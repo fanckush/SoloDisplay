@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "SoloDisplayKit",
-  platforms: [.macOS(.v26)],
+  platforms: [.macOS(.v15)],
   products: [
     .library(name: "SoloDisplayCore", targets: ["SoloDisplayCore"]),
     .library(name: "SoloDisplayPlatform", targets: ["SoloDisplayPlatform"]),

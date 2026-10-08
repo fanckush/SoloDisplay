@@ -180,7 +180,7 @@ cat > "$APPCAST" <<XML
       <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
       <sparkle:version>$BUILD_NUMBER</sparkle:version>
       <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
       <sparkle:fullReleaseNotesLink>$REPO_URL/releases</sparkle:fullReleaseNotesLink>
       $NOTES
       <enclosure url="$REPO_URL/releases/download/v$VERSION/$(basename "$ZIP")" $ENCLOSURE_SIG type="application/octet-stream"/>
