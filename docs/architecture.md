@@ -135,16 +135,20 @@ a monitor's last meaningful-answer time, so the five-minute silence recovery can
 
 ## Brightness keys
 
-While the laptop screen is off, the Mac's brightness keys would control a panel nobody can see.
-With the opt-in Brightness Keys setting, SoloDisplay sends them to the external monitor instead.
+The Mac's brightness keys only control the laptop screen and Apple displays. With the opt-in
+Brightness Keys setting, SoloDisplay sends them to the external monitor under the pointer.
 The setting is off by default. Turning it on asks for Accessibility permission, which the event
 tap needs. While it is missing the menu item shows a dash instead of a checkmark, and permission
 is checked every 2 seconds until granted.
 
-- The tap exists only while the setting is on, permission is granted, and SoloDisplay has the
-  laptop screen off. The rest of the time macOS handles the keys.
-- The target is the monitor under the pointer, else the main display, else any that answers.
-  Apple displays are left out because macOS already controls them.
+- The tap exists while the setting is on and permission is granted, in either mode.
+- The target is the monitor under the pointer. While SoloDisplay has the laptop screen off, it
+  falls back to the main display, else any monitor that answers, since the keys would otherwise
+  control a panel nobody can see. With the laptop screen on, a pointer over it passes the keys to
+  macOS. Apple displays are left out because macOS already controls them.
+- When the laptop screen mirrors the monitor, the keys stay with macOS and change the laptop
+  screen only. Mirror followers are found through each display's mirror set, because
+  `CGGetDisplaysWithPoint` does not document whether it reports them.
 - A monitor is tied to its DDC service through the SoC display controller they share: the
   `DCPAVServiceProxy` parent is named `dispext0:...`, and the display's framebuffer service
   hangs off `dispext0`. `DisplayTransportClassifier` supplies the display side.

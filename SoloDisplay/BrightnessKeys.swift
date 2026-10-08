@@ -4,8 +4,10 @@ import CoreGraphics
 import os
 import SoloDisplayPlatform
 
-/// Sends the brightness keys to the external monitor while SoloDisplay has the laptop screen
-/// off. At any other time, or when no monitor answers over DDC, the keys pass through to macOS.
+/// Sends the brightness keys to the external monitor under the pointer. While SoloDisplay has
+/// the laptop screen off, a monitor elsewhere is used when the pointer is not over one. When the
+/// pointer is over the laptop screen or an Apple display, or no monitor answers over DDC, the
+/// keys pass through to macOS, including when the laptop screen mirrors the monitor.
 ///
 /// The event tap needs Accessibility permission. Monitor calls run on each display's own queue,
 /// so a monitor that stops answering never holds up the keyboard.
@@ -61,7 +63,6 @@ final class BrightnessKeys {
     active = value
     // A new stretch with the screen off starts from what the monitor says.
     levels.removeAll()
-    reconcile()
   }
 
   func stop() {
@@ -82,7 +83,7 @@ final class BrightnessKeys {
     } else {
       stopPermissionPolling()
     }
-    if enabled, active, trusted {
+    if enabled, trusted {
       installTap()
     } else {
       removeTap()
@@ -168,29 +169,51 @@ final class BrightnessKeys {
   // MARK: - Brightness
 
   private func route(_ key: BrightnessKey, pressed: Bool) -> Bool {
-    guard active, let (displayID, controller) = target() else { return false }
+    guard let (displayID, controller) = target() else { return false }
     if pressed {
       press(key, controller: controller, displayID: displayID)
     }
     return true
   }
 
-  /// The monitor under the pointer, else the main display, else any monitor that answers.
+  /// The monitor under the pointer. While the laptop screen is off, else the main display, else
+  /// any monitor that answers. With it on, the keys belong to the screen under the pointer only,
+  /// and a laptop screen there keeps them, even when it mirrors a monitor.
   private func target() -> (CGDirectDisplayID, String)? {
     let now = Date()
     unanswered = unanswered.filter { now.timeIntervalSince($0.value) < Self.unansweredLifetime }
     let known = currentControllers().filter { unanswered[$0.value] == nil }
     guard !known.isEmpty else { return nil }
-    var pointer = [CGDirectDisplayID](repeating: 0, count: 1)
-    var count: UInt32 = 0
-    let location = CGEvent(source: nil)?.location ?? .zero
-    CGGetDisplaysWithPoint(location, 1, &pointer, &count)
-    for candidate in [count > 0 ? pointer[0] : 0, CGMainDisplayID()] {
-      if let controller = known[candidate] {
-        return (candidate, controller)
-      }
+    let underPointer = displaysUnderPointer()
+    guard active || !underPointer.contains(where: { CGDisplayIsBuiltin($0) != 0 }) else {
+      return nil
+    }
+    if let displayID = underPointer.first(where: { known[$0] != nil }),
+       let controller = known[displayID] {
+      return (displayID, controller)
+    }
+    guard active else { return nil }
+    let main = CGMainDisplayID()
+    if let controller = known[main] {
+      return (main, controller)
     }
     return known.min { $0.key < $1.key }.map { ($0.key, $0.value) }
+  }
+
+  /// Every online display showing the pointer's position. A mirror set shares one position,
+  /// and whether its followers are reported at a point is not documented, so the whole set
+  /// of each display found there is included.
+  private func displaysUnderPointer() -> [CGDirectDisplayID] {
+    let location = CGEvent(source: nil)?.location ?? .zero
+    var found = [CGDirectDisplayID](repeating: 0, count: 16)
+    var count: UInt32 = 0
+    guard CGGetDisplaysWithPoint(location, UInt32(found.count), &found, &count) == .success
+    else { return [] }
+    let sets = Set(found.prefix(Int(count)).map(CGDisplayPrimaryDisplay))
+    var online = [CGDirectDisplayID](repeating: 0, count: 16)
+    guard CGGetOnlineDisplayList(UInt32(online.count), &online, &count) == .success
+    else { return [] }
+    return online.prefix(Int(count)).filter { sets.contains(CGDisplayPrimaryDisplay($0)) }
   }
 
   private func currentControllers() -> [CGDirectDisplayID: String] {

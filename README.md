@@ -49,8 +49,10 @@ There are two choices:
 - **External Only** turns it off whenever a monitor is connected, and back on when
   you unplug.
 
-**Brightness Controls**
-You can control the brightness of you rexternal monitor with the brightness keys on your mac
+**Brightness Keys**
+Brightness follows your cursor. The brightness keys change whichever screen the cursor is on:
+point at your monitor to adjust it, or at the laptop screen to adjust that. Works on monitors
+that support DDC and needs Accessibility permission.
 
 **Sharp Text**
 macOS only uses HiDPI on 4K monitors, so a 1440p monitor running at 1080p gets blurry text. Sharp
