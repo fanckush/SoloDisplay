@@ -37,6 +37,7 @@ nonisolated struct MenuPanel: Equatable, Sendable {
   var alert: Alert?
   var launchAtLogin: Option
   var brightnessKeys: Option
+  var sharpText: Option
   var inputDetection: Option
   var commands: [Command]
   var glyph: MenuGlyph
@@ -56,6 +57,8 @@ nonisolated struct MenuPanel: Equatable, Sendable {
     /// Which panels the tile artwork draws lit.
     var internalLit: Bool
     var externalLit: Bool
+    /// The monitor renders at 2x, marked on its panel in the artwork.
+    var externalSharp = false
   }
 
   struct Option: Equatable, Sendable {
@@ -64,6 +67,8 @@ nonisolated struct MenuPanel: Equatable, Sendable {
     var isOn: Bool
     /// Chosen, but waiting on something outside the app, such as a permission.
     var isBlocked = false
+    /// Said under the title, only when something is worth saying.
+    var detail: String?
   }
 
   struct Command: Equatable, Sendable {
@@ -89,11 +94,12 @@ nonisolated struct MenuPanel: Equatable, Sendable {
         reality,
         launchAtLogin.title,
         brightnessKeys.title,
+        sharpText.title,
         inputDetection.title,
         statusDescription
       ]
       + commands.map(\.title)
-      + [alert?.title, alert?.detail].compactMap(\.self)
+      + [alert?.title, alert?.detail, sharpText.detail].compactMap(\.self)
   }
 }
 

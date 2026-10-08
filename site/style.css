@@ -229,6 +229,26 @@ h2 { font-size: clamp(28px, 3.2vw, 34px); letter-spacing: -0.02em; margin: 0 0 1
   font: 500 11px/1.6 var(--mono); letter-spacing: .06em; text-transform: uppercase;
 }
 
+#sharp-text { align-items: center; }
+.sharp-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.sharp-compare figure { margin: 0; }
+.sharp-compare .sample {
+  background: var(--well); border: 1px solid var(--line); border-radius: 10px;
+  padding: 18px 16px; color: var(--text);
+  font-size: 34px; font-weight: 600; line-height: 1.1; letter-spacing: -0.01em;
+}
+.sharp-compare .sample b { display: block; font-weight: 600; }
+.sharp-compare .sample span {
+  display: block; margin-top: 10px;
+  font-size: 13px; font-weight: 400; line-height: 1.45; letter-spacing: 0;
+}
+/* A stand-in for a plain image stretched from 1080p to 1440p. */
+.sharp-compare .soft b, .sharp-compare .soft span { filter: blur(0.7px); }
+.sharp-compare figcaption {
+  margin-top: 8px; color: var(--muted); font: 500 11px/1.6 var(--mono);
+  letter-spacing: .06em; text-transform: uppercase;
+}
+
 .card.keyed { display: flex; flex-direction: column; }
 .keys { display: flex; gap: 10px; margin-top: auto; padding-top: 22px; }
 .key {

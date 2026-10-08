@@ -8,6 +8,7 @@ nonisolated enum MenuAction: String, CaseIterable, Equatable, Sendable {
   case toggleLaunchAtLogin
   case toggleBrightnessKeys
   case toggleInputDetection
+  case toggleSharpText
   case checkForUpdates
   case openDisplayMonitor
   case exportDiagnostics
@@ -20,7 +21,7 @@ nonisolated enum MenuModel {
   static func panel(
     _ presentation: Presentation, launchAtLogin: Bool,
     brightnessKeys: Bool = false, brightnessNeedsPermission: Bool = false,
-    inputDetection: Bool = false
+    inputDetection: Bool = false, sharpText: SharpTextStatus = .init()
   ) -> MenuPanel {
     let chosenOff = presentation.wantsInternalOff
     let working = presentation.working
@@ -32,12 +33,14 @@ nonisolated enum MenuModel {
       allMonitors: .init(
         title: "All Monitors", action: .selectAllMonitors, isSelected: !chosenOff,
         isActive: !presentation.panelOff, isEnabled: !notRunning,
-        isPending: !chosenOff && working, internalLit: true, externalLit: true
+        isPending: !chosenOff && working, internalLit: true, externalLit: true,
+        externalSharp: sharpText.externalSharp
       ),
       externalOnly: .init(
         title: "External Only", action: .selectExternalOnly, isSelected: chosenOff,
         isActive: presentation.panelOff, isEnabled: !impossible,
-        isPending: chosenOff && working, internalLit: false, externalLit: true
+        isPending: chosenOff && working, internalLit: false, externalLit: true,
+        externalSharp: sharpText.externalSharp
       ),
       reality: reality(presentation),
       alert: alert(presentation),
@@ -47,6 +50,10 @@ nonisolated enum MenuModel {
       brightnessKeys: .init(
         title: "Brightness Keys", action: .toggleBrightnessKeys, isOn: brightnessKeys,
         isBlocked: brightnessKeys && brightnessNeedsPermission
+      ),
+      sharpText: .init(
+        title: "Sharp Text", action: .toggleSharpText, isOn: sharpText.isOn,
+        detail: sharpText.detail
       ),
       inputDetection: .init(
         title: "Input Detection (Experimental)", action: .toggleInputDetection, isOn: inputDetection
@@ -59,6 +66,28 @@ nonisolated enum MenuModel {
       glyph: glyph(presentation),
       statusDescription: status(presentation)
     )
+  }
+
+  /// Sharp Text says nothing while it works. It only speaks up about monitors it cannot help.
+  struct SharpTextStatus: Equatable, Sendable {
+    var isOn = false
+    var monitors = 0
+    var unavailable = 0
+    /// A lit monitor renders at 2x, shown on the artwork whether or not the option is on.
+    var externalSharp = false
+
+    var detail: String? {
+      guard isOn, unavailable > 0 else { return nil }
+      if monitors <= 1 {
+        return "Not available on this monitor"
+      }
+      if unavailable >= monitors {
+        return "Not available on your monitors"
+      }
+      return unavailable == 1
+        ? "Not available on one of your monitors"
+        : "Not available on \(unavailable) of your monitors"
+    }
   }
 
   /// A question asked before an action that costs more on this Mac than it says.

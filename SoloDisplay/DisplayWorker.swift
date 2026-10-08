@@ -13,6 +13,23 @@ nonisolated struct DisplayWorkerRequest: Codable, Equatable, Sendable {
   var parentPID: Int32
   var enabled: Bool
   var target: PanelTarget
+  /// Present for a Sharp Text switch, which changes the target's mode rather than turning it
+  /// on or off. `enabled` is then ignored.
+  var mode: ModeRequest?
+
+  /// A mode named by what it is rather than by number: numbers belong to one catalog reading,
+  /// and the worker takes its own.
+  struct ModeRequest: Codable, Equatable, Sendable {
+    var width: Int
+    var height: Int
+    var refreshRate: Int
+    /// 2 to sharpen, 1 to put the plain mode back.
+    var scale: Int
+
+    var size: ModeSize {
+      .init(width: width, height: height)
+    }
+  }
 
   func validate(actualParentPID: Int32) throws {
     guard version == Self.currentVersion, parentPID > 1, parentPID == actualParentPID,
@@ -29,6 +46,8 @@ nonisolated enum DisplayWorkerError: Int, Error, CustomNSError, Sendable {
   case workerFailed = 6
   /// The worker's own check found the request no longer applies. Nothing was sent.
   case refused = 7
+  /// This monitor has no 2x twin for its current mode. Nothing was sent.
+  case unavailable = 8
 
   static var errorDomain: String {
     "dev.solodisplay.display-worker"
@@ -41,6 +60,11 @@ nonisolated enum DisplayWorkerError: Int, Error, CustomNSError, Sendable {
   var errorUserInfo: [String: Any] {
     [:]
   }
+}
+
+/// What a Sharp Text switch came to.
+nonisolated enum ModeOutcome: Equatable, Sendable {
+  case done, unavailable, refused, failed
 }
 
 /// Runs every display change in its own short-lived worker process. The private call can block,
@@ -57,6 +81,29 @@ final nonisolated class WorkerDisplayWriter: DisplayWriting, @unchecked Sendable
 
   func setEnabled(_ enabled: Bool, target: PanelTarget) -> WorkerOutcome {
     let request = DisplayWorkerRequest(parentPID: getpid(), enabled: enabled, target: target)
+    switch launch(request) {
+    case .status(0): return .done
+    case .status(Int32(DisplayWorkerError.refused.rawValue)): return .refused
+    case .killed: return .killed
+    default: return .failed
+    }
+  }
+
+  func setMode(_ mode: DisplayWorkerRequest.ModeRequest, target: PanelTarget) -> ModeOutcome {
+    let request = DisplayWorkerRequest(
+      parentPID: getpid(), enabled: true, target: target, mode: mode
+    )
+    switch launch(request) {
+    case .status(0): return .done
+    case .status(Int32(DisplayWorkerError.refused.rawValue)): return .refused
+    case .status(Int32(DisplayWorkerError.unavailable.rawValue)): return .unavailable
+    default: return .failed
+    }
+  }
+
+  private enum Exit { case status(Int32), killed, failed }
+
+  private func launch(_ request: DisplayWorkerRequest) -> Exit {
     guard let payload = try? JSONEncoder().encode(request), payload.count <= 16384 else {
       return .failed
     }
@@ -93,11 +140,7 @@ final nonisolated class WorkerDisplayWriter: DisplayWriting, @unchecked Sendable
     }
     _ = replies.fileHandleForReading.readDataToEndOfFile()
     guard child.terminationReason == .exit else { return .failed }
-    switch child.terminationStatus {
-    case 0: return .done
-    case Int32(DisplayWorkerError.refused.rawValue): return .refused
-    default: return .failed
-    }
+    return .status(child.terminationStatus)
   }
 
   /// Kills the child. If the OS cannot reap it at once, it still makes no further decision:
@@ -125,6 +168,11 @@ nonisolated enum DisplayWorker {
     else { return Int32(DisplayWorkerError.invalidRequest.rawValue) }
     do {
       try request.validate(actualParentPID: getppid())
+      if let mode = request.mode {
+        try switchMode(mode, target: request.target)
+        try? output.write(contentsOf: Data("ok\n".utf8))
+        return 0
+      }
       try check(request, against: DisplayObserver.read())
       try PrivateDisplayAPI().setEnabled(
         request.enabled, displayID: request.target.displayID, scope: .forSession
@@ -155,6 +203,83 @@ nonisolated enum DisplayWorker {
     } else {
       try checkMonitorDisable(request.target, against: reading)
     }
+  }
+
+  /// Sharp Text's switch. Everything is decided again from fresh readings, and the private mode
+  /// list is only ever read here, in a process that is allowed to fail.
+  private static func switchMode(
+    _ request: DisplayWorkerRequest.ModeRequest, target: PanelTarget
+  ) throws {
+    try checkModeTarget(target, against: DisplayObserver.read())
+    let api = PrivateDisplayAPI()
+    let id = target.displayID
+    guard let current = DisplayModeCatalog.current(id),
+          let catalog = api.modes(displayID: id)?.map(DisplayModeCatalog.summary)
+    else { throw DisplayWorkerError.refused }
+    let publicModes = DisplayModeCatalog.publicModes(id)
+    let native = SharpText.native(
+      flagged: DisplayModeCatalog.nativeSizes(publicModes), catalog: catalog
+    )
+    let mode = try resolve(
+      request, current: current, native: native, catalog: catalog,
+      listed: publicModes.map(DisplayModeCatalog.summary)
+    )
+    do {
+      try api.setMode(mode.number, displayID: id, scope: .forSession)
+    } catch {
+      throw DisplayWorkerError.workerFailed
+    }
+    // The call reports nothing, so only a reading says whether it took.
+    let deadline = ProcessInfo.processInfo.systemUptime + 3
+    while ProcessInfo.processInfo.systemUptime < deadline {
+      if let now = DisplayModeCatalog.current(id), now.size == mode.size,
+         now.scale == mode.scale {
+        return
+      }
+      usleep(100_000)
+    }
+    throw DisplayWorkerError.workerFailed
+  }
+
+  /// The mode to switch to, or why there is none. Sharpening goes through the same rule the app
+  /// used, so a request that has gone stale is refused rather than carried out.
+  /// `listed` is the public catalog: a 2x mode macOS lists itself is the person's to choose, so
+  /// only hidden ones are ever switched to, and so turning Sharp Text off can find them again.
+  static func resolve(
+    _ request: DisplayWorkerRequest.ModeRequest, current: DisplayModeSummary,
+    native: ModeSize?, catalog: [DisplayModeSummary], listed: [DisplayModeSummary] = []
+  ) throws -> DisplayModeSummary {
+    guard current.size == request.size, current.refreshRate == request.refreshRate else {
+      throw DisplayWorkerError.refused
+    }
+    if request.scale == 2 {
+      guard SharpText.twin(of: request.size, refreshRate: request.refreshRate, in: listed) == nil
+      else { throw DisplayWorkerError.refused }
+      switch SharpText.verdict(current: current, native: native, catalog: catalog) {
+      case let .wouldSwitch(to: twin): return twin
+      case .noTwin: throw DisplayWorkerError.unavailable
+      default: throw DisplayWorkerError.refused
+      }
+    }
+    // Putting the plain mode back, only from the 2x mode at the same size.
+    guard request.scale == 1, current.scale == 2,
+          let plain = catalog.first(where: {
+            $0.usable && $0.scale == 1 && $0.size == request.size
+              && $0.refreshRate == request.refreshRate
+          })
+    else { throw DisplayWorkerError.refused }
+    return plain
+  }
+
+  /// Only a monitor that is on, is the one named, and is not part of a mirror. A mode change
+  /// keeps every screen lit, so unlike turning one off it needs no other screen to be left.
+  static func checkModeTarget(_ target: PanelTarget, against reading: PlatformReading) throws {
+    guard reading.enumerationError == nil, reading.foregroundSession == .yes,
+          let current = reading.displays.first(where: { $0.id == target.displayID }),
+          !current.builtIn, current.uuid == target.displayUUID, current.active, current.online,
+          !current.asleep, !current.mirrored,
+          !reading.displays.contains(where: { $0.mirrorSourceID == target.displayID })
+    else { throw DisplayWorkerError.refused }
   }
 
   /// A monitor is turned off only while someone can still see something. Both clauses are also

@@ -23,6 +23,7 @@ final class ControllerRuntime: CoordinatorDelegate {
   private var exporting = false
   private var exportAlert: NSAlert?
   private let brightnessKeys = BrightnessKeys()
+  private var sharpText: SharpTextRuntime?
 
   private(set) var panel: MenuPanel = .placeholder
   var onMenuChanged: (() -> Void)?
@@ -52,6 +53,11 @@ final class ControllerRuntime: CoordinatorDelegate {
     }
     brightnessKeys.onChange = { [weak self] in self?.refreshMenu() }
     brightnessKeys.setEnabled(preferences.brightnessKeys, askForPermission: false)
+    let sharpText = SharpTextRuntime()
+    sharpText.onChange = { [weak self] in self?.refreshMenu() }
+    // A mode change waits for the arrangement to be still, so it never races one in progress.
+    sharpText.canAct = { [weak self] in self?.presentation.working == false }
+    self.sharpText = sharpText
     let observer = LivePlatformObserver()
     let reading = observer.read()
     guard let loginID = reading.loginID else {
@@ -103,6 +109,7 @@ final class ControllerRuntime: CoordinatorDelegate {
     }
     RunLoop.main.add(timer, forMode: .common)
     drainTimer = timer
+    sharpText.setEnabled(preferences.sharpText)
     refreshMenu()
     return true
   }
@@ -120,6 +127,7 @@ final class ControllerRuntime: CoordinatorDelegate {
     drainTimer = nil
     coordinator?.stop()
     brightnessKeys.stop()
+    sharpText?.stop()
     for (center, token) in subscriptions {
       center.removeObserver(token)
     }
@@ -213,7 +221,11 @@ final class ControllerRuntime: CoordinatorDelegate {
       presentation, launchAtLogin: preferences.launchAtLogin,
       brightnessKeys: preferences.brightnessKeys,
       brightnessNeedsPermission: brightnessKeys.needsPermission,
-      inputDetection: preferences.inputDetection
+      inputDetection: preferences.inputDetection,
+      sharpText: .init(
+        isOn: preferences.sharpText, monitors: sharpText?.monitors ?? 0,
+        unavailable: sharpText?.unavailable ?? 0, externalSharp: sharpText?.externalSharp ?? false
+      )
     )
     // Redrawing an identical panel would move things under the pointer for no reason.
     guard next != panel else { return }
@@ -249,6 +261,9 @@ final class ControllerRuntime: CoordinatorDelegate {
     case .toggleInputDetection:
       mutatePreferences { $0.inputDetection.toggle() }
       coordinator?.send(.setInputDetection(preferences.inputDetection))
+    case .toggleSharpText:
+      mutatePreferences { $0.sharpText.toggle() }
+      sharpText?.setEnabled(preferences.sharpText)
     case .checkForUpdates: onCheckForUpdates?()
     case .openDisplayMonitor: onOpenDiagnostics?()
     case .exportDiagnostics: exportDiagnostics()

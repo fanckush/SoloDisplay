@@ -18,6 +18,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let arrangementItem = NSMenuItem()
   private let launchItem = NSMenuItem()
   private let brightnessItem = NSMenuItem()
+  private let sharpTextItem = NSMenuItem()
   private let inputDetectionItem = NSMenuItem()
 
   init(store: MenuPanelStore, perform: @escaping (MenuAction) -> Void) {
@@ -36,12 +37,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     configure(
       brightnessItem, title: store.panel.brightnessKeys.title, action: .toggleBrightnessKeys
     )
+    configure(sharpTextItem, title: store.panel.sharpText.title, action: .toggleSharpText)
     configure(
       inputDetectionItem, title: store.panel.inputDetection.title, action: .toggleInputDetection
     )
     for item in [
       alertItem, retryItem, alertSeparator, arrangementItem, .separator(), launchItem,
-      brightnessItem, inputDetectionItem
+      brightnessItem, sharpTextItem, inputDetectionItem
     ] {
       menu.addItem(item)
     }
@@ -67,6 +69,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     alertSeparator.isHidden = panel.alert == nil
     launchItem.title = panel.launchAtLogin.title
     launchItem.state = panel.launchAtLogin.isOn ? .on : .off
+    sharpTextItem.title = panel.sharpText.title
+    sharpTextItem.state = panel.sharpText.isOn ? .on : .off
+    // Only there while a monitor cannot be helped, which is worth the menu changing size for.
+    sharpTextItem.subtitle = panel.sharpText.detail
     inputDetectionItem.title = panel.inputDetection.title
     inputDetectionItem.state = panel.inputDetection.isOn ? .on : .off
     brightnessItem.title = panel.brightnessKeys.title

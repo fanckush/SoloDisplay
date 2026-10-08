@@ -20,12 +20,14 @@ public struct Preferences: Codable, Equatable, Sendable {
   /// The person said not to be warned again that the laptop screen can freeze this Mac on its
   /// way back on. Only a Mac with that chip ever asks.
   public var freezeWarningDismissed = false
+  /// Sharp Text is opt-in, including after an upgrade.
+  public var sharpText = false
 
   public init() {}
 
   private enum CodingKeys: String, CodingKey {
     case schemaVersion, mode, launchAtLogin, manualPathValidated, brightnessKeys, inputDetection
-    case freezeWarningDismissed
+    case freezeWarningDismissed, sharpText
   }
 
   /// Fields added later are optional, so an older file keeps the choices it does have.
@@ -39,6 +41,7 @@ public struct Preferences: Codable, Equatable, Sendable {
     inputDetection = try container.decodeIfPresent(Bool.self, forKey: .inputDetection) ?? false
     freezeWarningDismissed =
       try container.decodeIfPresent(Bool.self, forKey: .freezeWarningDismissed) ?? false
+    sharpText = try container.decodeIfPresent(Bool.self, forKey: .sharpText) ?? false
   }
 }
 

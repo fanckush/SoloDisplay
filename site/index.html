@@ -83,6 +83,7 @@
         "Turns off the MacBook screen when an external monitor is connected",
         "Keeps the lid open, unlike clamshell mode",
         "Brightness keys control the external monitor over DDC",
+        "HiDPI on any monitor, for crisp text at scaled resolutions",
         "Detects when the monitor switches to another input (experimental)",
         "Restores the laptop screen if the app quits or crashes"
       ],
@@ -189,10 +190,18 @@
         },
         {
           "@type": "Question",
+          "name": "Why does text look blurry on my monitor?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "macOS only uses HiDPI on 4K monitors. Run a lower resolution monitor below its native resolution, like a 1440p monitor at 1080p, and text gets blurry. Turn on Sharp Text and SoloDisplay turns on HiDPI for that monitor, so text stays crisp."
+          }
+        },
+        {
+          "@type": "Question",
           "name": "Does it change my resolution or display arrangement?",
           "acceptedAnswer": {
             "@type": "Answer",
-            "text": "No. It doesn't touch mirroring, resolution, arrangement or sleep settings."
+            "text": "No. It doesn't touch mirroring, resolution, arrangement or sleep settings. Sharp Text, if you turn it on, switches a monitor to HiDPI at the resolution you picked, never to a different one."
           }
         },
         {
@@ -401,6 +410,23 @@
           </div>
         </article>
 
+        <article class="card wide" id="sharp-text">
+          <div class="copy">
+            <h3>HiDPI on every monitor.</h3>
+            <p>macOS only uses HiDPI on 4K monitors, so a 1440p monitor running at 1080p gets blurry text. Sharp Text turns on HiDPI for any monitor, so text stays crisp at the resolution you picked.</p>
+          </div>
+          <div class="sharp-compare" role="img" aria-label="The same text at 1080p on a 1440p monitor, blurry without HiDPI and crisp with it.">
+            <figure>
+              <div class="sample soft" aria-hidden="true"><b>Aa</b><span>The quick brown fox jumps over the lazy dog.</span></div>
+              <figcaption>1080p</figcaption>
+            </figure>
+            <figure>
+              <div class="sample" aria-hidden="true"><b>Aa</b><span>The quick brown fox jumps over the lazy dog.</span></div>
+              <figcaption>1080p, HiDPI</figcaption>
+            </figure>
+          </div>
+        </article>
+
         <article class="card wide demo" id="input-demo" data-mode="mac" data-auto="console">
           <div class="copy">
             <span class="tag">Experimental</span>
@@ -575,9 +601,13 @@
           <summary>What if the app crashes?</summary>
           <p>A small helper process watches the app while the screen is off. If the app quits, crashes or is force quit, the helper turns the laptop screen back on. It does the same if the screen is off and no usable monitor is connected.</p>
         </details>
+        <details id="blurry-text">
+          <summary>Why does text look blurry on my monitor?</summary>
+          <p>macOS only uses HiDPI on 4K monitors. Run a lower resolution monitor below its native resolution, like a 1440p monitor at 1080p, and text gets blurry. Turn on Sharp Text and SoloDisplay turns on HiDPI for that monitor, so text stays crisp.</p>
+        </details>
         <details id="resolution">
           <summary>Does it change my resolution or display arrangement?</summary>
-          <p>No. It doesn't touch mirroring, resolution, arrangement or sleep settings.</p>
+          <p>No. It doesn't touch mirroring, resolution, arrangement or sleep settings. Sharp Text, if you turn it on, switches a monitor to HiDPI at the resolution you picked, never to a different one.</p>
         </details>
         <details id="requirements">
           <summary>Which Macs does it work on?</summary>

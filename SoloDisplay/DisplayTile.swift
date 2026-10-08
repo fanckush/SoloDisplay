@@ -6,21 +6,34 @@ import SwiftUI
 struct DisplayTileArt: View {
   let internalLit: Bool
   let externalLit: Bool
+  var externalSharp = false
 
   var body: some View {
     HStack(alignment: .bottom, spacing: 9) {
       panel(width: 26, height: 17, standWidth: 32, lit: internalLit)
-      panel(width: 34, height: 22, standWidth: 13, lit: externalLit)
+      panel(width: 34, height: 22, standWidth: 13, lit: externalLit, sharp: externalSharp)
     }
   }
 
   /// A dark screen keeps its outline rather than fading out. Structure carries the difference,
   /// so a screen that is off still reads as a screen even when the whole tile is dimmed.
-  private func panel(width: CGFloat, height: CGFloat, standWidth: CGFloat, lit: Bool) -> some View {
+  private func panel(
+    width: CGFloat, height: CGFloat, standWidth: CGFloat, lit: Bool, sharp: Bool = false
+  ) -> some View {
     VStack(spacing: 1.5) {
       ZStack {
         if lit {
           RoundedRectangle(cornerRadius: 2.5)
+            .overlay {
+              // Cut out of the screen rather than drawn on it, so it reads on every tile fill.
+              if sharp {
+                Text("HiDPI")
+                  .font(.system(size: 7, weight: .heavy, design: .rounded))
+                  .fixedSize()
+                  .blendMode(.destinationOut)
+              }
+            }
+            .compositingGroup()
         } else {
           RoundedRectangle(cornerRadius: 2.5)
             .strokeBorder(lineWidth: 1.3)
@@ -70,8 +83,11 @@ struct DisplayTile: View {
       action(choice.action)
     } label: {
       VStack(spacing: 9) {
-        DisplayTileArt(internalLit: choice.internalLit, externalLit: choice.externalLit)
-          .frame(height: 26, alignment: .bottom)
+        DisplayTileArt(
+          internalLit: choice.internalLit, externalLit: choice.externalLit,
+          externalSharp: choice.externalSharp
+        )
+        .frame(height: 26, alignment: .bottom)
         Text(choice.title).font(.system(size: 12, weight: .semibold))
       }
       .frame(maxWidth: .infinity)
@@ -101,6 +117,12 @@ struct DisplayTile: View {
     .disabled(!choice.isEnabled)
     .accessibilityLabel(choice.title)
     .accessibilityAddTraits(choice.isSelected ? [.isSelected] : [])
-    .accessibilityValue(waiting ? "chosen, waiting to take effect" : "")
+    .accessibilityValue(
+      [
+        waiting ? "chosen, waiting to take effect" : nil,
+        choice.externalSharp ? "monitor HiDPI" : nil
+      ]
+      .compactMap(\.self).joined(separator: ", ")
+    )
   }
 }

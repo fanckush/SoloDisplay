@@ -113,6 +113,129 @@ struct DisplayWorkerTests {
     }
   }
 
+  // MARK: - Sharp Text
+
+  private func mode(_ width: Int, _ height: Int, _ scale: Int, _ rate: Int = 165)
+    -> DisplayModeSummary {
+    .init(width: width, height: height, scale: scale, refreshRate: rate, number: Int32(scale))
+  }
+
+  private var qhd: [DisplayModeSummary] {
+    [mode(2560, 1440, 1), mode(1920, 1080, 1), mode(1920, 1080, 2), mode(1600, 900, 1)]
+  }
+
+  private let qhdNative = ModeSize(width: 2560, height: 1440)
+
+  private func request(_ width: Int, _ height: Int, scale: Int, rate: Int = 165)
+    -> DisplayWorkerRequest.ModeRequest {
+    .init(width: width, height: height, refreshRate: rate, scale: scale)
+  }
+
+  @Test func sharpeningFollowsTheSameRuleAsTheApp() throws {
+    let twin = try DisplayWorker.resolve(
+      request(1920, 1080, scale: 2), current: mode(1920, 1080, 1), native: qhdNative,
+      catalog: qhd
+    )
+    #expect(twin == mode(1920, 1080, 2))
+    // A size with no twin is said to be unavailable, so the menu can say so.
+    #expect(throws: DisplayWorkerError.unavailable) {
+      try DisplayWorker.resolve(
+        request(1600, 900, scale: 2), current: mode(1600, 900, 1), native: qhdNative,
+        catalog: qhd
+      )
+    }
+    // Native is never sharpened, whatever was asked.
+    #expect(throws: DisplayWorkerError.refused) {
+      try DisplayWorker.resolve(
+        request(2560, 1440, scale: 2), current: mode(2560, 1440, 1), native: qhdNative,
+        catalog: qhd
+      )
+    }
+  }
+
+  /// 1280x720 at 2x is in System Settings on a 1440p monitor, so plain 720 was chosen on purpose.
+  @Test func aTwinMacOSListsItselfIsLeftToThePerson() {
+    let catalog = qhd + [mode(1280, 720, 1), mode(1280, 720, 2)]
+    #expect(throws: DisplayWorkerError.refused) {
+      try DisplayWorker.resolve(
+        request(1280, 720, scale: 2), current: mode(1280, 720, 1), native: qhdNative,
+        catalog: catalog, listed: [mode(1280, 720, 1), mode(1280, 720, 2)]
+      )
+    }
+    // A hidden twin is still switched to with the same public catalog.
+    #expect(throws: Never.self) {
+      try DisplayWorker.resolve(
+        request(1920, 1080, scale: 2), current: mode(1920, 1080, 1), native: qhdNative,
+        catalog: catalog, listed: [mode(1280, 720, 2), mode(1920, 1080, 1)]
+      )
+    }
+  }
+
+  @Test func aStaleModeRequestIsRefused() {
+    // The person changed resolution again between the decision and the worker.
+    #expect(throws: DisplayWorkerError.refused) {
+      try DisplayWorker.resolve(
+        request(1920, 1080, scale: 2), current: mode(1600, 900, 1), native: qhdNative,
+        catalog: qhd
+      )
+    }
+    #expect(throws: DisplayWorkerError.refused) {
+      try DisplayWorker.resolve(
+        request(1920, 1080, scale: 2, rate: 60), current: mode(1920, 1080, 1),
+        native: qhdNative, catalog: qhd
+      )
+    }
+  }
+
+  @Test func thePlainModeIsOnlyPutBackFromItsOwnTwin() throws {
+    let plain = try DisplayWorker.resolve(
+      request(1920, 1080, scale: 1), current: mode(1920, 1080, 2), native: qhdNative,
+      catalog: qhd
+    )
+    #expect(plain == mode(1920, 1080, 1))
+    #expect(throws: DisplayWorkerError.refused) {
+      try DisplayWorker.resolve(
+        request(1920, 1080, scale: 1), current: mode(1920, 1080, 1), native: qhdNative,
+        catalog: qhd
+      )
+    }
+  }
+
+  @Test func onlyTheNamedLitUnmirroredMonitorChangesMode() throws {
+    let monitor = PanelTarget(
+      displayID: 5, displayUUID: "external", bootID: "boot", loginID: 42, kind: .external
+    )
+    // Unlike turning one off, a mode change keeps the screen lit, so it may be the only one.
+    #expect(throws: Never.self) {
+      try DisplayWorker.checkModeTarget(monitor, against: reading(panelPresent: false))
+    }
+    var impostor = monitor
+    impostor.displayUUID = "someone-else"
+    #expect(throws: DisplayWorkerError.refused) {
+      try DisplayWorker.checkModeTarget(impostor, against: reading())
+    }
+    #expect(throws: DisplayWorkerError.refused) {
+      try DisplayWorker.checkModeTarget(panel, against: reading())
+    }
+    #expect(throws: DisplayWorkerError.refused) {
+      try DisplayWorker.checkModeTarget(monitor, against: reading(panelMirrors: 5))
+    }
+  }
+
+  @Test func aModeRequestSurvivesThePipe() throws {
+    let monitor = PanelTarget(
+      displayID: 5, displayUUID: "external", bootID: "boot", loginID: 42, kind: .external
+    )
+    let sent = DisplayWorkerRequest(
+      parentPID: 123, enabled: true, target: monitor, mode: request(1920, 1080, scale: 2)
+    )
+    let received = try JSONDecoder().decode(
+      DisplayWorkerRequest.self, from: JSONEncoder().encode(sent)
+    )
+    #expect(received == sent)
+    #expect(throws: Never.self) { try received.validate(actualParentPID: 123) }
+  }
+
   @Test func aWorkerThatNeverFinishesIsKilled() {
     // `yes` ignores its request and never exits, like a private call that does not return.
     let writer = WorkerDisplayWriter(executable: URL(fileURLWithPath: "/usr/bin/yes"), timeout: 0.1)

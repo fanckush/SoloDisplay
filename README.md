@@ -52,6 +52,10 @@ There are two choices:
 **Brightness Controls**
 You can control the brightness of you rexternal monitor with the brightness keys on your mac
 
+**Sharp Text**
+macOS only uses HiDPI on 4K monitors, so a 1440p monitor running at 1080p gets blurry text. Sharp
+Text turns on HiDPI for any monitor, so text stays crisp at the resolution you picked.
+
 **Input Detection (Experimental)**
 It detects monitor input changes and internally turns off a monitor showing another computer.
 
@@ -69,6 +73,7 @@ for updates, which Xcode fetches on first build.
 swift build
 swift test
 swift run solodisplay-lab observe   # read-only; reports displays/session/lid state
+swift run solodisplay-lab modes     # read-only; whether each monitor can render its size at 2x
 
 open SoloDisplay.xcodeproj           # Scheme "SoloDisplay" then Run
 ```

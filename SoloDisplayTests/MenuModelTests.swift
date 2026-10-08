@@ -139,6 +139,36 @@ struct MenuModelTests {
     #expect(on.brightnessKeys == off.brightnessKeys)
   }
 
+  @Test func sharpTextIsAnOptionThatOnlySpeaksUpWhenItCannotHelp() {
+    let off = MenuModel.panel(.init(), launchAtLogin: false)
+    #expect(!off.sharpText.isOn && off.sharpText.detail == nil)
+    #expect(off.sharpText.title == "Sharp Text")
+    #expect(off.sharpText.action == .toggleSharpText)
+    func detail(_ monitors: Int, _ unavailable: Int, on: Bool = true) -> String? {
+      MenuModel.panel(
+        .init(), launchAtLogin: false,
+        sharpText: .init(isOn: on, monitors: monitors, unavailable: unavailable)
+      ).sharpText.detail
+    }
+    #expect(detail(1, 0) == nil)
+    #expect(detail(2, 0) == nil)
+    #expect(detail(1, 1, on: false) == nil)
+    #expect(detail(1, 1) == "Not available on this monitor")
+    #expect(detail(2, 1) == "Not available on one of your monitors")
+    #expect(detail(3, 2) == "Not available on 2 of your monitors")
+    #expect(detail(2, 2) == "Not available on your monitors")
+  }
+
+  /// The badge is a fact about the screen, so it shows on both tiles and with the option off.
+  @Test func aMonitorRenderingAt2xIsMarkedOnBothTiles() {
+    let plain = MenuModel.panel(.init(), launchAtLogin: false)
+    #expect(!plain.allMonitors.externalSharp && !plain.externalOnly.externalSharp)
+    let sharp = MenuModel.panel(
+      .init(), launchAtLogin: false, sharpText: .init(isOn: false, externalSharp: true)
+    )
+    #expect(sharp.allMonitors.externalSharp && sharp.externalOnly.externalSharp)
+  }
+
   @Test func brightnessKeysShowWhenPermissionIsMissing() {
     let off = MenuModel.panel(.init(), launchAtLogin: false)
     #expect(!off.brightnessKeys.isOn && !off.brightnessKeys.isBlocked)

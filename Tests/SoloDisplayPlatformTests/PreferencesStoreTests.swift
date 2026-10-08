@@ -56,6 +56,21 @@ struct PreferencesStoreTests {
     #expect(store.load().brightnessKeys)
   }
 
+  @Test func sharpTextRequiresOptInAfterAnUpgradeAndPersists() throws {
+    let directory = try workspace()
+    let store = try PreferencesStore(directory: directory)
+    let older = """
+    {"schemaVersion":1,"mode":"automatic","launchAtLogin":true,"manualPathValidated":true,"inputDetection":true}
+    """
+    try Data(older.utf8).write(to: store.url)
+    let loaded = store.load()
+    #expect(!loaded.sharpText)
+    #expect(loaded.inputDetection)
+    try store.update { $0.sharpText = true }
+    let reopened = try PreferencesStore(directory: directory).load()
+    #expect(reopened.sharpText)
+  }
+
   @Test func aPausedAutomaticChoiceSurvivesARestart() throws {
     let directory = try workspace()
     let store = try PreferencesStore(directory: directory)
