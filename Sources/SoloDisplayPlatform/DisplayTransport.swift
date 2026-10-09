@@ -51,7 +51,8 @@ public enum DisplayTransportClassifier {
   /// A DisplayLink, wireless, or virtual display is not published through that pipeline, so it
   /// cannot reach this verdict. Nothing here is inferred from a display's name or its flags.
   public static func classify(_ evidence: TransportEvidence) -> DisplayTransport {
-    guard evidence.match == .vendorModelSerial else { return .unclassified }
+    guard evidence.match == .vendorModelSerial || evidence.match == .vendorModel
+    else { return .unclassified }
     let controllerIndex = evidence.providerChain.firstIndex(of: displayControllerClass)
     if evidence.providerChain.contains(where: displayServiceClasses.contains), let controllerIndex,
        controllerIndex < evidence.providerNames.count,
@@ -72,26 +73,18 @@ public enum DisplayTransportClassifier {
       Identity(vendor: CGDisplayVendorNumber(display.id), model: CGDisplayModelNumber(display.id),
                serial: CGDisplaySerialNumber(display.id))
     }
-    return displays.map { display in
-      let vendor = CGDisplayVendorNumber(display.id)
-      let model = CGDisplayModelNumber(display.id)
-      let serial = CGDisplaySerialNumber(display.id)
-      // Prefer the most specific correlation available, and record which one was used.
-      var match = TransportMatch.none
-      let identity = Identity(vendor: vendor, model: model, serial: serial)
-      let index = uniqueService(for: identity, displays: identities,
-                                services: services.map { .init(
-                                  vendor: $0.vendor,
-                                  model: $0.model,
-                                  serial: $0.serial
-                                ) })
-      let service = index.map { services[$0] }
-      if service != nil {
-        match = .vendorModelSerial
-      }
+    let found = links(
+      displays: zip(identities, displays).map { ($0, $1.builtIn) },
+      services: services.map { .init(vendor: $0.vendor, model: $0.model, serial: $0.serial) }
+    )
+    return displays.indices.map { index in
+      let display = displays[index]
+      let identity = identities[index]
+      let service = found[index].map { services[$0.service] }
       return .init(
-        displayID: display.id, builtIn: display.builtIn, vendor: vendor, model: model,
-        serial: serial, unit: CGDisplayUnitNumber(display.id), match: match,
+        displayID: display.id, builtIn: display.builtIn, vendor: identity.vendor,
+        model: identity.model, serial: identity.serial, unit: CGDisplayUnitNumber(display.id),
+        match: found[index]?.match ?? .none,
         providerChain: service?.providerChain ?? [],
         providerNames: service?.providerNames ?? []
       )
@@ -104,14 +97,55 @@ public enum DisplayTransportClassifier {
     var serial: UInt32
   }
 
+  /// Which service each display is on, by display index. An exact identity wins. Failing that, an
+  /// external display and a service that agree on vendor and model, and are the only ones left
+  /// that do, belong together: a monitor whose EDID has no serial, or that macOS could not read
+  /// at all and reports as zeros on both sides. A virtual display has no service, so next to such
+  /// a monitor it makes the pairing ambiguous and neither is linked.
+  static func links(
+    displays: [(identity: Identity, builtIn: Bool)], services: [Identity]
+  ) -> [Int: (service: Int, match: TransportMatch)] {
+    var found: [Int: (service: Int, match: TransportMatch)] = [:]
+    for (index, display) in displays.enumerated() {
+      if let service = uniqueService(
+        for: display.identity, displays: displays.map(\.identity), services: services
+      ) {
+        found[index] = (service, .vendorModelSerial)
+      }
+    }
+    let claimed = Set(found.values.map(\.service))
+    let leftover = displays.indices.filter { found[$0] == nil && !displays[$0].builtIn }
+    for index in leftover {
+      let identity = displays[index].identity
+      let sameKind = leftover.filter { sameProduct(displays[$0].identity, identity) }
+      let candidates = services.indices.filter {
+        !claimed.contains($0) && sameProduct(services[$0], identity)
+      }
+      guard sameKind.count == 1, candidates.count == 1,
+            !contradicts(identity.serial, services[candidates[0]].serial)
+      else { continue }
+      found[index] = (candidates[0], .vendorModel)
+    }
+    return found
+  }
+
   /// Ambiguous correlation is not evidence. Never let multiple CG displays borrow one
-  /// physical service, and never fall back after a serial contradiction.
+  /// physical service.
   static func uniqueService(for identity: Identity, displays: [Identity],
                             services: [Identity]) -> Int? {
     guard identity.vendor != 0, identity.vendor != unknownVendor, identity.serial != 0,
           displays.filter({ $0 == identity }).count == 1 else { return nil }
     let matches = services.indices.filter { services[$0] == identity }
     return matches.count == 1 ? matches[0] : nil
+  }
+
+  private static func sameProduct(_ lhs: Identity, _ rhs: Identity) -> Bool {
+    lhs.vendor == rhs.vendor && lhs.model == rhs.model
+  }
+
+  /// Two serials that were both read and differ name two different monitors.
+  private static func contradicts(_ lhs: UInt32, _ rhs: UInt32) -> Bool {
+    lhs != 0 && rhs != 0 && lhs != rhs
   }
 
   private struct Service {

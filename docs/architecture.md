@@ -115,8 +115,10 @@ whether a change is under way, any lasting trouble, and why the screen cannot be
   `ControllerObservation` normalizes a reading. It never guesses that a display it cannot see is off
   unless the record names it.
 - `DisplayTransportClassifier` counts an external as native only when it correlates to a display
-  service on the SoC display pipeline. An internal panel following one present external mirror
-  source is supported; an internal mirror source is not.
+  service on the SoC display pipeline. An exact vendor, model and serial match comes first; failing
+  that, a display and service that are the only ones left with the same vendor and model are
+  linked, which covers monitors with no serial or an EDID macOS could not read. An internal panel
+  following one present external mirror source is supported; an internal mirror source is not.
 - `ProductionCoordinator` runs the reducer on the main actor, one event at a time. Readings,
   storage, and workers each have their own serial lane, so a slow one delays only itself.
   `DisplayEventMonitor` delivers CoreGraphics reconfiguration callbacks immediately, and a timer
