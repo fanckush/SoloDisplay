@@ -24,7 +24,7 @@ cask "solodisplay" do
   app "SoloDisplay.app"
 
   zap trash: [
-    "~/Library/Preferences/dev.solodisplay.SoloDisplay.plist",
     "~/Library/Application Support/SoloDisplay",
+    "~/Library/Preferences/dev.solodisplay.SoloDisplay.plist",
   ]
 end
