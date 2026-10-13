@@ -280,6 +280,41 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
   #expect(Controller.presentation(rig.state, at: now + 1).trouble == nil)
 }
 
+@Test func aScreenThatTurnsOffAfterItsMissesWereCountedClearsTheTrouble() {
+  var rig = Rig()
+  rig.reachDisable()
+  var now: Instant = 2010
+  for attempt in 1 ... 3 {
+    rig.send(.workerFinished(.killed), at: now)
+    rig.observe(at: now + rig.state.policy.effectCap)
+    now = rig.state.retryAt ?? now
+    if attempt < 3 {
+      rig.observe(at: now)
+    }
+  }
+  #expect(rig.state.worker == nil)
+  #expect(Controller.presentation(rig.state, at: now).trouble == .stillTrying)
+  // The last hung call worked after all, so there is nothing left to try.
+  let effects = rig.observe(environment(panelState: .disabled), at: now)
+  #expect(workers(effects, .disable) == 0)
+  #expect(rig.state.failures == 0)
+  #expect(Controller.presentation(rig.state, at: now).trouble == nil)
+}
+
+@Test func aRecordThatCannotBeClearedKeepsItsBackoff() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.selectMode(.automaticPaused), at: 2100)
+  rig.send(.workerFinished(.done), at: 2110)
+  rig.observe(at: 2120)
+  let cleared = rig.observe(at: 2120 + rig.state.policy.stableFor)
+  #expect(cleared.contains(.clearRecord))
+  rig.send(.recordCleared(succeeded: false), at: 4200)
+  #expect(rig.state.failures == 1)
+  #expect(!rig.observe(at: 4201).contains(.clearRecord))
+  #expect(rig.state.failures == 1)
+}
+
 @Test func aRecordThatCannotBeSavedIsReportedAndRetried() {
   var rig = Rig()
   rig.observe(at: 0)

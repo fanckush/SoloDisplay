@@ -43,6 +43,7 @@ public enum Controller {
       }
       state.observation = sample
       judgeFinishedWorker(&state, at: now)
+      clearBackoffOnArrival(&state, at: now)
     case let .displayReconfigured(inProgress):
       state.lastDisplayChange = now
       state.displayConfiguring = inProgress
@@ -556,6 +557,20 @@ public enum Controller {
   private static func clearBackoff(_ state: inout ControllerState) {
     state.failures = 0
     state.retryAt = nil
+  }
+
+  /// A screen can reach what is wanted without a worker landing, such as a hung call that worked
+  /// after it was counted as a miss. Nothing is left to try then, so nothing would ever clear the
+  /// misses, and the menu would report trouble for as long as the screen stays right.
+  private static func clearBackoffOnArrival(_ state: inout ControllerState, at now: Instant) {
+    guard state.failures > 0, state.worker == nil,
+          let actual = state.observation?.environment.panelState, actual != .unknown,
+          desired(state, at: now) == actual
+    else { return }
+    // A screen that is on still owes its record a clear, and a clear that fails keeps its own
+    // backoff rather than being asked again on every reading.
+    guard actual == .disabled || state.record == nil else { return }
+    clearBackoff(&state)
   }
 
   private static func schedule(_ state: ControllerState, effects: inout [Effect], at now: Instant) {
