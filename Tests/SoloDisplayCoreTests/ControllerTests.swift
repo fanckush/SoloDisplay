@@ -244,6 +244,32 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
   #expect(workers(awake, .enable) == 1)
 }
 
+/// A monitor that stays dark after a wake still reads as asleep and present, so nothing would
+/// ever put the screen back. The grace gives a slow monitor its chance first.
+@Test func aWakeThatLeavesNothingLitPutsTheScreenBack() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.willSleep, at: 2100)
+  rig.send(.waking, at: 3000)
+  rig.send(.waking, at: 4000)
+  let back = 3000 + rig.state.policy.wakeGrace
+  let dark = environment(panelState: .disabled, power: .waking)
+  #expect(workers(rig.observe(dark, at: back - 1), .enable) == 0)
+  #expect(workers(rig.observe(dark, at: back), .enable) == 1)
+}
+
+@Test func aMonitorThatComesBackAfterAWakeKeepsTheScreenOff() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.waking, at: 3000)
+  rig.observe(environment(panelState: .disabled), at: 3100)
+  #expect(rig.state.wokeAt == nil)
+  let later = rig.observe(
+    environment(panelState: .disabled), at: 3000 + rig.state.policy.wakeGrace
+  )
+  #expect(workers(later, .enable) == 0)
+}
+
 @Test func aClosedLidHoldsEverything() {
   var rig = Rig()
   rig.off()

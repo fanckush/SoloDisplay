@@ -42,6 +42,9 @@ public enum Controller {
         state.panelStateSince = sample.sampledAt
       }
       state.observation = sample
+      if sample.environment.power == .awake {
+        state.wokeAt = nil
+      }
       judgeFinishedWorker(&state, at: now)
       clearBackoffOnArrival(&state, at: now)
     case let .displayReconfigured(inProgress):
@@ -65,6 +68,8 @@ public enum Controller {
       // A monitor can be switched while the Mac sleeps, so what it said before says nothing now.
       state.forgetInputSources()
       state.monitors.removeAll()
+      // Timed from the first signal: a second one must not push the deadline back.
+      state.wokeAt = event == .waking ? state.wokeAt ?? now : nil
       if var sample = state.observation {
         sample.environment.power = event == .willSleep ? .sleeping : .waking
         state.observation = sample
@@ -371,6 +376,9 @@ public enum Controller {
   /// What the laptop screen should be, or nil when nothing should be changed right now: the Mac
   /// is asleep or closed, the panel cannot be identified, or an arrangement is still settling.
   static func desired(_ state: ControllerState, at now: Instant) -> PanelState? {
+    if wokeDark(state, at: now) {
+      return .enabled
+    }
     guard let environment = state.observation?.environment, environment.visibilityExpected
     else { return nil }
     // A panel that cannot be read, while the record says one of ours may be off, is an obligation
@@ -401,6 +409,18 @@ public enum Controller {
     // Nothing is turned off before the monitors have been asked what they are showing.
     guard inputAsked(state, at: now) else { return nil }
     return isSettled(state, at: now) ? .disabled : nil
+  }
+
+  /// The Mac woke a while ago and nothing is lit: the laptop screen is off and the monitor it is
+  /// off for has not come back. Some monitors stay dark after a wake until they are plugged in
+  /// again, and waiting for one to look awake would then leave the person with no screen at all.
+  public static func wokeDark(_ state: ControllerState, at now: Instant) -> Bool {
+    guard let woke = state.wokeAt, now - woke >= state.policy.wakeGrace,
+          let environment = state.observation?.environment, environment.power == .waking,
+          environment.panelState == .disabled, environment.lid == .open,
+          environment.foregroundSession == .yes
+    else { return false }
+    return environment.visibleDisplays == 0
   }
 
   /// Requests the one next step toward the wanted state. Turning off needs the record, then the
@@ -591,6 +611,10 @@ public enum Controller {
       if check > now {
         effects.append(.observeAt(check))
       }
+    }
+    // Waking has no reading of its own to wait for, so the end of the grace needs a timer.
+    if let woke = state.wokeAt, woke + state.policy.wakeGrace > now {
+      effects.append(.wakeAt(woke + state.policy.wakeGrace))
     }
     if let retryAt = state.retryAt, retryAt > now {
       effects.append(.wakeAt(retryAt))

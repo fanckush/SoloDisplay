@@ -79,7 +79,7 @@ private final class FakeWriter: DisplayWriting {
     }
   }
 
-  func setEnabled(_ enabled: Bool, target: PanelTarget) -> WorkerOutcome {
+  func setEnabled(_ enabled: Bool, target: PanelTarget, wokeDark _: Bool) -> WorkerOutcome {
     let (outcome, changes) = state.withLock {
       $0.calls.append(.init(enabled: enabled, displayID: target.displayID))
       return ($0.outcome, $0.changesDisplay)

@@ -45,7 +45,7 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
     case userQuit, missingExecutable, invalidLaunch, journalUnavailable, missingSession
     case alreadyRunning, released, appGone, noUsableExternal, nothingOwed
     case workspaceSleep, workspaceWake, workspaceScreenSleep, workspaceSessionActive
-    case workspaceSessionInactive, observationFallback
+    case workspaceSessionInactive, observationFallback, wokeDark
     case exited, uncaughtSignal, exportEncoding, exportWriting
   }
 

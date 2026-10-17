@@ -88,3 +88,17 @@ private func reading(
   )
   #expect(RecoveryIdentity.readiness(closed, target: owned, ownedTarget: owned) == .waiting)
 }
+
+/// Every screen asleep is display sleep, where a restored panel would be invisible, unless the
+/// Mac woke a while ago and the monitor never came back. Then the panel is all there is.
+@Test func aPanelIsPutBackOverAnAsleepMonitorOnlyAfterADarkWake() {
+  let dark = reading([display(id: 4, uuid: "dell", builtIn: false, asleep: true)])
+  #expect(RecoveryIdentity.readiness(dark, target: owned, ownedTarget: owned) == .waiting)
+  #expect(
+    RecoveryIdentity.readiness(dark, target: owned, ownedTarget: owned, wokeDark: true) == .ready
+  )
+  #expect(
+    RecoveryIdentity.readiness(dark, target: monitor, ownedTarget: monitor, wokeDark: true)
+      == .waiting
+  )
+}

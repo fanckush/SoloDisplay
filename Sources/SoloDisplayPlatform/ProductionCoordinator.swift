@@ -27,7 +27,9 @@ public extension InputSourceObserving {
 public protocol DisplayWriting: Sendable {
   /// Makes one change with session scope and reports how the attempt ended. The outcome never
   /// says what the display did; only a later reading does.
-  func setEnabled(_ enabled: Bool, target: PanelTarget) -> WorkerOutcome
+  /// `wokeDark` lets a restore through while every screen is asleep, which is only right when
+  /// the Mac woke a while ago and nothing lit up.
+  func setEnabled(_ enabled: Bool, target: PanelTarget, wokeDark: Bool) -> WorkerOutcome
 }
 
 public protocol OwnershipPersisting: Sendable {
@@ -403,9 +405,13 @@ public final class ProductionCoordinator {
         ) { $0.workerAction = action }
       }
       let writer = writer
-      diagnostics.emit(.workerStarted, session: session) { $0.workerAction = action }
+      let wokeDark = action == .enable && Controller.wokeDark(state, at: now)
+      diagnostics.emit(.workerStarted, session: session) {
+        $0.workerAction = action
+        $0.reason = wokeDark ? .wokeDark : nil
+      }
       workerLane.run {
-        .workerFinished(writer.setEnabled(action == .enable, target: target))
+        .workerFinished(writer.setEnabled(action == .enable, target: target, wokeDark: wokeDark))
       } completion: { [weak self] in self?.send($0) }
     }
   }

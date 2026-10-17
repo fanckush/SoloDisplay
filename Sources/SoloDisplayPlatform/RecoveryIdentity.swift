@@ -5,9 +5,10 @@ public enum RecoveryReadiness: Equatable, Sendable { case ready, waiting, blocke
 
 /// Evidence about a target now, distinct from a record written before suppression.
 public enum RecoveryIdentity {
+  /// `wokeDark` is the owner's word that the Mac woke a while ago and nothing has lit up since.
   public static func readiness(
     _ reading: PlatformReading, target: PanelTarget,
-    ownedTarget: PanelTarget? = nil
+    ownedTarget: PanelTarget? = nil, wokeDark: Bool = false
   ) -> RecoveryReadiness {
     // A positively different identity is not a temporary lifecycle condition.
     if let boot = reading.bootID, boot != target.bootID {
@@ -27,7 +28,10 @@ public enum RecoveryIdentity {
           reading.foregroundSession == .yes,
           target.kind != .builtIn || reading.lid == .open
     else { return .waiting }
-    if !reading.displays.isEmpty && reading.displays.allSatisfy(\.asleep) {
+    // Every screen asleep is normally display sleep, and a panel put back then is invisible. Long
+    // after a wake it is a monitor that did not come back, and the panel is all that is left.
+    let panelAfterDarkWake = wokeDark && target.kind == .builtIn
+    if !panelAfterDarkWake, !reading.displays.isEmpty, reading.displays.allSatisfy(\.asleep) {
       return .waiting
     }
     if let current = reading.displays.first(where: { $0.id == target.displayID }) {
@@ -43,9 +47,9 @@ public enum RecoveryIdentity {
   /// is an obligation to reconcile, not authority to address an unresolvable ID.
   public static func authorizeRestore(
     _ reading: PlatformReading, target: PanelTarget,
-    ownedTarget: PanelTarget? = nil
+    ownedTarget: PanelTarget? = nil, wokeDark: Bool = false
   ) throws {
-    switch readiness(reading, target: target, ownedTarget: ownedTarget) {
+    switch readiness(reading, target: target, ownedTarget: ownedTarget, wokeDark: wokeDark) {
     case .ready: return
     case .waiting: throw IdentityError.insufficientEvidence
     case .blocked: throw IdentityError.contradictoryTarget

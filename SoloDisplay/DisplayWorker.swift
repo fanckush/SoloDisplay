@@ -16,6 +16,8 @@ nonisolated struct DisplayWorkerRequest: Codable, Equatable, Sendable {
   /// Present for a Sharp Text switch, which changes the target's mode rather than turning it
   /// on or off. `enabled` is then ignored.
   var mode: ModeRequest?
+  /// The parent saw the Mac wake a while ago with nothing lit since. Only a restore uses it.
+  var wokeDark = false
 
   /// A mode named by what it is rather than by number: numbers belong to one catalog reading,
   /// and the worker takes its own.
@@ -79,8 +81,10 @@ final nonisolated class WorkerDisplayWriter: DisplayWriting, @unchecked Sendable
     self.timeout = timeout
   }
 
-  func setEnabled(_ enabled: Bool, target: PanelTarget) -> WorkerOutcome {
-    let request = DisplayWorkerRequest(parentPID: getpid(), enabled: enabled, target: target)
+  func setEnabled(_ enabled: Bool, target: PanelTarget, wokeDark: Bool) -> WorkerOutcome {
+    let request = DisplayWorkerRequest(
+      parentPID: getpid(), enabled: enabled, target: target, wokeDark: wokeDark
+    )
     switch launch(request) {
     case .status(0): return .done
     case .status(Int32(DisplayWorkerError.refused.rawValue)): return .refused
@@ -193,7 +197,7 @@ nonisolated enum DisplayWorker {
       // The parent is the live process that turned this panel off, so an absent panel is its
       // own suppression rather than a guess about a display it cannot see.
       guard (try? RecoveryIdentity.authorizeRestore(
-        reading, target: request.target, ownedTarget: request.target
+        reading, target: request.target, ownedTarget: request.target, wokeDark: request.wokeDark
       )) != nil
       else { throw DisplayWorkerError.refused }
     } else if request.target.kind == .builtIn {

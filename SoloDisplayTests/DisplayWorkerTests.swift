@@ -239,12 +239,12 @@ struct DisplayWorkerTests {
   @Test func aWorkerThatNeverFinishesIsKilled() {
     // `yes` ignores its request and never exits, like a private call that does not return.
     let writer = WorkerDisplayWriter(executable: URL(fileURLWithPath: "/usr/bin/yes"), timeout: 0.1)
-    #expect(writer.setEnabled(true, target: panel) == .killed)
+    #expect(writer.setEnabled(true, target: panel, wokeDark: false) == .killed)
   }
 
   @Test func aWorkerThatCannotStartIsAFailedAttemptNotACrash() {
     let writer = WorkerDisplayWriter(executable: URL(fileURLWithPath: "/nonexistent/solodisplay"))
-    #expect(writer.setEnabled(false, target: panel) == .failed)
+    #expect(writer.setEnabled(false, target: panel, wokeDark: false) == .failed)
   }
 
   @Test func aGuardianRequestIsBoundToItsActualParentAndACompleteTarget() {

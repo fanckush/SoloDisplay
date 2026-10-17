@@ -196,6 +196,9 @@ public struct Policy: Equatable, Sendable {
   /// A monitor that has answered nothing for this long is turned back on. A monitor usually
   /// answers again once it is switched back, so this is a backstop, not the way back.
   public var monitorSilence: Instant = 300_000
+  /// How long after a wake the screens may stay dark before the laptop screen is put back. Long
+  /// enough for a slow monitor to come back on its own, which avoids a pointless flash.
+  public var wakeGrace: Instant = 15000
   public init() {}
 }
 
@@ -283,6 +286,8 @@ public struct ControllerState: Equatable, Sendable {
   public var inputSourcesAskedAt: Instant?
   public var inputSourcesBusy = false
   public var inputSourcesDueAt: Instant?
+  /// The first wake signal since the Mac was last seen awake. Cleared once it is.
+  public var wokeAt: Instant?
   public var policy: Policy
 
   public init(mode: Mode = .automaticPaused, record: PanelTarget? = nil, policy: Policy = .init(),

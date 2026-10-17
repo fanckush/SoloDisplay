@@ -389,7 +389,7 @@ final class GuardianRuntime {
     let writer = WorkerDisplayWriter(executable: executable)
     let diagnostics = diagnostics
     Task.detached { [weak self] in
-      let outcome = writer.setEnabled(true, target: target)
+      let outcome = writer.setEnabled(true, target: target, wokeDark: false)
       diagnostics.emit(.workerFinished, succeeded: outcome == .done) {
         $0.workerAction = .enable
         $0.workerOutcome = outcome
