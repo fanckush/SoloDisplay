@@ -35,7 +35,7 @@ public final class PrivateDisplayAPI {
     }
     configure = found
     symbolName = name
-    /// The CGS names first: they are the ones the HiDPI trial was run against.
+    // The CGS names first: they are the ones the HiDPI trial was run against.
     func lookup<T>(_ names: [String], as _: T.Type) -> T? {
       guard let library else { return nil }
       for name in names {

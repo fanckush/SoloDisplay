@@ -11,18 +11,5 @@ echo "  pre-commit: lint staged Swift files"
 echo "  commit-msg: validate the conventional commit subject"
 echo "  pre-push:   run package and app unit tests"
 
-missing=()
-for tool in swiftformat swiftlint; do
-  if ! command -v "$tool" >/dev/null 2>&1; then
-    missing+=("$tool")
-  fi
-done
-
-if (( ${#missing[@]} > 0 )); then
-  echo
-  echo "Install the missing development tools before committing:"
-  echo "  brew install swiftformat swiftlint"
-  exit 1
-fi
-
-echo "Development tools are installed."
+echo
+echo "Lint tools are pinned in scripts/lint.sh and downloaded on first use."
