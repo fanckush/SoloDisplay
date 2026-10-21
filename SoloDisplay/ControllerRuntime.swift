@@ -51,6 +51,9 @@ final class ControllerRuntime: CoordinatorDelegate {
     if preferences.launchAtLogin != registered {
       mutatePreferences { $0.launchAtLogin = registered }
     }
+    // A baseline in every run, so an export shows the settings even when none changed in it.
+    let settings = OperationalSettings(preferences)
+    diagnostics.emit(.settingsChanged, session: session) { $0.settings = settings }
     brightnessKeys.onChange = { [weak self] in self?.refreshMenu() }
     brightnessKeys.setEnabled(preferences.brightnessKeys, askForPermission: false)
     let sharpText = SharpTextRuntime()
@@ -253,6 +256,7 @@ final class ControllerRuntime: CoordinatorDelegate {
     diagnostics.emit(.action, session: session) {
       $0.action = OperationalEvent.Action(rawValue: action.rawValue)
     }
+    let settingsBefore = OperationalSettings(preferences)
     switch action {
     // Both tiles are stored intents. External Only is off whenever a monitor is there for it.
     case .selectAllMonitors: coordinator?.send(.selectMode(.automaticPaused))
@@ -276,6 +280,10 @@ final class ControllerRuntime: CoordinatorDelegate {
     // The coordinator persists the mode through its own effect. Re-read rather than write a
     // cached copy back, so nothing here can clobber another field.
     preferences = preferencesStore?.load() ?? preferences
+    let settings = OperationalSettings(preferences)
+    if settings != settingsBefore {
+      diagnostics.emit(.settingsChanged, session: session) { $0.settings = settings }
+    }
     refreshMenu()
   }
 
@@ -320,8 +328,11 @@ final class ControllerRuntime: CoordinatorDelegate {
           return
         }
         let exporter = self.exporter
+        let settings = OperationalSettings(self.preferences)
         let snapshot = self.coordinator.map {
-          DiagnosticsSnapshot($0.state, at: MonotonicClock().now())
+          var snapshot = DiagnosticsSnapshot($0.state, at: MonotonicClock().now())
+          snapshot.settings = settings
+          return snapshot
         }
         // swiftformat:disable redundantSelf
         Task { @MainActor [weak self] in

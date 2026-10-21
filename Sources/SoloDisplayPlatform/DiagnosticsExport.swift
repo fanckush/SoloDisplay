@@ -106,6 +106,8 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
   public var inputSources: Fact
   /// Optional when decoding diagnostics exported before the experimental setting existed.
   public var inputDetectionEnabled: Bool?
+  /// Set by the app, which holds the preferences. Optional for older exports.
+  public var settings: OperationalSettings?
 
   public init(_ state: ControllerState, at now: Instant) {
     let presentation = Controller.presentation(state, at: now)

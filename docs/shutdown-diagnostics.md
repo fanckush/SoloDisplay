@@ -22,7 +22,11 @@ copied into exports.
 The runtime records startup, actions, changes in observed eligibility, lifecycle
 notifications and fallback reconciliation, protection failures, display-call
 start/return, verification, journal outcomes, and exit decisions. Repeated
-observations and heartbeats are not persisted. Watchdog evidence includes the
+observations and heartbeats are not persisted. The user's settings are recorded at
+launch and whenever an action changes them, and are included in the export snapshot.
+With Input Detection on, each monitor's raw input answer (the input on screen, the
+input this Mac is plugged into, and the verdict) is recorded when it changes, as input
+numbers only, never the endpoint or the monitor. Watchdog evidence includes the
 outstanding operation and deadline, last-progress age, and controller lease
 challenge details when available.
 

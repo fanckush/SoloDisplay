@@ -365,6 +365,7 @@ private final class FakeInputSources: InputSourceObserving {
   let delegate = FakeDelegate()
   let scheduler = ManualScheduler()
   let inputSources = FakeInputSources()
+  let events = CapturedOperationalEvents()
   let coordinator: ProductionCoordinator
 
   init(mode: Mode = .automatic, reading start: PlatformReading = reading(),
@@ -386,7 +387,7 @@ private final class FakeInputSources: InputSourceObserving {
       inputSources: asksMonitors ? inputSources : nil,
       lane: SyncLane(), storageLane: SyncLane(), workerLane: SyncLane(),
       inputLane: selectedInputLane,
-      scheduler: scheduler, diagnostics: .init(role: .app, sink: CapturedOperationalEvents())
+      scheduler: scheduler, diagnostics: .init(role: .app, sink: events)
     )
   }
 
@@ -607,6 +608,37 @@ struct InputSourceCoordinatorTests {
     harness.step(to: 600)
     harness.step(to: 2100)
     #expect(harness.inputSources.calls == 1)
+  }
+
+  @Test func monitorAnswersAreLoggedOnlyWhenTheyChange() {
+    let harness = Harness(asksMonitors: true)
+    harness.inputSources.showing(.thisMac)
+    // While the screen is off the monitors are asked again on every interval.
+    harness.turnOff()
+    harness.step(to: 12200)
+    #expect(harness.inputSources.calls >= 2)
+    harness.inputSources.showing(.otherMachine)
+    harness.step(to: 24300)
+    let logged = harness.events.events.filter { $0.code == .inputSourcesChanged }
+    #expect(logged.map { $0.inputs?.first?.displayed } == [0x1B, 0x0F])
+    #expect(logged.allSatisfy { $0.inputs?.first?.connected == 0x1B })
+  }
+
+  @Test func aSweepThatMissesItsDeadlineIsLoggedOnce() {
+    let harness = Harness(asksMonitors: true, monitorsOnTheirOwnLane: true)
+    harness.inputSources.stopAnswering()
+    defer { harness.inputSources.release() }
+    harness.step(to: 0)
+    harness.inputSources.waitForSweep()
+    harness.clock.set(5100)
+    harness.scheduler.fire(5)
+    harness.step(to: 5200)
+    harness.clock.set(10300)
+    harness.scheduler.fire(5)
+    let logged = harness.events.events.filter { $0.code == .inputSourcesChanged }
+    #expect(logged.count == 1)
+    #expect(logged.first?.reason == .timedOut)
+    #expect(logged.first?.inputs == nil)
   }
 
   @Test func withNoMonitorsToAskNothingChanges() {

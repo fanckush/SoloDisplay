@@ -27,6 +27,10 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
     /// A monitor was recorded as owed, or given back. What a monitor is showing is never in a
     /// record: only that this app turned one off, and how many.
     case monitorSuppressing, monitorRestoring
+    /// The user's settings, at launch and whenever an action changes them.
+    case settingsChanged
+    /// What the monitors answered when asked for their input, logged only when it changes.
+    case inputSourcesChanged
 
     public var category: Category {
       switch self {
@@ -35,7 +39,7 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
            .guardianReleased, .guardianRestoring, .childExited,
            .monitorSuppressing, .monitorRestoring:
         .recovery
-      case .exportRequested, .exportCompleted, .exportFailed: .diagnostics
+      case .exportRequested, .exportCompleted, .exportFailed, .inputSourcesChanged: .diagnostics
       default: .lifecycle
       }
     }
@@ -46,7 +50,7 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
     case alreadyRunning, released, appGone, noUsableExternal, nothingOwed
     case workspaceSleep, workspaceWake, workspaceScreenSleep, workspaceSessionActive
     case workspaceSessionInactive, observationFallback, wokeDark, monitorLeft
-    case exited, uncaughtSignal, exportEncoding, exportWriting
+    case exited, uncaughtSignal, exportEncoding, exportWriting, timedOut
   }
 
   public var version = 1
@@ -67,6 +71,8 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   public var unavailability: Unavailability?
   public var mode: Mode?
   public var environment: OperationalEnvironment?
+  public var settings: OperationalSettings?
+  public var inputs: [OperationalInputAnswer]?
   public var panelOff: Bool?
   public var working: Bool?
   public var failures: Int?
@@ -121,6 +127,52 @@ public struct OperationalEnvironment: Codable, Equatable, Sendable {
     panelState = environment.panelState
     monitors = environment.externals.count { $0.suppressible }
     monitorsOff = environment.externals.count { $0.suppressed }
+  }
+}
+
+/// The user's choices, all of them plain switches. Mode is left out: it is part of the state.
+public struct OperationalSettings: Codable, Equatable, Sendable {
+  public var launchAtLogin: Bool
+  public var brightnessKeys: Bool
+  public var inputDetection: Bool
+  public var sharpText: Bool
+  public var manualPathValidated: Bool
+  public var freezeWarningDismissed: Bool
+  public init(_ preferences: Preferences) {
+    launchAtLogin = preferences.launchAtLogin
+    brightnessKeys = preferences.brightnessKeys
+    inputDetection = preferences.inputDetection
+    sharpText = preferences.sharpText
+    manualPathValidated = preferences.manualPathValidated
+    freezeWarningDismissed = preferences.freezeWarningDismissed
+  }
+}
+
+/// One monitor's Input Source answer as raw bytes, so a verdict can be checked after the fact.
+/// Input numbers say nothing about which monitor answered, and the endpoint name is left out.
+public struct OperationalInputAnswer: Codable, Equatable, Sendable {
+  /// Enough for every monitor a Mac can drive at once, and small enough for one log payload.
+  public static let limit = 4
+
+  public var answered: Bool
+  /// The input on screen, from the low byte.
+  public var displayed: Int?
+  /// The input this Mac is plugged into, from the high byte. Zero on monitors that leave it out.
+  public var connected: Int?
+  public var shown: ShownSource
+  /// Whether the endpoint belongs to a monitor this Mac has seen.
+  public var known: Bool
+
+  public init(_ evidence: InputSourceEvidence) {
+    answered = evidence.reply != nil
+    displayed = evidence.reply.map { Int($0.current & 0xFF) }
+    connected = evidence.reply.map { Int($0.current >> 8) }
+    shown = evidence.shown
+    known = evidence.target != nil
+  }
+
+  public static func summary(_ evidence: [InputSourceEvidence]) -> [OperationalInputAnswer] {
+    evidence.prefix(limit).map(Self.init)
   }
 }
 

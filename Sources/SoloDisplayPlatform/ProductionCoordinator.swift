@@ -1,5 +1,6 @@
 import Foundation
 import SoloDisplayCore
+import Synchronization
 
 public protocol CoordinatorClock: Sendable {
   /// Monotonic milliseconds. A wall clock must never reach the reducer.
@@ -62,6 +63,17 @@ public protocol PreferencePersisting: Sendable {
   func update(targets: [PanelTarget])
   /// Tells the guardian nothing is owed, so it exits without touching the display.
   func release()
+}
+
+/// What the monitors last answered, as it was logged.
+private enum LoggedInputs: Equatable {
+  case answered([OperationalInputAnswer])
+  case timedOut
+}
+
+/// Carries one sweep's raw answers from the input lane to the main actor, beside its event.
+private final class InputAnswers: Sendable {
+  let value = Mutex<[OperationalInputAnswer]?>(nil)
 }
 
 /// A serial execution lane for synchronous work. Results always come back, even late.
@@ -173,6 +185,7 @@ public final class ProductionCoordinator {
   private var scheduledObservations: Set<Instant> = []
   private var lifecycle: Power = .unknown
   private var lastDiagnosticEnvironment: OperationalEnvironment?
+  private var lastDiagnosticInputs: LoggedInputs?
   /// The newest raw reading, so a record can carry the arrangement it was written against.
   private var lastReading: PlatformReading?
   /// Bumped on every spawn and release, so a late callback from an earlier guardian is ignored.
@@ -315,6 +328,18 @@ public final class ProductionCoordinator {
   /// which counts readings.
   private func staleness(_ sample: Observation) -> Instant {
     sample.environment.nativeExternalAvailable == .unknown ? 500 : 2000
+  }
+
+  /// Only a change is logged: the monitors are asked every couple of seconds.
+  private func recordDiagnostics(inputs: LoggedInputs) {
+    guard inputs != lastDiagnosticInputs else { return }
+    lastDiagnosticInputs = inputs
+    switch inputs {
+    case let .answered(answers):
+      diagnostics.emit(.inputSourcesChanged, session: session) { $0.inputs = answers }
+    case .timedOut:
+      diagnostics.emit(.inputSourcesChanged, session: session, reason: .timedOut)
+    }
   }
 
   private func recordDiagnostics(for event: Event) {
@@ -532,14 +557,17 @@ public final class ProductionCoordinator {
     scheduler.after(Double(state.policy.inputSourceDeadline) / 1000) { [weak self] in
       guard let self, configuration == inputConfigurationGeneration,
             deadline == inputDeadlineGeneration, state.inputSourcesBusy else { return }
+      recordDiagnostics(inputs: .timedOut)
       send(.inputSourcesRead(.unknown, sampledAt: clock.now()))
     }
     // A previous configuration may still have a blocked call. The new request gets its own
     // deadline, but must not start a second exchange on the wire.
     guard !inputSweepInFlight else { return }
     inputSweepInFlight = true
+    let answers = InputAnswers()
     inputLane.run {
       let evidence = inputSources.read()
+      answers.value.withLock { $0 = OperationalInputAnswer.summary(evidence) }
       return .inputSourcesRead(
         InputSourceClassifier.showingThisMac(evidence),
         monitors: InputSourceClassifier.perMonitor(evidence), sampledAt: sampledAt
@@ -547,6 +575,9 @@ public final class ProductionCoordinator {
     } completion: { [weak self] event in
       guard let self else { return }
       inputSweepInFlight = false
+      if let raw = answers.value.withLock({ $0 }) {
+        recordDiagnostics(inputs: .answered(raw))
+      }
       guard configuration == inputConfigurationGeneration else {
         if state.inputDetectionEnabled, state.inputSourcesBusy {
           readInputSources(at: clock.now())

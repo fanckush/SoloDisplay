@@ -74,6 +74,67 @@ struct OperationalDiagnosticsTests {
     #expect(try JSONEncoder().encode(sink.events[0]).count <= 1000)
   }
 
+  /// The two events that carry a list or a block, each at its largest.
+  @Test func settingsAndInputAnswersFitUnifiedLogPayload() throws {
+    let sink = CapturedOperationalEvents()
+    let logger = OperationalLogger(role: .app, sink: sink)
+    logger.emit(.settingsChanged, session: UUID().uuidString) {
+      $0.settings = OperationalSettings(Preferences())
+    }
+    let evidence = InputSourceEvidence(
+      controller: "dispext0", target: nil, reply: .init(current: 0xFFFF, maximum: 0xFFFF)
+    )
+    logger.emit(.inputSourcesChanged, session: UUID().uuidString, reason: .timedOut) {
+      $0.inputs = OperationalInputAnswer.summary(Array(repeating: evidence, count: 8))
+    }
+    #expect(sink.events.count == 2)
+    #expect(sink.events[1].inputs?.count == OperationalInputAnswer.limit)
+    for event in sink.events {
+      #expect(try JSONEncoder().encode(event).count <= 1000)
+    }
+  }
+
+  @Test func inputAnswersKeepTheRawBytesAndNothingThatNamesTheMonitor() throws {
+    let monitor = PanelTarget(
+      displayID: 2, displayUUID: "PRIVATE-monitor", bootID: "PRIVATE-boot", loginID: 7
+    )
+    let endpoint = "PRIVATE-endpoint"
+    let answers = OperationalInputAnswer.summary([
+      .init(controller: endpoint, target: monitor, reply: .init(current: 0x1B0F, maximum: 0)),
+      .init(controller: endpoint, target: nil, reply: .init(current: 0x000F, maximum: 0)),
+      .init(controller: endpoint, target: monitor, reply: nil)
+    ])
+    #expect(answers[0].displayed == 0x0F)
+    #expect(answers[0].connected == 0x1B)
+    #expect(answers[0].shown == .otherMachine)
+    #expect(answers[0].known)
+    #expect(answers[1].connected == 0)
+    #expect(answers[1].shown == .unknown)
+    #expect(!answers[1].known)
+    #expect(!answers[2].answered)
+    #expect(answers[2].displayed == nil)
+    let text = try #require(String(bytes: JSONEncoder().encode(answers), encoding: .utf8))
+    #expect(!text.contains("PRIVATE"))
+  }
+
+  @Test func snapshotSettingsRoundTripAndOlderExportsStillDecode() throws {
+    var preferences = Preferences()
+    preferences.sharpText = true
+    var snapshot = DiagnosticsSnapshot(ControllerState(mode: .automatic), at: 0)
+    snapshot.settings = OperationalSettings(preferences)
+    let exporter = DiagnosticsExporter(reader: HistoryStub(history: .init(status: .empty)))
+    let document = try JSONDecoder().decode(
+      DiagnosticsDocument.self, from: exporter.collect(snapshot: snapshot)
+    )
+    #expect(document.snapshot?.settings?.sharpText == true)
+
+    snapshot.settings = nil
+    let older = try JSONDecoder().decode(
+      DiagnosticsDocument.self, from: exporter.collect(snapshot: snapshot)
+    )
+    #expect(older.snapshot?.settings == nil)
+  }
+
   @Test(arguments: [OperationalHistory.Status.unavailable, .failed, .empty, .collected])
   func historyFailuresStillExportTheCurrentState(_ status: OperationalHistory.Status) throws {
     let exporter = DiagnosticsExporter(reader: HistoryStub(history: .init(status: status)))
