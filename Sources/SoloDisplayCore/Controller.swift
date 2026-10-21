@@ -45,6 +45,7 @@ public enum Controller {
       if sample.environment.power == .awake {
         state.wokeAt = nil
       }
+      state.monitorLeft = state.monitorLeft && sample.environment.panelState != .enabled
       judgeFinishedWorker(&state, at: now)
       clearBackoffOnArrival(&state, at: now)
     case let .displayReconfigured(inProgress):
@@ -61,6 +62,8 @@ public enum Controller {
       effects.append(.savePreferences(mode))
     case let .preferencesSaved(succeeded):
       state.preferencesFailed = !succeeded
+    case let .displaysRemoved(ids):
+      noteRemoved(ids, in: &state)
     case .willSleep, .waking:
       // No change starts until a fresh reading shows the Mac awake again.
       state.stableSince = nil
@@ -390,6 +393,13 @@ public enum Controller {
       return state.record != nil ? .enabled : nil
     }
     guard environment.panel != nil else { return nil }
+    // With the screen off, a monitor leaving leaves macOS with no display, so it lays the desktop
+    // on a stand-in until one returns. Handing it back to the monitor can leave that monitor
+    // showing only the cursor until it is plugged in again. Putting the screen back makes macOS
+    // lay the desktop out anew, and the usual path turns it off again once things settle.
+    if state.monitorLeft, environment.panelState == .disabled {
+      return .enabled
+    }
     // Restore the experimental feature's monitors before returning to normal panel automation.
     if !state.inputDetectionEnabled, !state.suppressed.isEmpty {
       return .enabled
@@ -657,6 +667,19 @@ public enum Controller {
     }
     guard state.matchingSamples < 2 else { return ready }
     return max(ready, (state.lastCountedSample ?? since) + policy.sampleSeparation)
+  }
+}
+
+private extension Controller {
+  /// Remembers a monitor leaving while the laptop screen is off. The screen itself and the
+  /// monitors this app turns off leave on purpose.
+  static func noteRemoved(_ ids: [UInt32], in state: inout ControllerState) {
+    let ours = Set(state.ownedTargets.map(\.displayID))
+      .union([state.worker?.target.displayID].compactMap(\.self))
+    if state.observation?.environment.panelState == .disabled,
+       ids.contains(where: { !ours.contains($0) }) {
+      state.monitorLeft = true
+    }
   }
 }
 

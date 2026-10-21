@@ -270,6 +270,36 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
   #expect(workers(later, .enable) == 0)
 }
 
+/// With the screen off, macOS lays the desktop on a stand-in while no monitor is there, and
+/// handing it back can leave the monitor showing only the cursor. The screen is put back once so
+/// macOS lays the desktop out again, then turned off as usual.
+@Test func aMonitorThatLeavesForAMomentGetsTheDesktopLaidOutAgain() {
+  var rig = Rig()
+  rig.off()
+  // Gone and back before any reading saw it.
+  #expect(workers(rig.send(.displaysRemoved([2]), at: 2100), .enable) == 1)
+  rig.send(.workerFinished(.done), at: 2200)
+  let on = rig.observe(environment(), at: 2300)
+  #expect(!rig.state.monitorLeft)
+  #expect(workers(on + rig.observe(environment(), at: 4500), .disable) == 1)
+}
+
+@Test func theScreenItselfLeavingIsNotAMonitorLeaving() {
+  var rig = Rig()
+  rig.off()
+  #expect(workers(rig.send(.displaysRemoved([panel.displayID]), at: 2100), .enable) == 0)
+  #expect(!rig.state.monitorLeft)
+}
+
+@Test func aMonitorLeavingDuringSleepIsHandledOnWaking() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.willSleep, at: 2100)
+  #expect(workers(rig.send(.displaysRemoved([2]), at: 2200), .enable) == 0)
+  rig.send(.waking, at: 3000)
+  #expect(workers(rig.observe(environment(panelState: .disabled), at: 3010), .enable) == 1)
+}
+
 @Test func aClosedLidHoldsEverything() {
   var rig = Rig()
   rig.off()

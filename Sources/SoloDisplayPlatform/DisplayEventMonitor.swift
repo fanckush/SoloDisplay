@@ -6,6 +6,10 @@ public struct DisplayChangeEvent: Codable, Sendable {
   public var displayID: UInt32
   public var flags: UInt32
   public var beginsConfiguration: Bool
+
+  public var removesDisplay: Bool {
+    CGDisplayChangeSummaryFlags(rawValue: flags).contains(.removeFlag)
+  }
 }
 
 /// The callback only records evidence. It never observes or reconfigures displays recursively.

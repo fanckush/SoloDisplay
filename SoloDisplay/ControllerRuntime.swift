@@ -188,6 +188,10 @@ final class ControllerRuntime: CoordinatorDelegate {
     guard let batch = monitor?.drain(), !batch.events.isEmpty || batch.dropped > 0 else { return }
     // A lost report could have been the one that finished a reconfiguration, so assume it did not.
     let inProgress = batch.dropped > 0 || batch.events.last?.beginsConfiguration == true
+    let removed = batch.events.filter(\.removesDisplay).map(\.displayID)
+    if !removed.isEmpty {
+      coordinator?.send(.displaysRemoved(removed))
+    }
     coordinator?.send(.displayReconfigured(inProgress: inProgress))
     coordinator?.platformDidChange()
   }

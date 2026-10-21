@@ -288,6 +288,9 @@ public struct ControllerState: Equatable, Sendable {
   public var inputSourcesDueAt: Instant?
   /// The first wake signal since the Mac was last seen awake. Cleared once it is.
   public var wokeAt: Instant?
+  /// A monitor left the arrangement while the laptop screen was off for it, even for a moment.
+  /// Cleared once the screen is seen on.
+  public var monitorLeft = false
   public var policy: Policy
 
   public init(mode: Mode = .automaticPaused, record: PanelTarget? = nil, policy: Policy = .init(),
@@ -344,6 +347,8 @@ public enum Event: Equatable, Sendable {
   case displayReconfigured(inProgress: Bool)
   case selectMode(Mode)
   case preferencesSaved(succeeded: Bool)
+  /// macOS took these displays out of the arrangement, however briefly.
+  case displaysRemoved([UInt32])
   case willSleep
   case waking
   /// Try Again: forget the backoff and look again now.

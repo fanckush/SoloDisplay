@@ -220,6 +220,10 @@ final class GuardianRuntime {
   private var restoreNotBefore: TimeInterval = 0
   private var timer: Timer?
   private var activity: (any NSObjectProtocol)?
+  /// Between going to sleep and a real wake. Maintenance wakes in between run this process with
+  /// every screen dark, where nothing can be seen and the display calls can hang.
+  private var asleep = false
+  private var observers: [any NSObjectProtocol] = []
 
   init(executable: URL, diagnostics: OperationalLogger) {
     self.executable = executable
@@ -278,6 +282,7 @@ final class GuardianRuntime {
         }
       }
     }
+    watchSleep()
     let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
       MainActor.assumeIsolated { self?.check() }
     }
@@ -304,8 +309,33 @@ final class GuardianRuntime {
     check()
   }
 
+  /// Only a wake someone can see ends sleep: a maintenance wake posts neither notification.
+  private func watchSleep() {
+    let center = NSWorkspace.shared.notificationCenter
+    let names = [
+      NSWorkspace.willSleepNotification, NSWorkspace.didWakeNotification,
+      NSWorkspace.screensDidWakeNotification
+    ]
+    for name in names {
+      let asleep = name == NSWorkspace.willSleepNotification
+      let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.sleepChanged(asleep: asleep) }
+      }
+      observers.append(token)
+    }
+  }
+
+  private func sleepChanged(asleep: Bool) {
+    guard asleep != self.asleep else { return }
+    self.asleep = asleep
+    diagnostics.emit(asleep ? .suspended : .resumed,
+                     reason: asleep ? .workspaceSleep : .workspaceWake)
+    // What was seen before sleep says nothing about the screens now.
+    streaks = .init()
+  }
+
   private func check() {
-    guard !busy, let request else { return }
+    guard !busy, !asleep, let request else { return }
     if getppid() != request.parentPID {
       appAlive = false
     }

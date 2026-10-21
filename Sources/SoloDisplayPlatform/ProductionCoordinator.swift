@@ -406,9 +406,10 @@ public final class ProductionCoordinator {
       }
       let writer = writer
       let wokeDark = action == .enable && Controller.wokeDark(state, at: now)
+      let monitorLeft = action == .enable && target.kind == .builtIn && state.monitorLeft
       diagnostics.emit(.workerStarted, session: session) {
         $0.workerAction = action
-        $0.reason = wokeDark ? .wokeDark : nil
+        $0.reason = wokeDark ? .wokeDark : monitorLeft ? .monitorLeft : nil
       }
       workerLane.run {
         .workerFinished(writer.setEnabled(action == .enable, target: target, wokeDark: wokeDark))
