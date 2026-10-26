@@ -1,5 +1,0 @@
-ignore:
-  - ".build/**"
-  - "SoloDisplayTests/**"
-  - "SoloDisplayUITests/**"
-  - "Tests/**"

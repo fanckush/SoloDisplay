@@ -13,12 +13,13 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Files left out of the coverage number: build output, generated sources and the tests themselves.
+  COVERAGE_IGNORE: '/(\.build|DerivedData)/|Tests/'
+
 jobs:
   package-tests:
     name: Swift package tests
-    permissions:
-      contents: read
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -43,35 +44,31 @@ jobs:
         run: swift build
       - name: Test
         run: swift test --enable-code-coverage
-      # Codecov cannot parse SwiftPM's llvm.coverage.json.export: it accepts the upload, then
-      # reports the commit as errored with zero files. lcov is read correctly.
+      # The native build system makes one combined test bundle, swift-build makes one per
+      # test target, so every bundle is passed in.
       - name: Export coverage as lcov
         if: github.event_name == 'push'
         run: |
           set -euo pipefail
           bin=$(swift build --show-bin-path)
-          bundle=$(ls -d "$bin"/*.xctest | head -1)
-          xcrun llvm-cov export -format=lcov \
-            "$bundle/Contents/MacOS/$(basename "$bundle" .xctest)" \
-            -instr-profile "$bin/codecov/default.profdata" > package.lcov
+          objects=()
+          for bundle in "$bin"/*.xctest; do
+            objects+=(-object "$bundle/Contents/MacOS/$(basename "$bundle" .xctest)")
+          done
+          xcrun llvm-cov export -format=lcov -ignore-filename-regex="$COVERAGE_IGNORE" \
+            "${objects[@]}" -instr-profile "$bin/codecov/default.profdata" > package.lcov
           grep -c '^SF:' package.lcov
       - name: Upload package coverage
         if: github.event_name == 'push'
-        uses: codecov/codecov-action@v7
+        uses: actions/upload-artifact@v7
         with:
-          disable_search: true
-          fail_ci_if_error: true
-          files: package.lcov
-          flags: package-tests
-          name: package-tests
-          use_oidc: true
+          name: package-lcov
+          path: package.lcov
+          retention-days: 1
 
   app-tests:
     name: App unit tests (unsigned)
     runs-on: macos-26
-    permissions:
-      contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
       - name: Select latest Xcode
@@ -94,8 +91,7 @@ jobs:
             test -only-testing:SoloDisplayTests | xcbeautify
         shell: bash
       # Xcode puts the app's own code in SoloDisplay.debug.dylib and leaves
-      # Contents/MacOS/SoloDisplay as a launcher stub with no coverage mapping. Codecov's Swift
-      # processor looks at the stub, finds nothing, and reports zero.
+      # Contents/MacOS/SoloDisplay as a launcher stub with no coverage mapping.
       - name: Export coverage as lcov
         if: github.event_name == 'push'
         run: |
@@ -104,20 +100,58 @@ jobs:
           profdata=$(find DerivedData/Build/ProfileData -name '*.profdata' | head -1)
           binary="$products/SoloDisplay.app/Contents/MacOS/SoloDisplay.debug.dylib"
           [ -f "$binary" ] || binary="$products/SoloDisplay.app/Contents/MacOS/SoloDisplay"
-          xcrun llvm-cov export -format=lcov "$binary" \
+          xcrun llvm-cov export -format=lcov -ignore-filename-regex="$COVERAGE_IGNORE" "$binary" \
             -object "$products/SoloDisplay.app/Contents/PlugIns/SoloDisplayTests.xctest/Contents/MacOS/SoloDisplayTests" \
             -instr-profile "$profdata" > app.lcov
           grep -c '^SF:' app.lcov
       - name: Upload app coverage
         if: github.event_name == 'push'
-        uses: codecov/codecov-action@v7
+        uses: actions/upload-artifact@v7
         with:
-          disable_search: true
-          fail_ci_if_error: true
-          files: app.lcov
-          flags: app-tests
-          name: app-tests
-          use_oidc: true
+          name: app-lcov
+          path: app.lcov
+          retention-days: 1
+
+  # Runs no repository code: it only turns the two lcov files into the README badge.
+  coverage-badge:
+    name: Publish the coverage badge
+    needs: [package-tests, app-tests]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # force-pushes the badges branch
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: '*-lcov'
+          merge-multiple: true
+      # The app links SoloDisplayCore, so both files report some of the same source lines.
+      # A line counts once, as covered when either suite ran it.
+      - name: Push coverage.json to the badges branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pct=$(awk -F'[:,]' '
+            /^SF:/ { file = substr($0, 4) }
+            /^DA:/ { key = file SUBSEP $2; if (!(key in hits) || $3 + 0 > hits[key]) hits[key] = $3 + 0 }
+            END { for (key in hits) { total++; if (hits[key] > 0) covered++ } printf "%.2f", 100 * covered / total }
+          ' package.lcov app.lcov)
+          echo "Line coverage: $pct%"
+          mkdir badges
+          jq -n --argjson pct "$pct" '$pct | {
+            schemaVersion: 1,
+            label: "coverage",
+            message: "\(floor)%",
+            color: (if . >= 80 then "brightgreen" elif . >= 60 then "yellow" elif . >= 40 then "orange" else "red" end)
+          }' > badges/coverage.json
+          cd badges
+          git init -q -b badges
+          git add coverage.json
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "chore: update coverage badge"
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${REPO}.git" badges
 
   lint:
     name: Lint (non-blocking)
