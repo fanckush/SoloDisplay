@@ -199,6 +199,9 @@ public struct Policy: Equatable, Sendable {
   /// How long after a wake the screens may stay dark before the laptop screen is put back. Long
   /// enough for a slow monitor to come back on its own, which avoids a pointless flash.
   public var wakeGrace: Instant = 15000
+  /// Monitors leaving this soon after the displays were put to sleep and woken left because of it,
+  /// so they do not ask for it again.
+  public var refreshQuiet: Instant = 10000
   public init() {}
 }
 
@@ -289,8 +292,10 @@ public struct ControllerState: Equatable, Sendable {
   /// The first wake signal since the Mac was last seen awake. Cleared once it is.
   public var wokeAt: Instant?
   /// A monitor left the arrangement while the laptop screen was off for it, even for a moment.
-  /// Cleared once the screen is seen on.
+  /// Cleared once the screen is seen on, or once the displays have been put to sleep and woken.
   public var monitorLeft = false
+  /// When the displays were last put to sleep and woken.
+  public var refreshedAt: Instant?
   public var policy: Policy
 
   public init(mode: Mode = .automaticPaused, record: PanelTarget? = nil, policy: Policy = .init(),
@@ -387,6 +392,8 @@ public enum Effect: Equatable, Sendable {
   case recordSuppression([PanelTarget])
   /// Tell a running guardian the whole set of monitors owed now.
   case updateGuardian([PanelTarget])
+  /// Put every display to sleep and wake it again, as the power button and then a key would.
+  case refreshDisplays
 }
 
 public struct Transition: Equatable, Sendable {

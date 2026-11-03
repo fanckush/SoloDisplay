@@ -101,7 +101,7 @@ final class ControllerRuntime: CoordinatorDelegate {
       writer: WorkerDisplayWriter(executable: executable), ownership: journal,
       preferences: store, guardian: GuardianProcess(executable: executable), delegate: self,
       inputSources: LiveInputSourceObserver(), suppression: suppression,
-      session: session, diagnostics: diagnostics
+      refresher: LiveDisplayRefresher(), session: session, diagnostics: diagnostics
     )
     self.coordinator = coordinator
     coordinator.start()

@@ -141,6 +141,7 @@ public enum Controller {
     }
 
     act(&state, effects: &effects, at: now)
+    refreshDisplays(&state, effects: &effects, at: now)
     actOnMonitors(&state, effects: &effects, at: now)
     askInputSources(&state, effects: &effects, at: now)
     schedule(state, effects: &effects, at: now)
@@ -393,13 +394,6 @@ public enum Controller {
       return state.record != nil ? .enabled : nil
     }
     guard environment.panel != nil else { return nil }
-    // With the screen off, a monitor leaving leaves macOS with no display, so it lays the desktop
-    // on a stand-in until one returns. Handing it back to the monitor can leave that monitor
-    // showing only the cursor until it is plugged in again. Putting the screen back makes macOS
-    // lay the desktop out anew, and the usual path turns it off again once things settle.
-    if state.monitorLeft, environment.panelState == .disabled {
-      return .enabled
-    }
     // Restore the experimental feature's monitors before returning to normal panel automation.
     if !state.inputDetectionEnabled, !state.suppressed.isEmpty {
       return .enabled
@@ -676,10 +670,31 @@ private extension Controller {
   static func noteRemoved(_ ids: [UInt32], in state: inout ControllerState) {
     let ours = Set(state.ownedTargets.map(\.displayID))
       .union([state.worker?.target.displayID].compactMap(\.self))
+    // Some monitors drop out when put to sleep. That one is ours too.
+    if let refreshed = state.refreshedAt,
+       state.lastReceipt - refreshed < state.policy.refreshQuiet {
+      return
+    }
     if state.observation?.environment.panelState == .disabled,
        ids.contains(where: { !ours.contains($0) }) {
       state.monitorLeft = true
     }
+  }
+
+  /// With the screen off, a monitor leaving leaves macOS with no display, so it lays the desktop
+  /// on a stand-in until one returns. Handing it back can leave the monitor showing only the
+  /// cursor. Putting the displays to sleep and waking them makes it draw the desktop again;
+  /// turning the laptop screen on and off does not. Done once the monitor is back and settled.
+  static func refreshDisplays(_ state: inout ControllerState, effects: inout [Effect],
+                              at now: Instant) {
+    guard state.monitorLeft, state.worker == nil,
+          let environment = state.observation?.environment, environment.visibilityExpected,
+          environment.panelState == .disabled, environment.nativeExternalAvailable == .yes,
+          isSettled(state, at: now)
+    else { return }
+    state.monitorLeft = false
+    state.refreshedAt = now
+    effects.append(.refreshDisplays)
   }
 }
 

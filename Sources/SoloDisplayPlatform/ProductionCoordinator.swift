@@ -33,6 +33,11 @@ public protocol DisplayWriting: Sendable {
   func setEnabled(_ enabled: Bool, target: PanelTarget, wokeDark: Bool) -> WorkerOutcome
 }
 
+/// Puts every display to sleep and wakes it again. Blocks until both have been asked for.
+public protocol DisplayRefreshing: Sendable {
+  func refresh()
+}
+
 public protocol OwnershipPersisting: Sendable {
   func prepare(_ record: ProductionRecord) throws
   func clear() throws
@@ -192,6 +197,7 @@ public final class ProductionCoordinator {
   private var guardianGeneration: UInt64 = 0
   private let inputSources: (any InputSourceObserving)?
   private let suppression: (any SuppressionPersisting)?
+  private let refresher: (any DisplayRefreshing)?
   private let inputLane: any SerialLane
   /// One sweep at a time: a monitor that never answers must not queue more behind it.
   private var inputSweepInFlight = false
@@ -205,6 +211,7 @@ public final class ProductionCoordinator {
     preferences: any PreferencePersisting, guardian: (any GuardianControlling)?,
     delegate: (any CoordinatorDelegate)?, inputSources: (any InputSourceObserving)? = nil,
     suppression: (any SuppressionPersisting)? = nil,
+    refresher: (any DisplayRefreshing)? = nil,
     lane: any SerialLane = DispatchLane(),
     storageLane: any SerialLane = DispatchLane(label: "dev.solodisplay.storage"),
     workerLane: any SerialLane = DispatchLane(label: "dev.solodisplay.worker"),
@@ -222,6 +229,7 @@ public final class ProductionCoordinator {
     self.delegate = delegate
     self.inputSources = inputSources
     self.suppression = suppression
+    self.refresher = refresher
     self.lane = lane
     self.inputLane = inputLane
     self.storageLane = storageLane
@@ -431,13 +439,20 @@ public final class ProductionCoordinator {
       }
       let writer = writer
       let wokeDark = action == .enable && Controller.wokeDark(state, at: now)
-      let monitorLeft = action == .enable && target.kind == .builtIn && state.monitorLeft
       diagnostics.emit(.workerStarted, session: session) {
         $0.workerAction = action
-        $0.reason = wokeDark ? .wokeDark : monitorLeft ? .monitorLeft : nil
+        $0.reason = wokeDark ? .wokeDark : nil
       }
       workerLane.run {
         .workerFinished(writer.setEnabled(action == .enable, target: target, wokeDark: wokeDark))
+      } completion: { [weak self] in self?.send($0) }
+    case .refreshDisplays:
+      diagnostics.emit(.displaysRefreshing, session: session, reason: .monitorLeft)
+      // The worker lane, so no display change overlaps it.
+      let refresher = refresher
+      workerLane.run {
+        refresher?.refresh()
+        return .tick
       } completion: { [weak self] in self?.send($0) }
     }
   }

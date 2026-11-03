@@ -270,34 +270,63 @@ func anUncertainMonitorNeverStartsATurnOff(_ fact: Fact) {
   #expect(workers(later, .enable) == 0)
 }
 
+func refreshes(_ effects: [Effect]) -> Int {
+  effects.count { $0 == .refreshDisplays }
+}
+
 /// With the screen off, macOS lays the desktop on a stand-in while no monitor is there, and
-/// handing it back can leave the monitor showing only the cursor. The screen is put back once so
-/// macOS lays the desktop out again, then turned off as usual.
-@Test func aMonitorThatLeavesForAMomentGetsTheDesktopLaidOutAgain() {
+/// handing it back can leave the monitor showing only the cursor. Putting the displays to sleep
+/// and waking them makes it draw the desktop again. The laptop screen stays off throughout.
+@Test func aMonitorThatLeavesForAMomentGetsItsDisplaysWoken() {
   var rig = Rig()
   rig.off()
   // Gone and back before any reading saw it.
-  #expect(workers(rig.send(.displaysRemoved([2]), at: 2100), .enable) == 1)
-  rig.send(.workerFinished(.done), at: 2200)
-  let on = rig.observe(environment(), at: 2300)
+  let effects = rig.send(.displaysRemoved([2]), at: 2100)
+  #expect(refreshes(effects) == 1)
+  #expect(workers(effects, .enable) == 0)
   #expect(!rig.state.monitorLeft)
-  #expect(workers(on + rig.observe(environment(), at: 4500), .disable) == 1)
+  // Once is enough.
+  #expect(refreshes(rig.observe(environment(panelState: .disabled), at: 2600)) == 0)
+}
+
+@Test func aMonitorDroppingAsItsDisplaySleepsAsksForNothingMore() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.displaysRemoved([2]), at: 2100)
+  #expect(refreshes(rig.send(.displaysRemoved([2]), at: 4000)) == 0)
+  #expect(!rig.state.monitorLeft)
+  // A monitor leaving later is a new departure.
+  #expect(refreshes(rig.send(.displaysRemoved([2]), at: 2100 + rig.state.policy.refreshQuiet)) == 1)
+}
+
+@Test func aMonitorThatStaysGoneGetsTheScreenBackInstead() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.displaysRemoved([2]), at: 2100)
+  let gone = rig.observe(environment(panelState: .disabled, external: .no), at: 2100)
+  #expect(refreshes(gone) == 0)
+  #expect(workers(gone, .enable) == 1)
 }
 
 @Test func theScreenItselfLeavingIsNotAMonitorLeaving() {
   var rig = Rig()
   rig.off()
-  #expect(workers(rig.send(.displaysRemoved([panel.displayID]), at: 2100), .enable) == 0)
+  #expect(refreshes(rig.send(.displaysRemoved([panel.displayID]), at: 2100)) == 0)
   #expect(!rig.state.monitorLeft)
 }
 
-@Test func aMonitorLeavingDuringSleepIsHandledOnWaking() {
+@Test func aMonitorLeavingDuringSleepIsHandledOnceAwakeAndSettled() {
   var rig = Rig()
   rig.off()
   rig.send(.willSleep, at: 2100)
-  #expect(workers(rig.send(.displaysRemoved([2]), at: 2200), .enable) == 0)
+  #expect(refreshes(rig.send(.displaysRemoved([2]), at: 2200)) == 0)
   rig.send(.waking, at: 3000)
-  #expect(workers(rig.observe(environment(panelState: .disabled), at: 3010), .enable) == 1)
+  let off = environment(panelState: .disabled)
+  var effects = rig.observe(off, at: 3010) + rig.observe(off, at: 3600)
+  #expect(refreshes(effects) == 0)
+  effects += rig.observe(off, at: 3010 + rig.state.policy.stableFor)
+  #expect(refreshes(effects) == 1)
+  #expect(workers(effects, .enable) == 0)
 }
 
 @Test func aClosedLidHoldsEverything() {

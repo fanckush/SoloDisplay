@@ -31,6 +31,8 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
     case settingsChanged
     /// What the monitors answered when asked for their input, logged only when it changes.
     case inputSourcesChanged
+    /// Every display put to sleep and woken, for a monitor left showing only the cursor.
+    case displaysRefreshing
 
     public var category: Category {
       switch self {

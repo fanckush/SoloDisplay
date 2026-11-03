@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import IOKit.pwr_mgt
 import SoloDisplayCore
 
 /// Monotonic uptime. A wall clock would let a time change reorder the controller's history.
@@ -16,6 +17,31 @@ public struct LivePlatformObserver: PlatformObserving {
 
   public func read() -> PlatformReading {
     DisplayObserver.read()
+  }
+}
+
+/// What pressing the power button and then a key does: every display sleeps, then wakes. macOS
+/// does the sleeping itself through `pmset`, and user activity wakes them.
+public struct LiveDisplayRefresher: DisplayRefreshing {
+  /// Long enough for a monitor to actually go dark. One second and a half was seen to work.
+  private static let asleepFor = 2.0
+
+  public init() {}
+
+  public func refresh() {
+    let sleep = Process()
+    sleep.executableURL = URL(fileURLWithPath: "/usr/bin/pmset")
+    sleep.arguments = ["displaysleepnow"]
+    sleep.standardOutput = FileHandle.nullDevice
+    sleep.standardError = FileHandle.nullDevice
+    guard (try? sleep.run()) != nil else { return }
+    sleep.waitUntilExit()
+    Thread.sleep(forTimeInterval: Self.asleepFor)
+    // Left to time out on its own, the same as any other activity.
+    var assertion = IOPMAssertionID(0)
+    _ = IOPMAssertionDeclareUserActivity(
+      "SoloDisplay redraw" as CFString, kIOPMUserActiveLocal, &assertion
+    )
   }
 }
 

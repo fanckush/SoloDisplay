@@ -4,6 +4,9 @@ import SwiftUI
 import Testing
 @testable import SoloDisplay
 
+/// SwiftUI has its own `ArrangementView` since macOS 27.1.
+private typealias ArrangementView = SoloDisplay.ArrangementView
+
 /// The arrangement row is the one custom view in the menu. A menu asks an item's view for its
 /// size once, as it opens, so a size that is only right after some later event is a menu that
 /// opens at the wrong width and corrects itself when something happens to make it lay out again.
