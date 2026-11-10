@@ -61,6 +61,11 @@ Text turns on HiDPI for any monitor, so text stays crisp at the resolution you p
 **Input Detection (Experimental)**
 It detects monitor input changes and internally turns off a monitor showing another computer.
 
+**Hide Menu Bar Icon**
+SoloDisplay keeps running with no icon in the menu bar. To get the menu back, open SoloDisplay
+again from Spotlight or Finder. The icon also comes back on its own if something needs your
+attention.
+
 **Shortcuts and Spotlight**
 "Toggle Arrangement" and "Set Arrangement" are available in the Shortcuts app and Spotlight.
 Add one to a shortcut and give it a keyboard shortcut to switch modes from the keyboard.
