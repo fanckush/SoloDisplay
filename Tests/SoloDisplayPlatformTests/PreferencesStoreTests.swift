@@ -71,6 +71,21 @@ struct PreferencesStoreTests {
     #expect(reopened.sharpText)
   }
 
+  @Test func theMenuBarIconStaysShownAfterAnUpgradeAndHidingItPersists() throws {
+    let directory = try workspace()
+    let store = try PreferencesStore(directory: directory)
+    let older = """
+    {"schemaVersion":1,"mode":"automatic","launchAtLogin":true,"manualPathValidated":true,"sharpText":true}
+    """
+    try Data(older.utf8).write(to: store.url)
+    let loaded = store.load()
+    #expect(!loaded.menuBarIconHidden)
+    #expect(loaded.sharpText)
+    try store.update { $0.menuBarIconHidden = true }
+    let reopened = try PreferencesStore(directory: directory).load()
+    #expect(reopened.menuBarIconHidden)
+  }
+
   @Test func aPausedAutomaticChoiceSurvivesARestart() throws {
     let directory = try workspace()
     let store = try PreferencesStore(directory: directory)

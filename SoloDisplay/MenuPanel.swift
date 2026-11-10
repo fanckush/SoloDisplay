@@ -39,6 +39,8 @@ nonisolated struct MenuPanel: Equatable, Sendable {
   var brightnessKeys: Option
   var sharpText: Option
   var inputDetection: Option
+  /// On means hidden. The icon still comes back while the glyph asks for attention.
+  var menuBarIcon: Option
   var commands: [Command]
   var glyph: MenuGlyph
   /// The words the menu bar icon carries for anyone who cannot see it.
@@ -96,6 +98,7 @@ nonisolated struct MenuPanel: Equatable, Sendable {
         brightnessKeys.title,
         sharpText.title,
         inputDetection.title,
+        menuBarIcon.title,
         statusDescription
       ]
       + commands.map(\.title)

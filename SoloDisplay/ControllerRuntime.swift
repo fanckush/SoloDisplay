@@ -232,7 +232,8 @@ final class ControllerRuntime: CoordinatorDelegate {
       sharpText: .init(
         isOn: preferences.sharpText, monitors: sharpText?.monitors ?? 0,
         unavailable: sharpText?.unavailable ?? 0, externalSharp: sharpText?.externalSharp ?? false
-      )
+      ),
+      menuBarIconHidden: preferences.menuBarIconHidden
     )
     // Redrawing an identical panel would move things under the pointer for no reason.
     guard next != panel else { return }
@@ -272,6 +273,8 @@ final class ControllerRuntime: CoordinatorDelegate {
     case .toggleSharpText:
       mutatePreferences { $0.sharpText.toggle() }
       sharpText?.setEnabled(preferences.sharpText)
+    case .toggleMenuBarIcon:
+      mutatePreferences { $0.menuBarIconHidden.toggle() }
     case .checkForUpdates: onCheckForUpdates?()
     case .openDisplayMonitor: onOpenDiagnostics?()
     case .exportDiagnostics: exportDiagnostics()

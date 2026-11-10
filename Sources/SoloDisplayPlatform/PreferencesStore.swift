@@ -22,12 +22,14 @@ public struct Preferences: Codable, Equatable, Sendable {
   public var freezeWarningDismissed = false
   /// Sharp Text is opt-in, including after an upgrade.
   public var sharpText = false
+  /// The menu bar icon is hidden. Opening the app again brings the menu back.
+  public var menuBarIconHidden = false
 
   public init() {}
 
   private enum CodingKeys: String, CodingKey {
     case schemaVersion, mode, launchAtLogin, manualPathValidated, brightnessKeys, inputDetection
-    case freezeWarningDismissed, sharpText
+    case freezeWarningDismissed, sharpText, menuBarIconHidden
   }
 
   /// Fields added later are optional, so an older file keeps the choices it does have.
@@ -42,6 +44,8 @@ public struct Preferences: Codable, Equatable, Sendable {
     freezeWarningDismissed =
       try container.decodeIfPresent(Bool.self, forKey: .freezeWarningDismissed) ?? false
     sharpText = try container.decodeIfPresent(Bool.self, forKey: .sharpText) ?? false
+    menuBarIconHidden =
+      try container.decodeIfPresent(Bool.self, forKey: .menuBarIconHidden) ?? false
   }
 }
 

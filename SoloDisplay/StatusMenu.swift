@@ -20,6 +20,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
   private let brightnessItem = NSMenuItem()
   private let sharpTextItem = NSMenuItem()
   private let inputDetectionItem = NSMenuItem()
+  private let menuBarIconItem = NSMenuItem()
+  var onOpen: (() -> Void)?
+  /// Called once the menu has closed, however it was closed.
+  var onClose: (() -> Void)?
 
   init(store: MenuPanelStore, perform: @escaping (MenuAction) -> Void) {
     self.store = store
@@ -41,9 +45,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     configure(
       inputDetectionItem, title: store.panel.inputDetection.title, action: .toggleInputDetection
     )
+    configure(
+      menuBarIconItem, title: store.panel.menuBarIcon.title, action: .toggleMenuBarIcon
+    )
     for item in [
       alertItem, retryItem, alertSeparator, arrangementItem, .separator(), launchItem,
-      brightnessItem, sharpTextItem, inputDetectionItem
+      brightnessItem, sharpTextItem, inputDetectionItem, menuBarIconItem
     ] {
       menu.addItem(item)
     }
@@ -75,6 +82,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     sharpTextItem.subtitle = panel.sharpText.detail
     inputDetectionItem.title = panel.inputDetection.title
     inputDetectionItem.state = panel.inputDetection.isOn ? .on : .off
+    menuBarIconItem.title = panel.menuBarIcon.title
+    menuBarIconItem.state = panel.menuBarIcon.isOn ? .on : .off
     brightnessItem.title = panel.brightnessKeys.title
     // A dash rather than a subtitle, so the menu keeps its size while permission is missing.
     brightnessItem.state = panel.brightnessKeys.isBlocked
@@ -94,6 +103,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     // below them instead of leaving a gap down one side.
     hosting.autoresizingMask = [.width]
     arrangementItem.view = hosting
+  }
+
+  func menuWillOpen(_: NSMenu) {
+    onOpen?()
+  }
+
+  func menuDidClose(_: NSMenu) {
+    onClose?()
   }
 
   private func configure(_ item: NSMenuItem, title: String, action: MenuAction) {

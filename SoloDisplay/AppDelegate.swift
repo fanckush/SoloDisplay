@@ -18,6 +18,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var updater: Updater?
   private var knownScreens: Set<CGDirectDisplayID> = []
   private let operationalDiagnostics = OperationalLogger(role: .bootstrap)
+  /// The icon is hidden by choice but shown for now, because the app was opened again.
+  private var iconRevealed = false
+  /// A revealed icon stays at least this long, so a menu that closes at once, as it does when
+  /// switching desktops, does not take the icon with it before it can be seen.
+  private static let revealGrace: TimeInterval = 2
+  private var revealedUntil = Date.distantPast
+  private var hideTimer: Timer?
+  private var menuOpen = false
+  /// Posted by a second copy on its way out, so the copy that is running shows its menu.
+  private static let revealNotification = Notification.Name(
+    "\(Bundle.main.bundleIdentifier ?? "SoloDisplay").revealMenu"
+  )
 
   func applicationDidFinishLaunching(_: Notification) {
     // Unit tests exercise the model without starting the platform observer.
@@ -55,9 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Data("SoloDisplay is already running in this login session.\n".utf8)
       )
       // Launched from the Finder this is otherwise an app that opens and vanishes, with the one
-      // line above going nowhere anybody can see. There is nothing to bring forward instead: the
-      // copy that is running lives in the menu bar, so the alert says where to look.
-      showAlreadyRunningAlert()
+      // line above going nowhere anybody can see. The copy that is running may have its icon
+      // hidden, so it is asked to open its menu rather than the person being told where to look.
+      DistributedNotificationCenter.default().postNotificationName(
+        Self.revealNotification, object: nil, userInfo: nil, deliverImmediately: true
+      )
       exit(0)
     }
     controller = runtime
@@ -70,6 +84,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     self.statusMenu = statusMenu
     statusItem?.menu = statusMenu.menu
+    // An icon shown only because the app was opened again goes back into hiding with its menu,
+    // and never while the menu is open. Not before the next turn of the run loop: the item that
+    // was clicked acts after the menu closes, and turning the option off there should not blink
+    // the icon away first.
+    statusMenu.onOpen = { [weak self] in self?.menuOpen = true }
+    statusMenu.onClose = { [weak self] in
+      self?.menuOpen = false
+      DispatchQueue.main.async {
+        MainActor.assumeIsolated { self?.hideRevealedIcon() }
+      }
+    }
+    DistributedNotificationCenter.default().addObserver(
+      forName: Self.revealNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.revealMenu() }
+    }
     runtime.onMenuChanged = { [weak self] in self?.refreshInterface() }
     runtime.onOpenDiagnostics = { [weak self] in self?.showDiagnostics() }
     // Only the menu bar app updates. A guardian or worker is this same bundle and must never
@@ -103,6 +133,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let controller else { return }
     guard controller.confirmation(for: action) != nil else {
       controller.perform(action)
+      if action == .toggleMenuBarIcon, controller.panel.menuBarIcon.isOn {
+        explainHiddenIcon()
+      }
       return
     }
     // The cards are a view inside the menu, and clicking one leaves it open. An alert opened
@@ -136,16 +169,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     controller.perform(action)
   }
 
-  /// An accessory app has no window to put this in front of, so it is activated first.
-  private func showAlreadyRunningAlert() {
-    NSApp.activate(ignoringOtherApps: true)
-    let alert = NSAlert()
-    alert.alertStyle = .informational
-    alert.messageText = "SoloDisplay is already running"
-    alert.informativeText =
-      "Look for the SoloDisplay icon in the menu bar at the top of your screen."
-    alert.addButton(withTitle: "OK")
-    alert.runModal()
+  /// Said every time the icon is hidden, because nothing left on screen says how to undo it.
+  /// Shown once the menu is gone, as an alert inside its tracking loop would sit behind it.
+  private func explainHiddenIcon() {
+    hideTimer?.invalidate()
+    iconRevealed = false
+    applyIconVisibility()
+    statusMenu?.menu.cancelTracking()
+    DispatchQueue.main.async { [weak self] in
+      MainActor.assumeIsolated {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "The menu bar icon is hidden"
+        alert.informativeText =
+          "SoloDisplay keeps running. Open SoloDisplay again to get its menu back. "
+            + "The icon also returns on its own when something needs your attention."
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Show Icon")
+        guard alert.runModal() == .alertSecondButtonReturn, let self,
+              self.controller?.panel.menuBarIcon.isOn == true
+        else { return }
+        self.controller?.perform(.toggleMenuBarIcon)
+      }
+    }
+  }
+
+  /// Opening the app while it runs is the way back to a hidden icon, so it opens the menu.
+  func applicationShouldHandleReopen(_: NSApplication, hasVisibleWindows _: Bool) -> Bool {
+    revealMenu()
+    return false
+  }
+
+  private func revealMenu() {
+    guard controller != nil, let statusItem else { return }
+    iconRevealed = true
+    applyIconVisibility()
+    revealedUntil = Date().addingTimeInterval(Self.revealGrace)
+    // Covers a menu that cannot open at all, as over a full screen app.
+    scheduleHide(after: Self.revealGrace)
+    // The button has to be on screen before it can be clicked.
+    DispatchQueue.main.async {
+      MainActor.assumeIsolated { statusItem.button?.performClick(nil) }
+    }
+  }
+
+  /// Hides a revealed icon once its menu is closed and its couple of seconds are up.
+  private func hideRevealedIcon() {
+    guard iconRevealed, !menuOpen else { return }
+    let remaining = revealedUntil.timeIntervalSinceNow
+    guard remaining <= 0 else {
+      scheduleHide(after: remaining)
+      return
+    }
+    hideTimer?.invalidate()
+    iconRevealed = false
+    applyIconVisibility()
+  }
+
+  private func scheduleHide(after delay: TimeInterval) {
+    hideTimer?.invalidate()
+    hideTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated { self?.hideRevealedIcon() }
+    }
+  }
+
+  /// Hidden only by choice, and never while the icon is the one place a problem shows.
+  private func applyIconVisibility() {
+    guard let controller, let statusItem else { return }
+    let panel = controller.panel
+    let visible = !panel.menuBarIcon.isOn || iconRevealed || panel.glyph == .attention
+    if statusItem.isVisible != visible {
+      statusItem.isVisible = visible
+    }
   }
 
   private func startGuardian() {
@@ -225,6 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     guard let controller else { return }
     let panel = controller.panel
     applyGlyph(panel.glyph, description: panel.statusDescription)
+    applyIconVisibility()
     panelStore.update(panel)
     statusMenu?.update(panel)
   }

@@ -129,6 +129,15 @@ struct MenuModelTests {
     #expect(menuPanel(.init(), launchAtLogin: true).launchAtLogin.isOn == true)
   }
 
+  @Test func hidingTheMenuBarIconIsAnOptionThatIsOffByDefault() {
+    let shown = MenuModel.panel(.init(), launchAtLogin: false)
+    #expect(!shown.menuBarIcon.isOn)
+    #expect(shown.menuBarIcon.title == "Hide Menu Bar Icon")
+    #expect(shown.menuBarIcon.action == .toggleMenuBarIcon)
+    let hidden = MenuModel.panel(.init(), launchAtLogin: false, menuBarIconHidden: true)
+    #expect(hidden.menuBarIcon.isOn)
+  }
+
   @Test func inputDetectionIsAnExplicitExperimentalOption() {
     let off = MenuModel.panel(.init(), launchAtLogin: false)
     #expect(!off.inputDetection.isOn)

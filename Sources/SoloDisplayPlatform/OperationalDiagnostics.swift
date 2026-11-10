@@ -13,7 +13,7 @@ public struct OperationalEvent: Codable, Equatable, Sendable {
   /// optional and drops a mismatch silently, so every menu action needs a case here.
   public enum Action: String, Codable, Sendable {
     case retryRecovery, toggleLaunchAtLogin, toggleBrightnessKeys, toggleInputDetection
-    case toggleSharpText, exportDiagnostics, quit
+    case toggleSharpText, toggleMenuBarIcon, exportDiagnostics, quit
     case openDisplayMonitor, selectAllMonitors, selectExternalOnly, checkForUpdates
   }
 
@@ -140,6 +140,8 @@ public struct OperationalSettings: Codable, Equatable, Sendable {
   public var sharpText: Bool
   public var manualPathValidated: Bool
   public var freezeWarningDismissed: Bool
+  /// Optional so an export written before the setting existed still decodes.
+  public var menuBarIconHidden: Bool?
   public init(_ preferences: Preferences) {
     launchAtLogin = preferences.launchAtLogin
     brightnessKeys = preferences.brightnessKeys
@@ -147,6 +149,7 @@ public struct OperationalSettings: Codable, Equatable, Sendable {
     sharpText = preferences.sharpText
     manualPathValidated = preferences.manualPathValidated
     freezeWarningDismissed = preferences.freezeWarningDismissed
+    menuBarIconHidden = preferences.menuBarIconHidden
   }
 }
 

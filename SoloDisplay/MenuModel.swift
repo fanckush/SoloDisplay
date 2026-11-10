@@ -9,6 +9,7 @@ nonisolated enum MenuAction: String, CaseIterable, Equatable, Sendable {
   case toggleBrightnessKeys
   case toggleInputDetection
   case toggleSharpText
+  case toggleMenuBarIcon
   case checkForUpdates
   case openDisplayMonitor
   case exportDiagnostics
@@ -21,7 +22,8 @@ nonisolated enum MenuModel {
   static func panel(
     _ presentation: Presentation, launchAtLogin: Bool,
     brightnessKeys: Bool = false, brightnessNeedsPermission: Bool = false,
-    inputDetection: Bool = false, sharpText: SharpTextStatus = .init()
+    inputDetection: Bool = false, sharpText: SharpTextStatus = .init(),
+    menuBarIconHidden: Bool = false
   ) -> MenuPanel {
     let chosenOff = presentation.wantsInternalOff
     let working = presentation.working
@@ -57,6 +59,9 @@ nonisolated enum MenuModel {
       ),
       inputDetection: .init(
         title: "Input Detection (Experimental)", action: .toggleInputDetection, isOn: inputDetection
+      ),
+      menuBarIcon: .init(
+        title: "Hide Menu Bar Icon", action: .toggleMenuBarIcon, isOn: menuBarIconHidden
       ),
       commands: [
         .init(title: "Check for Updates…", action: .checkForUpdates),
