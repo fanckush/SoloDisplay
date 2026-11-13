@@ -157,29 +157,78 @@ struct MonitorSuppressionTests {
     #expect(workers(rig.observe(asleep, at: 0), .enable) == 1)
   }
 
-  /// Seen on hardware on 2026-09-20: a monitor was unplugged while owed, every attempt to give
-  /// it back failed because its ID named nothing, and the laptop screen stayed dark behind the
-  /// retries. A monitor that cannot be reached is given up on, and never holds the one worker.
-  @Test func aMonitorThatCannotBeReachedIsGivenUpOnRatherThanRetriedForEver() {
+  /// Seen on hardware on 2026-09-20: a monitor was unplugged while owed and every attempt to give
+  /// it back failed because its ID named nothing. Seen on 2026-11-12: that same monitor comes
+  /// back still off when it is plugged in again. So it stays owed, and the attempts wait longer
+  /// each time instead of going out without pause or being given up.
+  @Test func aMonitorThatCannotBeTurnedBackOnYetIsRetriedNotForgotten() {
     var rig = Rig(mode: .automaticPaused)
     rig.answersMonitors = false
     rig.state.suppressed = [dell]
     rig.state.recordedSuppression = [dell]
     rig.state.guardian = .ready
+    rig.state.guardianTargets = [dell]
     var gone = withMonitor(suppressed: [dell], visible: 1)
     gone.visibleDisplays = 0
     #expect(workers(rig.observe(gone, at: 0), .enable) == 1)
 
-    // Each attempt misses, because the display it names is not there any more. A reading taken
-    // after the attempt is what judges it, and the next attempt goes out with the same reading.
+    // A reading taken after the attempt is what judges it. The next one waits.
     rig.send(.workerFinished(.failed), at: 100)
-    #expect(workers(rig.observe(gone, at: 200), .enable) == 1)
-    rig.send(.workerFinished(.failed), at: 300)
-    rig.observe(gone, at: 400)
-    // Given up on: it is no longer owed, so nothing is waiting behind it.
-    #expect(rig.state.suppressed.isEmpty)
-    #expect(workers(rig.observe(gone, at: 500), .enable) == 0)
+    let missed = rig.observe(gone, at: 200)
+    #expect(workers(missed, .enable) == 0)
+    #expect(missed.contains(.wakeAt(700)))
+    #expect(workers(rig.send(.tick, at: 699), .enable) == 0)
+    #expect(workers(rig.send(.tick, at: 700), .enable) == 1)
+
+    // Longer the second time, and still owed after more misses than it used to take to give up.
+    rig.send(.workerFinished(.failed), at: 800)
+    rig.observe(gone, at: 900)
+    #expect(workers(rig.send(.tick, at: 1800), .enable) == 0)
+    #expect(workers(rig.send(.tick, at: 1900), .enable) == 1)
+    rig.send(.workerFinished(.failed), at: 2000)
+    rig.observe(gone, at: 2100)
+    #expect(rig.state.suppressed == [dell])
+    #expect(!rig.send(.tick, at: 2200).contains(.recordSuppression([])))
+    // The laptop screen's own backoff is untouched.
     #expect(rig.state.retryAt == nil)
+  }
+
+  /// Seen on hardware on 2026-11-11: the monitor was turned off for showing another machine, the
+  /// screens went to sleep, and the restore that asked for was refused twice because every screen
+  /// was asleep. The monitor was given up on, so switching it back to this Mac the next morning
+  /// changed nothing. A refused restore keeps it owed, and switching back brings it back at once.
+  @Test func aMonitorRefusedWhileTheScreensSleepComesBackWhenSwitchedToThisMac() {
+    var rig = Rig(mode: .automaticPaused)
+    rig.answersMonitors = false
+    rig.state.suppressed = [dell]
+    rig.state.recordedSuppression = [dell]
+    rig.state.guardian = .ready
+    rig.state.guardianTargets = [dell]
+    rig.send(answers(.otherMachine, at: 0), at: 0)
+    rig.send(answers(.otherMachine, at: 100), at: 100)
+    let away = withMonitor(suppressed: [dell], visible: 1)
+    #expect(workers(rig.observe(away, at: 200), .enable) == 0)
+
+    // Every screen asleep: nothing is visible, so the monitor is asked back, and the worker
+    // refuses because a screen that is asleep cannot be restored.
+    let asleep = withMonitor(environment(panelState: .unknown), suppressed: [dell], visible: 0)
+    #expect(workers(rig.observe(asleep, at: 1000), .enable) == 1)
+    rig.send(.workerFinished(.refused), at: 1100)
+    rig.observe(asleep, at: 1200)
+    #expect(workers(rig.send(.tick, at: 1700), .enable) == 1)
+    rig.send(.workerFinished(.refused), at: 1800)
+    rig.observe(asleep, at: 1900)
+    #expect(rig.state.suppressed == [dell])
+
+    // The screens wake with the monitor still on the other machine: it stays off.
+    let awake = withMonitor(suppressed: [dell], visible: 1)
+    #expect(workers(rig.observe(awake, at: 2000), .enable) == 0)
+    // Switched back to this Mac. One answer is enough, and the wait from the last miss is over.
+    #expect(rig.send(answers(.thisMac, at: 2100), at: 2100).contains(.runWorker(.enable, dell)))
+    rig.send(.workerFinished(.done), at: 2200)
+    rig.observe(withMonitor(), at: 2300)
+    #expect(rig.state.suppressed.isEmpty)
+    #expect(rig.state.monitorRetryAt.isEmpty)
   }
 
   /// The laptop screen is never behind a monitor. There is one worker at a time, and the screen
@@ -198,9 +247,10 @@ struct MonitorSuppressionTests {
     #expect(effects.contains(.runWorker(.enable, panel)))
   }
 
-  /// A monitor that was unplugged is not owed: there is nothing to give back, and holding its
-  /// name would let a different monitor inherit it later.
-  @Test func aMonitorThatWasUnpluggedIsForgottenRatherThanRestored() {
+  /// Seen on hardware on 2026-11-12: a monitor this app turned off was unplugged and plugged in
+  /// again, and it came back still off. So unplugging does not discharge it: nothing is tried
+  /// while it is away, and it comes back once it is plugged in showing this Mac.
+  @Test func anUnpluggedMonitorStaysOwedAndComesBackWhenPluggedInShowingThisMac() {
     var rig = Rig(mode: .automaticPaused)
     rig.answersMonitors = false
     rig.state.suppressed = [dell]
@@ -208,8 +258,35 @@ struct MonitorSuppressionTests {
     rig.observe(withMonitor(suppressed: [dell]), at: 0)
     // Its endpoint no longer answers at all, which is what unplugging looks like.
     let gone = rig.send(.inputSourcesRead(.unknown, monitors: [], sampledAt: 100), at: 100)
-    #expect(rig.state.suppressed.isEmpty)
+    #expect(rig.state.suppressed == [dell])
     #expect(workers(gone, .enable) == 0)
+    #expect(!gone.contains(.recordSuppression([])))
+    // Plugged in again, still off, and showing this Mac.
+    #expect(rig.send(answers(.thisMac, at: 200), at: 200).contains(.runWorker(.enable, dell)))
+  }
+
+  /// A monitor that comes back on by itself while owed, such as one plugged in again on a Mac
+  /// that does not keep it off, has said nothing since. It is not turned off on the answer it
+  /// gave before it went away.
+  @Test func aMonitorThatComesBackOnByItselfIsNotTurnedOffOnAnOldAnswer() {
+    var rig = Rig(mode: .automaticPaused)
+    rig.answersMonitors = false
+    rig.state.suppressed = [dell]
+    rig.state.recordedSuppression = [dell]
+    rig.state.guardian = .ready
+    rig.state.guardianTargets = [dell]
+    rig.send(answers(.otherMachine, at: 0), at: 0)
+    rig.send(answers(.otherMachine, at: 100), at: 100)
+    rig.observe(withMonitor(suppressed: [dell], visible: 1), at: 200)
+    rig.send(.inputSourcesRead(.unknown, monitors: [], sampledAt: 300), at: 300)
+    // Back in the inventory and on, with nothing said yet.
+    #expect(workers(rig.observe(withMonitor(), at: 400), .disable) == 0)
+    #expect(workers(rig.send(.tick, at: 5000), .disable) == 0)
+    // Its first answer settles it, and a monitor showing this Mac is simply discharged.
+    #expect(rig.send(answers(.thisMac, at: 5100), at: 5100).contains(.runWorker(.enable, dell)))
+    rig.send(.workerFinished(.done), at: 5200)
+    rig.observe(withMonitor(), at: 5300)
+    #expect(rig.state.suppressed.isEmpty)
   }
 }
 

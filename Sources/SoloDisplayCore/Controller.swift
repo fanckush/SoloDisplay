@@ -189,6 +189,13 @@ public enum Controller {
     guard let answers else { return }
     for answer in answers {
       var verdict = state.monitors[answer.controller] ?? .init()
+      // Switching a monitor back to this Mac is new evidence, so a restore waiting out an earlier
+      // miss goes now rather than after the wait. Once per switch, not once per answer.
+      if answer.shown == .thisMac, verdict.shown != .thisMac, verdict.pending != .thisMac {
+        for owed in state.suppressed where owed.controller == answer.controller {
+          state.monitorRetryAt[owed.displayUUID] = nil
+        }
+      }
       // A completed poll with no usable reply is still silence.
       if answer.shown != .unknown {
         verdict.lastAnswered = sampledAt
@@ -209,13 +216,13 @@ public enum Controller {
       }
       state.monitors[answer.controller] = verdict
     }
-    // An endpoint that was not answered for is a monitor that has gone.
+    // An endpoint that was not answered for is a monitor that has gone, so what it said goes too.
+    // What is owed to it stays. Seen on hardware on 2026-11-12: a monitor this app turned off
+    // was unplugged and plugged in again, and it came back still off. Turning it on while it is
+    // away fails, because its ID names nothing. Forgetting it would leave it off with nobody who
+    // knows it is owed, so its endpoint answering again is what brings it back.
     let live = Set(answers.map(\.controller))
     state.monitors = state.monitors.filter { live.contains($0.key) }
-    state.suppressed.removeAll {
-      guard let controller = $0.controller else { return true }
-      return !live.contains(controller)
-    }
   }
 
   /// Turns a monitor off once it has said twice that it is showing another machine, and turns it
@@ -264,9 +271,15 @@ public enum Controller {
       effects.append(.updateGuardian(state.ownedTargets))
       return
     }
-    // Whatever is owed but still in the inventory has not been turned off yet.
+    // Whatever is owed but still in the inventory has not been turned off yet. It is turned off
+    // only on the answer that made it owed. A monitor that came back on by itself, such as one
+    // plugged in again, has no such answer, and an old one must not turn it off again.
     guard let target = state.suppressed.first(where: { owed in
-      environment.externals.contains {
+      guard let controller = owed.controller,
+            state.monitors[controller]?.shown == .otherMachine,
+            !wantsBack(owed, state: state, environment: environment, at: now)
+      else { return false }
+      return environment.externals.contains {
         $0.target.displayUUID == owed.displayUUID && !$0.suppressed
       }
     }) else { return }
@@ -280,39 +293,6 @@ public enum Controller {
   ) -> Bool {
     guard let wanted = desired(state, at: now) else { return true }
     return wanted == environment.panelState
-  }
-
-  /// Every reason a monitor should come back. Any one of them is enough: a monitor that is on is
-  /// the state everything starts in, and the worst it costs is a desktop nobody is looking at.
-  static func monitorToRestore(
-    _ state: ControllerState, environment: Environment, at now: Instant
-  ) -> PanelTarget? {
-    state.suppressed.first { target in
-      if !state.inputDetectionEnabled {
-        return true
-      }
-      guard let controller = target.controller else { return true }
-      let verdict = state.monitors[controller]
-      // One answer is enough here. Turning a monitor back on is always safe, and the worst a
-      // wrong one costs is a desktop nobody is looking at, which is where everything started.
-      if verdict?.shown == .thisMac || verdict?.pending == .thisMac {
-        return true
-      }
-      if environment.power != .awake || environment.foregroundSession != .yes {
-        return true
-      }
-      // Nothing left to look at. One screen left is the point of turning a monitor off, so the
-      // net is at zero rather than at one: treating one as danger would undo every suppression
-      // the instant it landed, which is what it did on hardware on 2026-09-20.
-      if environment.visibleDisplays == 0 {
-        return true
-      }
-      if state.recordBlocked {
-        return true
-      }
-      // A monitor that has answered nothing for a long time cannot be confirmed invisible.
-      return now - (verdict?.lastAnswered ?? now) >= state.policy.monitorSilence
-    }
   }
 
   /// A monitor is turned off only on its own word, twice, and only while another screen is left.
@@ -551,6 +531,7 @@ public enum Controller {
   ) {
     guard !landed else {
       state.monitorAttempts[worker.target.displayUUID] = nil
+      state.monitorRetryAt[worker.target.displayUUID] = nil
       if let controller = worker.target.controller {
         var verdict = state.monitors[controller] ?? .init()
         verdict.lastChanged = now
@@ -561,11 +542,22 @@ public enum Controller {
       }
       return
     }
-    // A monitor that will not change is given up on rather than tried for ever. The usual cause
-    // is a monitor that has been unplugged, whose ID now names nothing. Its own backoff is never
-    // the laptop screen's: the screen must not wait behind a monitor that cannot be reached.
+    // Its own backoff is never the laptop screen's: the screen must not wait behind a monitor.
     let attempts = (state.monitorAttempts[worker.target.displayUUID] ?? 0) + 1
     state.monitorAttempts[worker.target.displayUUID] = attempts
+    // Turning one back on is never given up on. A monitor this app turned off stays off for the
+    // rest of the login session, unplugged or not, and nothing else will turn it on. Seen on
+    // hardware on 2026-11-11: the restore was refused twice because every screen was asleep,
+    // the monitor was given up on, and it stayed off the next morning after it was switched back.
+    // It waits instead, longer each time, so one that cannot land yet is not asked without pause.
+    if worker.action == .enable {
+      let delays = state.policy.retryDelays
+      let delay = delays.isEmpty ? 0 : delays[min(attempts, delays.count) - 1]
+      state.monitorRetryAt[worker.target.displayUUID] = now + delay
+      return
+    }
+    // Turning one off is given up on rather than tried for ever. A monitor left on is where
+    // everything starts.
     guard attempts >= state.policy.monitorAttempts else { return }
     state.monitorAttempts[worker.target.displayUUID] = nil
     state.suppressed.removeAll { $0.displayUUID == worker.target.displayUUID }
@@ -622,6 +614,11 @@ public enum Controller {
     }
     if let retryAt = state.retryAt, retryAt > now {
       effects.append(.wakeAt(retryAt))
+    }
+    // A monitor waiting out a missed restore is asked again at the end of the wait.
+    if let next = state.suppressed.compactMap({ state.monitorRetryAt[$0.displayUUID] })
+      .filter({ $0 > now }).min() {
+      effects.append(.wakeAt(next))
     }
     // Asking again is on its own clock, so it needs its own wake rather than the periodic one.
     if !state.inputSourcesBusy, let due = state.inputSourcesDueAt, due > now {
@@ -695,6 +692,50 @@ private extension Controller {
     state.monitorLeft = false
     state.refreshedAt = now
     effects.append(.refreshDisplays)
+  }
+}
+
+/// Monitors this app turned off, and when each one is owed back.
+extension Controller {
+  /// The first owed monitor that should come back and is not waiting out a missed attempt.
+  static func monitorToRestore(
+    _ state: ControllerState, environment: Environment, at now: Instant
+  ) -> PanelTarget? {
+    state.suppressed.first { target in
+      now >= (state.monitorRetryAt[target.displayUUID] ?? now)
+        && wantsBack(target, state: state, environment: environment, at: now)
+    }
+  }
+
+  /// Every reason a monitor should come back. Any one of them is enough: a monitor that is on is
+  /// the state everything starts in, and the worst it costs is a desktop nobody is looking at.
+  static func wantsBack(
+    _ target: PanelTarget, state: ControllerState, environment: Environment, at now: Instant
+  ) -> Bool {
+    if !state.inputDetectionEnabled {
+      return true
+    }
+    guard let controller = target.controller else { return true }
+    let verdict = state.monitors[controller]
+    // One answer is enough here. Turning a monitor back on is always safe, and the worst a
+    // wrong one costs is a desktop nobody is looking at, which is where everything started.
+    if verdict?.shown == .thisMac || verdict?.pending == .thisMac {
+      return true
+    }
+    if environment.power != .awake || environment.foregroundSession != .yes {
+      return true
+    }
+    // Nothing left to look at. One screen left is the point of turning a monitor off, so the
+    // net is at zero rather than at one: treating one as danger would undo every suppression
+    // the instant it landed, which is what it did on hardware on 2026-09-20.
+    if environment.visibleDisplays == 0 {
+      return true
+    }
+    if state.recordBlocked {
+      return true
+    }
+    // A monitor that has answered nothing for a long time cannot be confirmed invisible.
+    return now - (verdict?.lastAnswered ?? now) >= state.policy.monitorSilence
   }
 }
 

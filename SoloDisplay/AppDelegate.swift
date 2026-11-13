@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private static let revealGrace: TimeInterval = 2
   private var revealedUntil = Date.distantPast
   private var hideTimer: Timer?
+  /// Waits for a revealed icon to be in place before clicking it.
+  private var clickTimer: Timer?
   private var menuOpen = false
   /// Posted by a second copy on its way out, so the copy that is running shows its menu.
   private static let revealNotification = Notification.Name(
@@ -202,16 +204,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func revealMenu() {
-    guard controller != nil, let statusItem else { return }
+    guard controller != nil, statusItem != nil else { return }
     iconRevealed = true
     applyIconVisibility()
     revealedUntil = Date().addingTimeInterval(Self.revealGrace)
     // Covers a menu that cannot open at all, as over a full screen app.
     scheduleHide(after: Self.revealGrace)
-    // The button has to be on screen before it can be clicked.
-    DispatchQueue.main.async {
-      MainActor.assumeIsolated { statusItem.button?.performClick(nil) }
+    clickWhenPlaced(polls: 0, last: nil)
+  }
+
+  /// Clicks the icon once the menu bar has put it in place. A newly shown icon starts at the
+  /// screen's left edge and is moved into the menu bar a few dozen milliseconds later, and a menu
+  /// opened before then opens at the left edge. After half a second it clicks anyway.
+  ///
+  /// From a timer, not the main queue: the menu stays open inside whatever opened it, and inside
+  /// a main queue block no other main actor work runs until it closes, so a display change could
+  /// not report back.
+  private func clickWhenPlaced(polls: Int, last: NSRect?) {
+    clickTimer?.invalidate()
+    guard let button = statusItem?.button, let window = button.window else { return }
+    let frame = window.frame
+    if polls >= 25 || (frame == last && Self.inMenuBar(window)) {
+      button.performClick(nil)
+      return
     }
+    let timer = Timer(timeInterval: 0.02, repeats: false) { [weak self] _ in
+      MainActor.assumeIsolated { self?.clickWhenPlaced(polls: polls + 1, last: frame) }
+    }
+    RunLoop.main.add(timer, forMode: .default)
+    clickTimer = timer
+  }
+
+  /// Centered in the strip above the screen's usable area, where the menu bar is, or above it
+  /// while the menu bar is hidden. The button's window reaches a little past the menu bar.
+  private static func inMenuBar(_ window: NSWindow) -> Bool {
+    guard let screen = window.screen, window.frame.height > 0 else { return false }
+    return window.frame.midY >= screen.visibleFrame.maxY
   }
 
   /// Hides a revealed icon once its menu is closed and its couple of seconds are up.

@@ -191,7 +191,8 @@ public struct Policy: Equatable, Sendable {
   /// A monitor is left alone for this long after it was last turned off or back on, so a fight
   /// between two rules shows up as slowness rather than as a flashing screen.
   public var monitorSettleFloor: Instant = 30000
-  /// Attempts at one monitor that do not land before it is given up on.
+  /// Attempts to turn one monitor off that do not land before it is given up on. Turning one
+  /// back on is never given up on.
   public var monitorAttempts = 2
   /// A monitor that has answered nothing for this long is turned back on. A monitor usually
   /// answers again once it is switched back, so this is a backstop, not the way back.
@@ -270,9 +271,10 @@ public struct ControllerState: Equatable, Sendable {
   public var suppressedBusy = false
   /// What the record on disk names, so the two can be brought back together.
   public var recordedSuppression: [PanelTarget] = []
-  /// Attempts at each monitor that did not land, by display UUID. A monitor that cannot be
-  /// changed is given up on rather than tried for ever: it is usually one that was unplugged.
+  /// Attempts at each monitor that did not land, by display UUID. Cleared once one does.
   public var monitorAttempts: [String: Int] = [:]
+  /// When a monitor whose restore missed may be asked again, by display UUID.
+  public var monitorRetryAt: [String: Instant] = [:]
   /// Everything the guardian has been told is owed, so it is told again only when it changes.
   /// A guardian that does not know about something cannot give it back.
   public var guardianTargets: [PanelTarget] = []
