@@ -684,6 +684,10 @@ private extension Controller {
   /// turning the laptop screen on and off does not. Done once the monitor is back and settled.
   static func refreshDisplays(_ state: inout ControllerState, effects: inout [Effect],
                               at now: Instant) {
+    guard state.policy.refreshOnMonitorReturn else {
+      state.monitorLeft = false
+      return
+    }
     guard state.monitorLeft, state.worker == nil,
           let environment = state.observation?.environment, environment.visibilityExpected,
           environment.panelState == .disabled, environment.nativeExternalAvailable == .yes,

@@ -86,8 +86,12 @@ final class ControllerRuntime: CoordinatorDelegate {
     // Only External Only turns anything off. Older preference files may still say manual.
     let mode: Mode = preferences.mode == .automatic ? .automatic : .automaticPaused
     let resolved = ProductionCoordinator.resolveRecord(journal, reading: reading)
+    var policy = Policy()
+    // Forcing all displays to sleep on hot-plug can lock the session and blank a working screen.
+    policy.refreshOnMonitorReturn = false
     var state = ControllerState(
-      mode: mode, record: resolved.target, inputDetectionEnabled: preferences.inputDetection
+      mode: mode, record: resolved.target, policy: policy,
+      inputDetectionEnabled: preferences.inputDetection
     )
     state.recordBlocked = resolved.blocked
     // Monitors a previous run turned off are an obligation to give back, whatever else is true.

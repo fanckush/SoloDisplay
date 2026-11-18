@@ -200,6 +200,7 @@ public struct Policy: Equatable, Sendable {
   /// How long after a wake the screens may stay dark before the laptop screen is put back. Long
   /// enough for a slow monitor to come back on its own, which avoids a pointless flash.
   public var wakeGrace: Instant = 15000
+  public var refreshOnMonitorReturn = true
   /// Monitors leaving this soon after the displays were put to sleep and woken left because of it,
   /// so they do not ask for it again.
   public var refreshQuiet: Instant = 10000

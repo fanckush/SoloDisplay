@@ -308,6 +308,23 @@ func refreshes(_ effects: [Effect]) -> Int {
   #expect(workers(gone, .enable) == 1)
 }
 
+@Test func hotPlugWithoutRedrawKeepsExternalOnlyAndRestoresThePanelOnLastUnplug() {
+  var rig = Rig()
+  rig.state.policy.refreshOnMonitorReturn = false
+  rig.off()
+  for time: Instant in [2100, 35000, 68000] {
+    let removed = rig.send(.displaysRemoved([2]), at: time)
+    let returned = rig.observe(environment(panelState: .disabled), at: time + 500)
+    #expect(refreshes(removed + returned) == 0)
+    #expect(workers(removed + returned, .enable) == 0)
+    #expect(!rig.state.monitorLeft)
+  }
+  let gone = rig.send(.displaysRemoved([2, 3]), at: 69000)
+    + rig.observe(environment(panelState: .disabled, external: .no), at: 69500)
+  #expect(refreshes(gone) == 0)
+  #expect(workers(gone, .enable) == 1)
+}
+
 @Test func theScreenItselfLeavingIsNotAMonitorLeaving() {
   var rig = Rig()
   rig.off()
