@@ -99,11 +99,14 @@ public struct Environment: Codable, Equatable, Sendable {
   public var externals: [ExternalCandidate]
   /// Screens a person could look at right now. The laptop panel counts only while it is on.
   public var visibleDisplays: Int
+  /// The same screens, by display ID. Empty when they could not be read.
+  public var visibleDisplayIDs: [UInt32]
 
   public init(
     panel: PanelTarget?, panelState: PanelState, power: Power, lid: Lid,
     foregroundSession: Fact, nativeExternalAvailable: Fact, supportedTopology: Fact,
-    externals: [ExternalCandidate] = [], visibleDisplays: Int = 0
+    externals: [ExternalCandidate] = [], visibleDisplays: Int = 0,
+    visibleDisplayIDs: [UInt32] = []
   ) {
     self.panel = panel
     self.panelState = panelState
@@ -114,6 +117,7 @@ public struct Environment: Codable, Equatable, Sendable {
     self.supportedTopology = supportedTopology
     self.externals = externals
     self.visibleDisplays = visibleDisplays
+    self.visibleDisplayIDs = visibleDisplayIDs
   }
 
   /// A record written before monitors were described reads without them.
@@ -128,6 +132,8 @@ public struct Environment: Codable, Equatable, Sendable {
     supportedTopology = try container.decode(Fact.self, forKey: .supportedTopology)
     externals = try container.decodeIfPresent([ExternalCandidate].self, forKey: .externals) ?? []
     visibleDisplays = try container.decodeIfPresent(Int.self, forKey: .visibleDisplays) ?? 0
+    visibleDisplayIDs =
+      try container.decodeIfPresent([UInt32].self, forKey: .visibleDisplayIDs) ?? []
   }
 
   /// Changes produced by our own panel change do not restart settling.
@@ -296,6 +302,12 @@ public struct ControllerState: Equatable, Sendable {
   /// A monitor left the arrangement while the laptop screen was off for it, even for a moment.
   /// Cleared once the screen is seen on, or once the displays have been put to sleep and woken.
   public var monitorLeft = false
+  /// Displays macOS took out since the last reading, and when. A reading taken after a removal
+  /// already knows about it.
+  public var removedAt: [UInt32: Instant] = [:]
+  /// macOS turned the screens off, as it does on a lock or after idling. Monitors drop out as
+  /// they go dark, and nothing needs redrawing for that. Cleared by the next wake.
+  public var screensAsleep = false
   /// When the displays were last put to sleep and woken.
   public var refreshedAt: Instant?
   public var policy: Policy
@@ -358,6 +370,8 @@ public enum Event: Equatable, Sendable {
   case displaysRemoved([UInt32])
   case willSleep
   case waking
+  /// macOS turned the screens off while the Mac itself stays awake.
+  case screensSlept
   /// Try Again: forget the backoff and look again now.
   case retry
   case tick

@@ -33,6 +33,7 @@ public enum ControllerObservation {
     // A panel this process turned off has no live entry to read an identity from. Ownership
     // supplies it, and only once absence has already been established as our own suppression.
     let target = present ?? (state == .disabled ? owned?.target : nil)
+    let visible = visibleDisplays(reading, reliable: reliable, panelState: state)
     return .init(
       panel: target, panelState: state, power: power, lid: reading.lid,
       foregroundSession: reading.foregroundSession,
@@ -44,7 +45,7 @@ public enum ControllerObservation {
         panelOwnedAndAbsent: state == .disabled
       ),
       externals: externals(reading, reliable: reliable, suppressed: suppressedExternals),
-      visibleDisplays: visibleDisplays(reading, reliable: reliable, panelState: state)
+      visibleDisplays: visible.count, visibleDisplayIDs: visible
     )
   }
 
@@ -127,12 +128,12 @@ public enum ControllerObservation {
   /// Screens a person could look at. A mirror follower is one of them: it is showing something.
   static func visibleDisplays(
     _ reading: PlatformReading, reliable: Bool, panelState: PanelState
-  ) -> Int {
-    guard reliable else { return 0 }
-    return reading.displays.count {
+  ) -> [UInt32] {
+    guard reliable else { return [] }
+    return reading.displays.filter {
       guard $0.online, !$0.asleep, $0.active || $0.mirrorSourceID != nil else { return false }
       return $0.builtIn ? panelState != .disabled : true
-    }
+    }.map(\.id)
   }
 
   /// Transport classification is the sole authority here. An active flag, a display name, and
