@@ -64,19 +64,10 @@ public enum Controller {
       state.preferencesFailed = !succeeded
     case let .displaysRemoved(ids):
       noteRemoved(ids, in: &state, at: now)
+    case .screensSlept:
+      state.screensAsleep = true
     case .willSleep, .waking:
-      // No change starts until a fresh reading shows the Mac awake again.
-      state.stableSince = nil
-      state.matchingSamples = 0
-      // A monitor can be switched while the Mac sleeps, so what it said before says nothing now.
-      state.forgetInputSources()
-      state.monitors.removeAll()
-      // Timed from the first signal: a second one must not push the deadline back.
-      state.wokeAt = event == .waking ? state.wokeAt ?? now : nil
-      if var sample = state.observation {
-        sample.environment.power = event == .willSleep ? .sleeping : .waking
-        state.observation = sample
-      }
+      noteSleepOrWake(event, in: &state, at: now)
       effects.append(.observe)
     case .retry:
       clearBackoff(&state)
@@ -662,6 +653,23 @@ public enum Controller {
 }
 
 private extension Controller {
+  static func noteSleepOrWake(_ event: Event, in state: inout ControllerState, at now: Instant) {
+    // A full sleep is handled once awake, like any other, so it does not count as screens off.
+    state.screensAsleep = false
+    // No change starts until a fresh reading shows the Mac awake again.
+    state.stableSince = nil
+    state.matchingSamples = 0
+    // A monitor can be switched while the Mac sleeps, so what it said before says nothing now.
+    state.forgetInputSources()
+    state.monitors.removeAll()
+    // Timed from the first signal: a second one must not push the deadline back.
+    state.wokeAt = event == .waking ? state.wokeAt ?? now : nil
+    if var sample = state.observation {
+      sample.environment.power = event == .willSleep ? .sleeping : .waking
+      state.observation = sample
+    }
+  }
+
   /// Remembers a monitor leaving while the laptop screen is off. The screen itself and the
   /// monitors this app turns off leave on purpose.
   static func noteRemoved(_ ids: [UInt32], in state: inout ControllerState, at now: Instant) {
@@ -672,6 +680,10 @@ private extension Controller {
     state.removedAt = state.removedAt.filter { $0.value > seenAt }
     for id in ids {
       state.removedAt[id] = now
+    }
+    // Monitors drop out as the screens go dark. Redrawing then would only wake them again.
+    if state.screensAsleep {
+      return
     }
     // Some monitors drop out when put to sleep. That one is ours too.
     if let refreshed = state.refreshedAt,
@@ -697,7 +709,7 @@ private extension Controller {
   /// turning the laptop screen on and off does not. Done once the monitor is back and settled.
   static func refreshDisplays(_ state: inout ControllerState, effects: inout [Effect],
                               at now: Instant) {
-    guard state.monitorLeft, state.worker == nil,
+    guard state.monitorLeft, !state.screensAsleep, state.worker == nil,
           let environment = state.observation?.environment, environment.visibilityExpected,
           environment.panelState == .disabled, environment.nativeExternalAvailable == .yes,
           isSettled(state, at: now)

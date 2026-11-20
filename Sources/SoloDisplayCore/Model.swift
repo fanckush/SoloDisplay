@@ -305,6 +305,9 @@ public struct ControllerState: Equatable, Sendable {
   /// Displays macOS took out since the last reading, and when. A reading taken after a removal
   /// already knows about it.
   public var removedAt: [UInt32: Instant] = [:]
+  /// macOS turned the screens off, as it does on a lock or after idling. Monitors drop out as
+  /// they go dark, and nothing needs redrawing for that. Cleared by the next wake.
+  public var screensAsleep = false
   /// When the displays were last put to sleep and woken.
   public var refreshedAt: Instant?
   public var policy: Policy
@@ -367,6 +370,8 @@ public enum Event: Equatable, Sendable {
   case displaysRemoved([UInt32])
   case willSleep
   case waking
+  /// macOS turned the screens off while the Mac itself stays awake.
+  case screensSlept
   /// Try Again: forget the backoff and look again now.
   case retry
   case tick

@@ -170,9 +170,12 @@ final class ControllerRuntime: CoordinatorDelegate {
         case NSWorkspace.didWakeNotification, NSWorkspace.screensDidWakeNotification:
           self.diagnostics.emit(.resumed, session: self.session, reason: .workspaceWake)
           coordinator.send(.waking)
+        case NSWorkspace.screensDidSleepNotification:
+          self.diagnostics.emit(.lifecycleReconciled, reason: .workspaceScreenSleep)
+          coordinator.send(.screensSlept)
+          coordinator.platformDidChange()
         default:
           let reason: OperationalEvent.Reason? = switch name {
-          case NSWorkspace.screensDidSleepNotification: .workspaceScreenSleep
           case NSWorkspace.sessionDidBecomeActiveNotification: .workspaceSessionActive
           case NSWorkspace.sessionDidResignActiveNotification: .workspaceSessionInactive
           default: nil

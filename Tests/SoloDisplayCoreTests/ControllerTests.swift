@@ -345,6 +345,45 @@ func refreshes(_ effects: [Effect]) -> Int {
   #expect(refreshes(rig.send(.displaysRemoved([3]), at: 2200)) == 1)
 }
 
+/// Locking the Mac, or leaving it idle, turns the screens off and the monitors drop out. Redrawing
+/// then woke them again two seconds later, and the next screen sleep did the same.
+@Test func monitorsDroppingAsTheScreensSleepAskForNoRedraw() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.screensSlept, at: 2100)
+  let effects = rig.send(.displaysRemoved([2]), at: 2200)
+    + rig.observe(environment(panelState: .disabled), at: 2300)
+    + rig.observe(environment(panelState: .disabled), at: 2300 + rig.state.policy.stableFor)
+  #expect(refreshes(effects) == 0)
+  #expect(!rig.state.monitorLeft)
+}
+
+@Test func noRedrawWhileTheScreensAreAsleep() {
+  var rig = Rig()
+  rig.off()
+  // The removal is reported before the screens are, while macOS is still rearranging.
+  rig.send(.displayReconfigured(inProgress: true), at: 2100)
+  #expect(refreshes(rig.send(.displaysRemoved([2]), at: 2100)) == 0)
+  rig.send(.screensSlept, at: 2150)
+  rig.send(.displayReconfigured(inProgress: false), at: 2200)
+  let off = environment(panelState: .disabled)
+  #expect(refreshes(rig.observe(off, at: 2200) + rig.observe(off, at: 9000)) == 0)
+  rig.send(.waking, at: 10000)
+  let woken = rig.observe(off, at: 10010) + rig.observe(off, at: 10010 + rig.state.policy.stableFor)
+  #expect(refreshes(woken) == 1)
+}
+
+@Test func aMonitorLeavingAfterTheScreensWakeIsAMonitorLeaving() {
+  var rig = Rig()
+  rig.off()
+  rig.send(.screensSlept, at: 2100)
+  rig.send(.waking, at: 3000)
+  rig.observe(environment(panelState: .disabled), at: 3010)
+  rig.observe(environment(panelState: .disabled), at: 3010 + rig.state.policy.stableFor)
+  let effects = rig.send(.displaysRemoved([2]), at: 20000)
+  #expect(refreshes(effects) == 1)
+}
+
 @Test func theScreenItselfLeavingIsNotAMonitorLeaving() {
   var rig = Rig()
   rig.off()
