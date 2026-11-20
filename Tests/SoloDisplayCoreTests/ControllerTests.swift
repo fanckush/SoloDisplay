@@ -308,21 +308,41 @@ func refreshes(_ effects: [Effect]) -> Int {
   #expect(workers(gone, .enable) == 1)
 }
 
-@Test func hotPlugWithoutRedrawKeepsExternalOnlyAndRestoresThePanelOnLastUnplug() {
+/// Two monitors, laptop screen off. Unplugging one leaves the desktop on the other, so there is
+/// no stand-in to hand back from, and putting the displays to sleep could lock the Mac.
+@Test func aMonitorLeavingWhileAnotherStaysAsksForNoRedraw() {
   var rig = Rig()
-  rig.state.policy.refreshOnMonitorReturn = false
   rig.off()
-  for time: Instant in [2100, 35000, 68000] {
-    let removed = rig.send(.displaysRemoved([2]), at: time)
-    let returned = rig.observe(environment(panelState: .disabled), at: time + 500)
-    #expect(refreshes(removed + returned) == 0)
-    #expect(workers(removed + returned, .enable) == 0)
-    #expect(!rig.state.monitorLeft)
-  }
-  let gone = rig.send(.displaysRemoved([2, 3]), at: 69000)
-    + rig.observe(environment(panelState: .disabled, external: .no), at: 69500)
-  #expect(refreshes(gone) == 0)
-  #expect(workers(gone, .enable) == 1)
+  var both = environment(panelState: .disabled)
+  both.visibleDisplayIDs = [2, 3]
+  rig.observe(both, at: 2030)
+  let effects = rig.send(.displaysRemoved([2]), at: 2100)
+  #expect(refreshes(effects) == 0)
+  #expect(!rig.state.monitorLeft)
+}
+
+@Test func theLastOfTwoMonitorsLeavingIsAMonitorLeaving() {
+  var rig = Rig()
+  rig.off()
+  var both = environment(panelState: .disabled)
+  both.visibleDisplayIDs = [2, 3]
+  rig.observe(both, at: 2030)
+  // Separate reports, with no reading between them.
+  #expect(refreshes(rig.send(.displaysRemoved([2]), at: 2100)) == 0)
+  #expect(refreshes(rig.send(.displaysRemoved([3]), at: 2200)) == 1)
+}
+
+@Test func aReadingTakenBeforeARemovalDoesNotForgetIt() {
+  var rig = Rig()
+  rig.off()
+  var both = environment(panelState: .disabled)
+  both.visibleDisplayIDs = [2, 3]
+  rig.observe(both, at: 2030)
+  rig.send(.displaysRemoved([2]), at: 2100)
+  // Sampled before the removal, delivered after it.
+  rig.sequence += 1
+  rig.send(.observed(.init(sequence: rig.sequence, sampledAt: 2050, environment: both)), at: 2150)
+  #expect(refreshes(rig.send(.displaysRemoved([3]), at: 2200)) == 1)
 }
 
 @Test func theScreenItselfLeavingIsNotAMonitorLeaving() {
